@@ -154,13 +154,6 @@ export const formSpecs: Partial<Record<string, RecordFormSpec>> = {
     fields: [
       { key: "controlledNumber", label: "Controlled number", required: true },
       { key: "title", label: "Title", required: true },
-      {
-        key: "procurementTrack",
-        label: "Procurement track",
-        required: true,
-        kind: "select",
-        options: ["Rapid prototype", "Mass production"],
-      },
       { key: "supplier", label: "Supplier", master: "suppliers" },
     ],
   },
@@ -287,5 +280,6 @@ export function recordFieldValues(spec: RecordFormSpec, type: string, values: Re
     if (value && field.options && !field.options.includes(value)) throw new Error(`Choose a valid ${field.label}.`);
     if (value) result[field.key] = value;
   }
+  if (spec === formSpecs["pur"]) { if (type === "Rapid prototype request") result["procurementTrack"] = "Rapid prototype"; else if (type === "Mass production request") result["procurementTrack"] = "Mass production"; }
   return result;
 }

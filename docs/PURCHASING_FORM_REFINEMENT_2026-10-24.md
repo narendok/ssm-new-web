@@ -14,3 +14,7 @@ Existing broader parity findings in REGRESSION_PARITY_AUDIT_2026-10-24.md remain
 Both shared record editors now generate a read-only reference from the selected project's original reference, owning department, record type and selected revision. Title changes do not rename the project or reference. Type codes preserve digits so F-PUR-10 and F-PUR-16 do not collide. Existing reference families determine the next revision; backend uniqueness remains authoritative for concurrent saves. Project creation retains its separate project-code input.
 
 Verification: 140 automated tests, TypeScript and production build passed. Live TEST creation saved `HLPL-OBD0374783-PUR-FPUR10-01` with title `TEST automatic reference verification` and verification-only notes. This is an unapproved synthetic draft, not a purchasing authorization. Supplier master integration and broader parity findings remain open.
+
+## Duplicate track correction
+
+Supersedes the earlier conditional-track behavior: Purchasing has no separate Procurement Track selector for any record type, in the common catalogue used by DEMO and shared editors. Rapid/Mass request types derive their track metadata; other record types do not require or invent one. Existing saved track metadata remains preserved. Browser checked F-PUR-10 with no track selector. 141 tests, TypeScript and build passed.

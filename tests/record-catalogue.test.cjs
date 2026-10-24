@@ -26,3 +26,11 @@ test('legacy department aliases retain the same catalogue',()=>{
  assert.equal(recordFormSpec('UNKNOWN'),undefined);
  assert.equal(recordFields(recordFormSpec('EHW'),'PRS').some(field=>field.key==='hwStage'),false);
 });
+
+test('Purchasing selects prototype or mass production once, through record type only',()=>{
+ const spec=recordFormSpec('PUR');
+ for(const type of spec.types)assert.equal(recordFields(spec,type).some(field=>field.key==='procurementTrack'),false);
+ assert.equal(recordFieldValues(spec,'Rapid prototype request',{}).procurementTrack,'Rapid prototype');
+ assert.equal(recordFieldValues(spec,'Mass production request',{}).procurementTrack,'Mass production');
+ assert.equal(recordFieldValues(spec,'F-PUR-10',{}).procurementTrack,undefined);
+});
