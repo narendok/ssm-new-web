@@ -1,3 +1,5 @@
+import { procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
+import { SharedSupplierSelect } from "./SharedSupplierSelect";
 import { recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -104,6 +106,10 @@ export function SharedOperationalWorkspace({
     department || data.departments.find((d) => d.code === actor.department_code)?.id || "";
   const dept = data.departments.find((d) => d.id === selectedDepartment);
   const spec = recordFormSpec(dept?.code || actor.department_code || "");
+  const supplierOptions = sharedSupplierOptions(data.records);
+  const originalRecord = data.records.find(r => r.id === recordId);
+  const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : values["reference"] || "", data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
+  const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
   const source = data.records.filter(
     (r) =>
       !selectedDepartment || r.department_id === selectedDepartment || r.record_type === "Project",
@@ -227,6 +233,7 @@ export function SharedOperationalWorkspace({
       revision: "01",
       projectId: projectRows.find((p) => [p.id, p.reference].includes(scope))?.id || "",
       record_type: spec?.types[0] || "",
+      procurementTrack: procurementTrack(spec?.types[0] || "") || "",
     });
     setError("");
   }
@@ -458,7 +465,7 @@ export function SharedOperationalWorkspace({
               if (form === "update_record") {
                 const original = data.records.find((r) => r.id === recordId);
                 if (!original) return;
-                const { notes, ...fields } = values;
+                const fields: Record<string,string> = {...values, revision:selectedRevision}; const notes = fields["notes"]; delete fields["notes"];
                 void save("update_record", {
                   record_id: recordId,
                   expected_updated_at: original.updated_at,
@@ -469,11 +476,11 @@ export function SharedOperationalWorkspace({
                 let fields;
                 try {
                   if (form === "create_record" && !spec) throw new Error("No record types configured for this department.");
-                  fields = form === "create_record" ? recordFieldValues(spec!, values["record_type"] || "", values) : {};
+                  fields = form === "create_record" ? recordFieldValues(spec!, values["record_type"] || "", {...values, revision:selectedRevision, ...(procurementTrack(values["record_type"] || "") ? {procurementTrack:procurementTrack(values["record_type"] || "")!} : {})}) : {};
                 } catch (error) { setError(error instanceof Error ? error.message : "Invalid record fields."); return; }
                 void save(form, {
                   title: values["title"] || "",
-                  reference: values["reference"] || "",
+                  reference: form === "create_record" ? referenceAtRevision(values["reference"] || "", selectedRevision) : values["reference"] || "",
                   project_id: values["projectId"] || null,
                   department_id: selectedDepartment,
                   record_type: values["record_type"] || "",
@@ -499,7 +506,7 @@ export function SharedOperationalWorkspace({
                 {form === "create_record" && (
                   <>
                     <label className="grid gap-1 text-xs">
-                      Project
+                      Project ({projectRows.length} available)
                       <select
                         className={fieldClass}
                         required
@@ -517,14 +524,14 @@ export function SharedOperationalWorkspace({
                     <label className="grid gap-1 text-xs">
                       Record type
                       <select className={fieldClass} required value={values["record_type"] || ""}
-                        onChange={(e) => setValues({title: values["title"] || "", reference: values["reference"] || "", projectId: values["projectId"] || "", revision: values["revision"] || "01", notes: values["notes"] || "", record_type: e.target.value})}>
+                        onChange={(e) => setValues({title: values["title"] || "", reference: form === "create_record" ? referenceAtRevision(values["reference"] || "", selectedRevision) : values["reference"] || "", projectId: values["projectId"] || "", revision: values["revision"] || "01", notes: values["notes"] || "", record_type: e.target.value, procurementTrack: procurementTrack(e.target.value) || ""})}>
                         <option value="">Choose record type…</option>
                         {(spec?.types || []).map(type => <option key={type} value={type}>{type}</option>)}
                       </select>
                     </label>
-                    {spec && recordFields(spec, values["record_type"] || "").map(field => (
+                    {spec && recordFields(spec, values["record_type"] || "").filter(field => field.key !== "procurementTrack" || !procurementTrack(values["record_type"] || "")).map(field => (
                       <label key={field.key} className="grid gap-1 text-xs">{field.label}
-                        {field.options ? <select className={fieldClass} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})}>
+                        {field.master === "suppliers" ? <SharedSupplierSelect options={supplierOptions} value={values[field.key] || ""} onChange={value => setValues({...values,[field.key]:value})} /> : field.options ? <select className={fieldClass} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})}>
                           <option value="">Choose…</option>{field.options.map(option => <option key={option} value={option}>{option}</option>)}
                         </select> : <input className={fieldClass} type={field.kind === "date" ? "date" : "text"} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})} />}
                       </label>
@@ -533,9 +540,9 @@ export function SharedOperationalWorkspace({
                 )}
               </>
             )}
-                    {form === "update_record" && spec && recordFields(spec, data.records.find(r => r.id === recordId)?.record_type || "").map(field => (
+                    {form === "update_record" && spec && recordFields(spec, data.records.find(r => r.id === recordId)?.record_type || "").filter(field => field.key !== "procurementTrack" || !procurementTrack(originalRecord?.record_type || "")).map(field => (
                       <label key={field.key} className="grid gap-1 text-xs">{field.label}
-                        {field.options ? <select className={fieldClass} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})}>
+                        {field.master === "suppliers" ? <SharedSupplierSelect options={supplierOptions} value={values[field.key] || ""} onChange={value => setValues({...values,[field.key]:value})} /> : field.options ? <select className={fieldClass} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})}>
                           <option value="">Choose…</option>{field.options.map(option => <option key={option} value={option}>{option}</option>)}
                         </select> : <input className={fieldClass} type={field.kind === "date" ? "date" : "text"} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})} />}
                       </label>
@@ -543,12 +550,10 @@ export function SharedOperationalWorkspace({
             {form !== "create_project" && (
               <label className="grid gap-1 text-xs">
                 Revision
-                <input
-                  className={fieldClass}
-                  required
-                  value={values["revision"] || ""}
-                  onChange={(e) => setValues({ ...values, revision: e.target.value })}
-                />
+                <select className={fieldClass} required value={selectedRevision} onChange={e => setValues({...values,revision:e.target.value})}>
+                  {revisions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+                <span className="text-xs text-muted-foreground">Sequence is based on this record reference, not other projects or record types.</span>
               </label>
             )}
             <label className="grid gap-1 text-xs">

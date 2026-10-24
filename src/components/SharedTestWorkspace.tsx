@@ -1,3 +1,5 @@
+import { procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
+import { SharedSupplierSelect } from "./SharedSupplierSelect";
 import { recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
 import type { StageGateInput } from "@/lib/operational-gate.schema";
 import { useRef, useState } from "react";
@@ -123,6 +125,10 @@ export function SharedTestWorkspace({
   const ownDepartment = data.departments.find((d) => d.code === actor.department_code)?.id;
   const selectedDepartment = values["department_id"] || ownDepartment || "";
   const spec = recordFormSpec(data.departments.find(d => d.id === selectedDepartment)?.code || "");
+  const supplierOptions = sharedSupplierOptions(data.records);
+  const originalRecord = data.records.find(record => record.id === values["record_id"]);
+  const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : values["reference"] || "", data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
+  const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
   const projects = data.records.filter((r) => r.record_type === "Project");
   const projectName = (id: string | null) => projects.find((p) => p.id === id)?.reference || "—";
   const deptName = (id: string | null) => data.departments.find((d) => d.id === id)?.code || "—";
@@ -165,19 +171,20 @@ export function SharedTestWorkspace({
       if (form === "create_record" || form === "update_record")
         payload["fields"] = {
           ...JSON.parse(values["fields"] || "{}"),
-          revision: values["revision"] || "01",
+          revision: selectedRevision,
           scope: values["scope"] || "",
           requirements: values["requirements"] || "",
           acceptanceCriteria: values["acceptanceCriteria"] || "",
         };
       if (form === "create_record") {
         if (!spec) throw new Error("No record types configured for this department.");
-        payload["fields"] = {...payload["fields"] as Record<string, SharedJson>, ...recordFieldValues(spec, values["record_type"] || "", values)};
+        payload["fields"] = {...payload["fields"] as Record<string, SharedJson>, ...recordFieldValues(spec, values["record_type"] || "", {...values,revision:selectedRevision,...(procurementTrack(values["record_type"] || "") ? {procurementTrack:procurementTrack(values["record_type"] || "")!} : {})})};
       }
     } catch (error) {
       setError(error instanceof Error ? error.message : "The saved record fields could not be read.");
       return;
     }
+    if (form === "create_record") payload["reference"] = referenceAtRevision(values["reference"] || "", selectedRevision);
     if (values["due_at"]) payload["due_at"] = values["due_at"] + "T12:00:00+05:30";
     if (form) await run(form, payload);
   }
@@ -782,12 +789,12 @@ export function SharedTestWorkspace({
                 field("reference", "Controlled reference (HLPL-…)")}
               {form === "create_record" && <>
                 <label className="grid gap-1 text-xs">Record type
-                  <select className={input} required value={values["record_type"] || ""} onChange={e => setValues(v => ({...v, record_type:e.target.value}))}>
+                  <select className={input} required value={values["record_type"] || ""} onChange={e => setValues(v => ({...v, record_type:e.target.value,procurementTrack:procurementTrack(e.target.value) || ""}))}>
                     <option value="">Choose record type…</option>{(spec?.types || []).map(type => <option key={type} value={type}>{type}</option>)}
                   </select>
                 </label>
-                {spec && recordFields(spec,values["record_type"] || "").map(item => <label key={item.key} className="grid gap-1 text-xs">{item.label}
-                  {item.options ? <select className={input} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))}><option value="">Choose…</option>{item.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input className={input} type={item.kind === "date" ? "date" : "text"} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))} />}
+                {spec && recordFields(spec,values["record_type"] || "").filter(item => item.key !== "procurementTrack" || !procurementTrack(values["record_type"] || "")).map(item => <label key={item.key} className="grid gap-1 text-xs">{item.label}
+                  {item.master === "suppliers" ? <SharedSupplierSelect options={supplierOptions} value={values[item.key] || ""} onChange={value => setValues(v => ({...v,[item.key]:value}))} /> : item.options ? <select className={input} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))}><option value="">Choose…</option>{item.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input className={input} type={item.kind === "date" ? "date" : "text"} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))} />}
                 </label>)}
               </>}
               {(form === "create_record" || form === "create_task") && (
@@ -875,7 +882,7 @@ export function SharedTestWorkspace({
               )}
               {(form === "create_record" || form === "update_record") && (
                 <>
-                  {field("revision", "Revision")}
+                  <label className="grid gap-1 text-xs">Revision<select className={input} required value={selectedRevision} onChange={e => setValues(v => ({...v,revision:e.target.value}))}>{revisions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                   {field("scope", "Scope")}
                   {field("requirements", "Requirements / review findings")}
                   {field("acceptanceCriteria", "Acceptance criteria")}
