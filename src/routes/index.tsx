@@ -66,6 +66,7 @@ import {
   Lock,
   FileSpreadsheet,
   UserPlus,
+  Truck,
   Send,
   BookOpen,
   Shield,
@@ -96,6 +97,7 @@ import {
   getControlledDocumentDownload,
   listControlledDocumentFiles,
 } from "@/lib/controlled-documents.functions";
+import { InlineSupplierModal, InlinePartModal, type SupplierRecordItem, type PartRecordItem } from "@/components/InlineMasterModals";
 import { FeasibilityAndHardwareKickoff } from "@/components/FeasibilityAndHardwareKickoff";
 import {
   SalesEnquiriesAndOpportunities,
@@ -7464,21 +7466,27 @@ function RecordDetail({
 function RecordForm({
   area,
   portal,
+  persona,
   initialType,
   initialValues,
   defaultAssignee,
   onClose,
   onSave,
   onAddCustomer,
+  onAddSupplier,
+  onAddPart,
 }: {
   area: AreaId;
   portal: PortalState;
+  persona?: Persona | undefined;
   initialType: string | null;
   initialValues?: Record<string, string> | null;
   defaultAssignee: string;
   onClose: () => void;
   onSave: (record: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">) => void;
-  onAddCustomer?: (customer: CustomerRecord) => void;
+  onAddCustomer?: ((customer: CustomerRecord) => void) | undefined;
+  onAddSupplier?: ((supplier: SupplierRecordItem) => void) | undefined;
+  onAddPart?: ((part: PartRecordItem) => void) | undefined;
 }) {
   const spec = formSpecs[area] ?? formSpecs["ehw"];
   if (!spec) return null;
@@ -7497,6 +7505,12 @@ function RecordForm({
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
+  const [showAddPartModal, setShowAddPartModal] = useState(false);
+
+  const canAddCustomer = ["sales", "sal", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
+  const canAddSupplier = ["pur", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
+  const canAddPart = ["ehw", "esw", "mech", "pur", "rnd", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
 
   useEffect(() => {
     if (initialType) setType(initialType);
@@ -7668,7 +7682,11 @@ function RecordForm({
                 value={field(item.key)}
                 options={portal.masters[item.master] ?? []}
                 onChange={(value) => setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value })}
-                onAddCustomer={item.master === "customers" ? () => setShowAddCustomerModal(true) : undefined}
+                onAddCustomer={item.master === "customers" && canAddCustomer ? () => setShowAddCustomerModal(true) : undefined}
+                onAddSupplier={item.master === "suppliers" && canAddSupplier ? () => setShowAddSupplierModal(true) : undefined}
+                onAddPart={item.master === "parts" && canAddPart ? () => setShowAddPartModal(true) : undefined}
+                canAddSupplier={canAddSupplier}
+                canAddPart={canAddPart}
               />
             ) : item.key === "projectId" && isPreProjectIntake(type) ? (
               <div key={item.key} className="space-y-1"><p className="text-sm font-medium">Existing project (optional)</p><CompactFilterSelect label="Inquiry project link" shortLabel="Project" icon={Layers} value={selectedProject} onChange={value=>setValues(previous=>({...previous,projectId:value,controlledNumber:""}))} options={[{value:"",label:"New requirement — no project yet"},...portal.records.filter(record=>record.type === "Project" && !record.archived).map(record=>({value:record.reference,label:`${record.reference} · ${record.title}`}))]}/><p className="text-xs text-muted-foreground">Link an existing project only for a change, extension or repeat requirement. No project is created by saving this inquiry.</p></div>
@@ -7719,6 +7737,24 @@ function RecordForm({
           }}
         />
       )}
+      {showAddSupplierModal && (
+        <InlineSupplierModal
+          onClose={() => setShowAddSupplierModal(false)}
+          onSupplierCreated={(newSup) => {
+            onAddSupplier?.(newSup);
+            setValues((prev) => ({ ...prev, supplier: newSup.name }));
+          }}
+        />
+      )}
+      {showAddPartModal && (
+        <InlinePartModal
+          onClose={() => setShowAddPartModal(false)}
+          onPartCreated={(newPrt) => {
+            onAddPart?.(newPrt);
+            setValues((prev) => ({ ...prev, part: newPrt.mpn, mpn: newPrt.mpn }));
+          }}
+        />
+      )}
     </Modal>
   );
 }
@@ -7728,15 +7764,26 @@ function ManagedField({
   options,
   onChange,
   onAddCustomer,
+  onAddSupplier,
+  onAddPart,
+  canAddSupplier = false,
+  canAddPart = false,
 }: {
-  item: { label: string; required?: boolean };
+  item: { label: string; master?: string; required?: boolean };
   value: string;
   options: string[];
   onChange: (value: string) => void;
   onAddCustomer?: (() => void) | undefined;
+  onAddSupplier?: (() => void) | undefined;
+  onAddPart?: (() => void) | undefined;
+  canAddSupplier?: boolean | undefined;
+  canAddPart?: boolean | undefined;
 }) {
   const fieldId = useId();
-  const isCustomer = item.label.toLowerCase().includes("customer");
+  const isCustomer = item.label.toLowerCase().includes("customer") || item.master === "customers";
+  const isSupplier = item.label.toLowerCase().includes("supplier") || item.master === "suppliers";
+  const isPart = item.label.toLowerCase().includes("part") || item.label.toLowerCase().includes("component") || item.master === "parts";
+
   return (
     <div className="block text-sm font-medium">
       <div className="flex items-center justify-between">
@@ -7753,6 +7800,36 @@ function ManagedField({
             <UserPlus className="size-3" />
             + Add Customer
           </button>
+        )}
+        {isSupplier && onAddSupplier && (
+          <button
+            type="button"
+            onClick={onAddSupplier}
+            className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-primary hover:underline"
+          >
+            <Truck className="size-3" />
+            + Add Supplier
+          </button>
+        )}
+        {isSupplier && !onAddSupplier && !canAddSupplier && (
+          <span className="text-[10px] text-muted-foreground italic font-normal">
+            (Purchasing restricted)
+          </span>
+        )}
+        {isPart && onAddPart && (
+          <button
+            type="button"
+            onClick={onAddPart}
+            className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-primary hover:underline"
+          >
+            <Cpu className="size-3" />
+            + Add Part
+          </button>
+        )}
+        {isPart && !onAddPart && !canAddPart && (
+          <span className="text-[10px] text-muted-foreground italic font-normal">
+            (Engineering restricted)
+          </span>
         )}
       </div>
       <input
@@ -7771,7 +7848,15 @@ function ManagedField({
       <span className="mt-1 block text-xs text-muted-foreground">
         {isCustomer
           ? "Select a registered customer or click [+ Add Customer] inline."
-          : "Manage options in Administration."}
+          : isSupplier
+            ? canAddSupplier
+              ? "Select an approved vendor or click [+ Add Supplier] inline."
+              : "Vendor selection only. Supplier creation is restricted to Purchasing/Admin."
+            : isPart
+              ? canAddPart
+                ? "Select a component MPN or click [+ Add Part] inline."
+                : "Component selection only. Part master creation is restricted to Engineering/Admin."
+              : "Manage options in Administration."}
       </span>
     </div>
   );
