@@ -1,4 +1,4 @@
-import { procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
+import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
 import { SharedSupplierSelect } from "./SharedSupplierSelect";
 import { recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
 import type { StageGateInput } from "@/lib/operational-gate.schema";
@@ -127,8 +127,10 @@ export function SharedTestWorkspace({
   const spec = recordFormSpec(data.departments.find(d => d.id === selectedDepartment)?.code || "");
   const supplierOptions = sharedSupplierOptions(data.records);
   const originalRecord = data.records.find(record => record.id === values["record_id"]);
-  const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : values["reference"] || "", data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
+  const generatedReferenceBase = automaticRecordReference(data.records.find(r => r.id === values["project_id"] && r.record_type === "Project")?.reference || "", data.departments.find(d => d.id === selectedDepartment)?.code || "", values["record_type"] || "");
+  const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : generatedReferenceBase, data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
   const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
+  const generatedReference = generatedReferenceBase ? referenceAtRevision(generatedReferenceBase, selectedRevision) : "";
   const projects = data.records.filter((r) => r.record_type === "Project");
   const projectName = (id: string | null) => projects.find((p) => p.id === id)?.reference || "—";
   const deptName = (id: string | null) => data.departments.find((d) => d.id === id)?.code || "—";
@@ -158,7 +160,9 @@ export function SharedTestWorkspace({
         <input
           className={input}
           type={type}
-          value={values[key] || ""}
+          value={key === "reference" && form === "create_record" ? generatedReference : values[key] || ""}
+          readOnly={key === "reference" && form === "create_record"}
+          placeholder={key === "reference" && form === "create_record" ? "Select project and record type" : undefined}
           onChange={(e) => setValues((v) => ({ ...v, [key]: e.target.value }))}
         />
       </label>
@@ -184,7 +188,7 @@ export function SharedTestWorkspace({
       setError(error instanceof Error ? error.message : "The saved record fields could not be read.");
       return;
     }
-    if (form === "create_record") payload["reference"] = referenceAtRevision(values["reference"] || "", selectedRevision);
+    if (form === "create_record") payload["reference"] = generatedReference;
     if (values["due_at"]) payload["due_at"] = values["due_at"] + "T12:00:00+05:30";
     if (form) await run(form, payload);
   }

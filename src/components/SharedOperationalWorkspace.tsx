@@ -1,4 +1,4 @@
-import { procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
+import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
 import { SharedSupplierSelect } from "./SharedSupplierSelect";
 import { recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
 import { useRef, useState } from "react";
@@ -108,8 +108,10 @@ export function SharedOperationalWorkspace({
   const spec = recordFormSpec(dept?.code || actor.department_code || "");
   const supplierOptions = sharedSupplierOptions(data.records);
   const originalRecord = data.records.find(r => r.id === recordId);
-  const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : values["reference"] || "", data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
+  const generatedReferenceBase = automaticRecordReference(data.records.find(r => r.id === values["projectId"] && r.record_type === "Project")?.reference || "", dept?.code || "", values["record_type"] || "");
+  const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : generatedReferenceBase, data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
   const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
+  const generatedReference = generatedReferenceBase ? referenceAtRevision(generatedReferenceBase, selectedRevision) : "";
   const source = data.records.filter(
     (r) =>
       !selectedDepartment || r.department_id === selectedDepartment || r.record_type === "Project",
@@ -480,7 +482,7 @@ export function SharedOperationalWorkspace({
                 } catch (error) { setError(error instanceof Error ? error.message : "Invalid record fields."); return; }
                 void save(form, {
                   title: values["title"] || "",
-                  reference: form === "create_record" ? referenceAtRevision(values["reference"] || "", selectedRevision) : values["reference"] || "",
+                  reference: form === "create_record" ? generatedReference : values["reference"] || "",
                   project_id: values["projectId"] || null,
                   department_id: selectedDepartment,
                   record_type: values["record_type"] || "",
@@ -494,11 +496,13 @@ export function SharedOperationalWorkspace({
               <>
                 {["title", "reference"].map((key) => (
                   <label key={key} className="grid gap-1 text-xs">
-                    {key === "reference" ? "Code / reference" : "Title"}
+                    {key === "reference" ? (form === "create_record" ? "Reference · Automatic" : "Project code") : "Title"}
                     <input
                       className={fieldClass}
                       required
-                      value={values[key] || ""}
+                      value={key === "reference" && form === "create_record" ? generatedReference : values[key] || ""}
+                      readOnly={key === "reference" && form === "create_record"}
+                      placeholder={key === "reference" && form === "create_record" ? "Select project and record type" : undefined}
                       onChange={(e) => setValues({ ...values, [key]: e.target.value })}
                     />
                   </label>
@@ -524,7 +528,7 @@ export function SharedOperationalWorkspace({
                     <label className="grid gap-1 text-xs">
                       Record type
                       <select className={fieldClass} required value={values["record_type"] || ""}
-                        onChange={(e) => setValues({title: values["title"] || "", reference: form === "create_record" ? referenceAtRevision(values["reference"] || "", selectedRevision) : values["reference"] || "", projectId: values["projectId"] || "", revision: values["revision"] || "01", notes: values["notes"] || "", record_type: e.target.value, procurementTrack: procurementTrack(e.target.value) || ""})}>
+                        onChange={(e) => setValues({title: values["title"] || "", reference: form === "create_record" ? generatedReference : values["reference"] || "", projectId: values["projectId"] || "", revision: values["revision"] || "01", notes: values["notes"] || "", record_type: e.target.value, procurementTrack: procurementTrack(e.target.value) || ""})}>
                         <option value="">Choose record type…</option>
                         {(spec?.types || []).map(type => <option key={type} value={type}>{type}</option>)}
                       </select>

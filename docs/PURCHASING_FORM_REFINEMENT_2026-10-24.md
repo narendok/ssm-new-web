@@ -8,3 +8,9 @@
 Verification: 139 automated tests passed; TypeScript and production build passed. Browser confirmed the duplicate track field is absent for Rapid prototype request, supplier search opens, and new-reference revision displays 01 / Initial revision. The user's existing draft was preserved; no new business record, supplier or revision was submitted in this refinement.
 
 Existing broader parity findings in REGRESSION_PARITY_AUDIT_2026-10-24.md remain open. This focused refinement does not claim to resolve them.
+
+## Automatic reference follow-up
+
+Both shared record editors now generate a read-only reference from the selected project's original reference, owning department, record type and selected revision. Title changes do not rename the project or reference. Type codes preserve digits so F-PUR-10 and F-PUR-16 do not collide. Existing reference families determine the next revision; backend uniqueness remains authoritative for concurrent saves. Project creation retains its separate project-code input.
+
+Verification: 140 automated tests, TypeScript and production build passed. Live TEST creation saved `HLPL-OBD0374783-PUR-FPUR10-01` with title `TEST automatic reference verification` and verification-only notes. This is an unapproved synthetic draft, not a purchasing authorization. Supplier master integration and broader parity findings remain open.
