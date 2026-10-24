@@ -1,3 +1,4 @@
+import { recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
 import type { StageGateInput } from "@/lib/operational-gate.schema";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -121,6 +122,7 @@ export function SharedTestWorkspace({
     viewer = actor.role === "viewer";
   const ownDepartment = data.departments.find((d) => d.code === actor.department_code)?.id;
   const selectedDepartment = values["department_id"] || ownDepartment || "";
+  const spec = recordFormSpec(data.departments.find(d => d.id === selectedDepartment)?.code || "");
   const projects = data.records.filter((r) => r.record_type === "Project");
   const projectName = (id: string | null) => projects.find((p) => p.id === id)?.reference || "—";
   const deptName = (id: string | null) => data.departments.find((d) => d.id === id)?.code || "—";
@@ -168,8 +170,12 @@ export function SharedTestWorkspace({
           requirements: values["requirements"] || "",
           acceptanceCriteria: values["acceptanceCriteria"] || "",
         };
-    } catch {
-      setError("The saved record fields could not be read. Reload the record before editing.");
+      if (form === "create_record") {
+        if (!spec) throw new Error("No record types configured for this department.");
+        payload["fields"] = {...payload["fields"] as Record<string, SharedJson>, ...recordFieldValues(spec, values["record_type"] || "", values)};
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "The saved record fields could not be read.");
       return;
     }
     if (values["due_at"]) payload["due_at"] = values["due_at"] + "T12:00:00+05:30";
@@ -774,8 +780,16 @@ export function SharedTestWorkspace({
               {form !== "update_record" && field("title", "Title")}
               {(form === "create_project" || form === "create_record") &&
                 field("reference", "Controlled reference (HLPL-…)")}
-              {form === "create_record" &&
-                field("record_type", "Record type (e.g. Contract Review, EHW-PRS)")}
+              {form === "create_record" && <>
+                <label className="grid gap-1 text-xs">Record type
+                  <select className={input} required value={values["record_type"] || ""} onChange={e => setValues(v => ({...v, record_type:e.target.value}))}>
+                    <option value="">Choose record type…</option>{(spec?.types || []).map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                </label>
+                {spec && recordFields(spec,values["record_type"] || "").map(item => <label key={item.key} className="grid gap-1 text-xs">{item.label}
+                  {item.options ? <select className={input} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))}><option value="">Choose…</option>{item.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input className={input} type={item.kind === "date" ? "date" : "text"} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))} />}
+                </label>)}
+              </>}
               {(form === "create_record" || form === "create_task") && (
                 <label className="grid gap-1 text-xs">
                   Project

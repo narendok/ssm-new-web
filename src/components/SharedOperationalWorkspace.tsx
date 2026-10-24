@@ -1,3 +1,4 @@
+import { recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -102,6 +103,7 @@ export function SharedOperationalWorkspace({
   const selectedDepartment =
     department || data.departments.find((d) => d.code === actor.department_code)?.id || "";
   const dept = data.departments.find((d) => d.id === selectedDepartment);
+  const spec = recordFormSpec(dept?.code || actor.department_code || "");
   const source = data.records.filter(
     (r) =>
       !selectedDepartment || r.department_id === selectedDepartment || r.record_type === "Project",
@@ -224,7 +226,7 @@ export function SharedOperationalWorkspace({
     setValues({
       revision: "01",
       projectId: projectRows.find((p) => [p.id, p.reference].includes(scope))?.id || "",
-      record_type: "Record",
+      record_type: spec?.types[0] || "",
     });
     setError("");
   }
@@ -463,16 +465,22 @@ export function SharedOperationalWorkspace({
                   fields: { ...original.fields, ...fields },
                   notes: notes || "",
                 });
-              } else
+              } else {
+                let fields;
+                try {
+                  if (form === "create_record" && !spec) throw new Error("No record types configured for this department.");
+                  fields = form === "create_record" ? recordFieldValues(spec!, values["record_type"] || "", values) : {};
+                } catch (error) { setError(error instanceof Error ? error.message : "Invalid record fields."); return; }
                 void save(form, {
                   title: values["title"] || "",
                   reference: values["reference"] || "",
                   project_id: values["projectId"] || null,
                   department_id: selectedDepartment,
-                  record_type: values["record_type"] || "Record",
-                  fields: { revision: values["revision"] || "01" },
+                  record_type: values["record_type"] || "",
+                  fields,
                   notes: values["notes"] || "",
                 });
+              }
             }}
           >
             {form !== "update_record" && (
@@ -508,17 +516,30 @@ export function SharedOperationalWorkspace({
                     </label>
                     <label className="grid gap-1 text-xs">
                       Record type
-                      <input
-                        className={fieldClass}
-                        required
-                        value={values["record_type"] || ""}
-                        onChange={(e) => setValues({ ...values, record_type: e.target.value })}
-                      />
+                      <select className={fieldClass} required value={values["record_type"] || ""}
+                        onChange={(e) => setValues({title: values["title"] || "", reference: values["reference"] || "", projectId: values["projectId"] || "", revision: values["revision"] || "01", notes: values["notes"] || "", record_type: e.target.value})}>
+                        <option value="">Choose record type…</option>
+                        {(spec?.types || []).map(type => <option key={type} value={type}>{type}</option>)}
+                      </select>
                     </label>
+                    {spec && recordFields(spec, values["record_type"] || "").map(field => (
+                      <label key={field.key} className="grid gap-1 text-xs">{field.label}
+                        {field.options ? <select className={fieldClass} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})}>
+                          <option value="">Choose…</option>{field.options.map(option => <option key={option} value={option}>{option}</option>)}
+                        </select> : <input className={fieldClass} type={field.kind === "date" ? "date" : "text"} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})} />}
+                      </label>
+                    ))}
                   </>
                 )}
               </>
             )}
+                    {form === "update_record" && spec && recordFields(spec, data.records.find(r => r.id === recordId)?.record_type || "").map(field => (
+                      <label key={field.key} className="grid gap-1 text-xs">{field.label}
+                        {field.options ? <select className={fieldClass} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})}>
+                          <option value="">Choose…</option>{field.options.map(option => <option key={option} value={option}>{option}</option>)}
+                        </select> : <input className={fieldClass} type={field.kind === "date" ? "date" : "text"} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})} />}
+                      </label>
+                    ))}
             {form !== "create_project" && (
               <label className="grid gap-1 text-xs">
                 Revision
