@@ -79,3 +79,7 @@ Lovable editor preview, localhost, published deployment, backend, and Android ar
 ## Acceptance standard
 
 Close a batch only when the exact source revision and changed files are identified; required automated checks pass; browser/runtime behavior is independently reproduced for relevant roles; negative access tests pass; persisted state and cross-links survive refresh; and evidence is recorded in the sync ledger. Keep unresolved risks and failed checks visible. Do not mark a simulated flow as complete operational functionality.
+
+## Latest record-flow verification requirements — 25 October 2026
+
+Read [the consolidated implementation and verification handoff](ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md), especially section 14, before further record-flow implementation. This is the latest scoped user-requirement expansion of this master plan, not a second competing work package. Its latest explicit user decisions supersede conflicting older UI/record-flow alternatives; compatible requirements remain. It contains per-type starting contracts, property/callback dictionaries, role and edge-case verification, 38-family document reconciliation, evidence gates and one final execution prompt. Nothing in a planning table is deployment or standards-certification evidence.

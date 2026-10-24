@@ -260,3 +260,7 @@ This unified document permanently consolidates and supersedes the following frag
 - `SCMS_PORTAL_FEATURES_KNOWLEDGE_BASE.md`
 - `MOBILE_BACKEND_CONTRACT.md`
 - All loose root markdown stubs and unapplied early October SQL drafts.
+
+## Latest scoped record-flow verification addendum — 25 October 2026
+
+The [consolidated handoff, section 14](ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md) expands the master plan with the latest accepted discussion requirements, source/standards boundaries and complete record-flow verification programme. Read it before interpreting older generic forms or approval/reference assumptions as final. Preserve compatible functionality and follow the latest explicit human decisions. Use the single execution prompt at its end; do not duplicate this as a separate batch.
