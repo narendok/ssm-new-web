@@ -57,7 +57,7 @@ export function projectAnalysis(
       const source = keys.get(key);
       return {
         id: `${target.id}:${key}`,
-        reference: key,
+        reference: source?.reference || key,
         needed: source?.title || "Required input unavailable in this view",
         provider: source?.fields["department"] || source?.area?.toUpperCase() || "Not recorded",
         owner: source?.fields["owner"] || source?.fields["assignee"] || "Unassigned",
