@@ -17,7 +17,7 @@ BEGIN
    SELECT canonical_id INTO source_id FROM scenario_fixture_manifests WHERE organization_id=org AND run_id=run AND reference=edge.source;
    SELECT canonical_id INTO target_id FROM scenario_fixture_manifests WHERE organization_id=org AND run_id=run AND reference=edge.target;
    IF source_id IS NULL OR target_id IS NULL THEN RAISE EXCEPTION 'FIXTURE_DEPENDENCY_MISSING'; END IF;
-   UPDATE operational_records SET fields=fields||jsonb_build_object('dependsOn',source_id::text) WHERE id=target_id AND organization_id=org;
+   UPDATE operational_records SET fields=fields||jsonb_build_object('dependsOn',source_id::text) WHERE id=target_id AND organization_id=org AND fields->>'dependsOn' IS NULL;
    INSERT INTO record_links(organization_id,source_record_id,target_record_id,relationship,created_by) SELECT org,source_id,target_id,'dependency',actor WHERE NOT EXISTS(SELECT 1 FROM record_links WHERE organization_id=org AND source_record_id=source_id AND target_record_id=target_id AND relationship='dependency');
  END LOOP;
  SELECT canonical_id INTO source_id FROM scenario_fixture_manifests WHERE organization_id=org AND run_id=run AND reference='ENQ-2026-EXT-01';
@@ -26,9 +26,11 @@ BEGIN
  -- These are explicitly simulated starting snapshots, NOT executed operational gate approvals.
  FOR item IN SELECT * FROM (VALUES ('S01','Stage 4'),('S03','Stage 4'),('S04','Stage 5'),('S05','Stage 6'),('S06','Stage 8')) AS stages(scenario,stage) LOOP
    UPDATE operational_records SET stage=item.stage,fields=fields||jsonb_build_object('currentStage',item.stage,'sampleStageSnapshot',true)
-   WHERE organization_id=org AND is_demo AND id IN(SELECT canonical_id FROM scenario_fixture_manifests WHERE organization_id=org AND run_id=run AND scenario_id=item.scenario AND entity_type='project');
-   UPDATE scenario_fixture_manifests SET stage=item.stage WHERE organization_id=org AND run_id=run AND scenario_id=item.scenario AND entity_type='project';
+   WHERE organization_id=org AND is_demo AND id IN(SELECT canonical_id FROM scenario_fixture_manifests WHERE organization_id=org AND run_id=run AND scenario_id=item.scenario AND entity_type='project') AND fields->>'sampleStageSnapshot' IS DISTINCT FROM 'true';
+   UPDATE scenario_fixture_manifests f SET stage=r.stage FROM operational_records r WHERE f.organization_id=org AND f.run_id=run AND f.scenario_id=item.scenario AND f.entity_type='project' AND r.id=f.canonical_id;
  END LOOP;
+ UPDATE operational_records SET fields=fields||jsonb_build_object('scope','TEST customer request: extended-temperature tracker with a six-week target window. Feasibility found a fourteen-week supply lead time; no revised scope accepted.') WHERE organization_id=org AND id=source_id AND fields->>'scope' IS NULL;
+ UPDATE operational_records SET fields=fields||jsonb_build_object('coordinationSummary','TEST sourcing feasibility declined: fourteen-week supply lead time exceeds six-week requested window. No alternate accepted; no project created.') WHERE organization_id=org AND id=target_id AND fields->>'coordinationSummary' IS NULL;
 END $fixture_links$;
 COMMIT;
 SELECT 'sample links and starting stages reconciled' AS result;
