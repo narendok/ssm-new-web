@@ -82,6 +82,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261025091500_harden_downstream_master_guards",
     "20261025103000_saved_lifecycle_coordination",
     "20261025110000_saved_lifecycle_disposition",
+    "20261025111644_project_input_feasibility_sheet",
   ];
 
   for (const name of initialMigrations) {
@@ -681,5 +682,42 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     }
   }
   assert.equal(coverage,88,"All current catalogue entries exercised; changing catalogue requires deliberate coverage update");
+
+  async function sheetCall(user,action,payload){return asUser(user,async()=> (await db.query("SELECT mutate_project_input_sheet($1,$2::jsonb) result",[action,JSON.stringify(payload)])).rows[0].result);}
+  let sheet=await sheetCall(salLead,"create",{sourceId:project,scope:"Client"});
+  assert.equal((await sheetCall(salLead,"create",{sourceId:project,scope:"Client"})).id,sheet.id,"Opening again does not duplicate sheet");
+  await assert.rejects(sheetCall(hwLead,"input",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",input:"Tamper"}),/INPUT_OWNER_REQUIRED/);
+  await assert.rejects(sheetCall(purLead,"respond",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"EHW",status:"Feasible",remarks:"Tamper"}),/INPUT_DEPARTMENT_DENIED/);
+  await assert.rejects(sheetCall(admin,"approve",{sheetId:sheet.id,expectedVersion:sheet.version}),/CLIENT_APPROVAL_EVIDENCE_REQUIRED/);
+  const params=JSON.parse(fs.readFileSync(path.join(root,"src/lib/project-input-template.json"),"utf8"));
+  for(const parameter of params){sheet=await sheetCall(salLead,"input",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:parameter.id,input:parameter.id==="system_voltage"?"12 V":"",finalValue:parameter.id==="system_voltage"?"12 V":"",required:parameter.id==="system_voltage",exclusionReason:parameter.id==="system_voltage"?"":"Not applicable to this isolated test scope"});}
+  const oldVersion=sheet.version;
+  sheet=await sheetCall(hwLead,"respond",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"EHW",status:"Feasible",remarks:"Design assessment recorded",ownerId:mids[hwLead]});
+  await assert.rejects(sheetCall(qaLead,"respond",{sheetId:sheet.id,expectedVersion:oldVersion,parameterId:"system_voltage",department:"QA",status:"Feasible",remarks:"Stale"}),/INPUT_STALE_VERSION/);
+  sheet=await sheetCall(hwLead,"review_response",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"EHW"});
+  sheet=await sheetCall(qaLead,"respond",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"QA",status:"Feasible",remarks:"Test requirements reviewed"});
+  sheet=await sheetCall(qaLead,"review_response",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"QA"});
+  sheet=await sheetCall(salLead,"client_evidence",{sheetId:sheet.id,expectedVersion:sheet.version,evidence:"Isolated test approval evidence reference"});
+  sheet=await sheetCall(qaLead,"respond",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"QA",status:"Conditional",remarks:"Open transient test condition"});
+  sheet=await sheetCall(qaLead,"review_response",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"QA"});
+  await assert.rejects(sheetCall(admin,"approve",{sheetId:sheet.id,expectedVersion:sheet.version}),/INPUT_REVIEW_PENDING/);
+  sheet=await sheetCall(qaLead,"respond",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"QA",status:"Feasible",remarks:"Condition resolved with recorded evidence"});
+  await assert.rejects(sheetCall(admin,"approve",{sheetId:sheet.id,expectedVersion:sheet.version}),/INPUT_REVIEW_PENDING/);
+  sheet=await sheetCall(qaLead,"review_response",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",department:"QA"});
+  sheet=await sheetCall(admin,"approve",{sheetId:sheet.id,expectedVersion:sheet.version});assert.equal(sheet.status,"Approved");
+  await assert.rejects(sheetCall(salLead,"input",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:"system_voltage",input:"24 V"}),/INPUT_BASELINE_LOCKED/);
+  const baseline=(await db.query("SELECT details FROM project_input_events WHERE sheet_id=$1 AND action='approve'",[sheet.id])).rows[0].details;
+  assert.equal(baseline.baseline.system_voltage.input,"12 V");
+  sheet=await sheetCall(salLead,"revise",{sheetId:sheet.id,expectedVersion:sheet.version,reason:"Client requested new power range"});assert.equal(sheet.revision,2);assert.equal(sheet.parameter_values.system_voltage.responses.EHW.reviewedBy,"");
+  await assert.rejects(asUser(hwLead,()=>db.query("UPDATE project_input_sheets SET status='Approved' WHERE id=$1",[sheet.id])),/permission denied/);
+  const readable=await asUser(hwLead,async()=> (await db.query("SELECT get_project_input_sheets() result")).rows[0].result);assert.ok(readable.sheets.some(s=>s.id===sheet.id));
+
+  sheet=await sheetCall(hwLead,"add_parameter",{sheetId:sheet.id,expectedVersion:sheet.version,label:"Extra sensor isolation",hint:"Confirm isolation voltage and evidence",reviewers:"QA"});
+  const custom=sheet.custom_parameters[0];assert.equal(custom.lead,"EHW");assert.deepEqual(custom.reviewers,["QA"]);
+  await assert.rejects(sheetCall(purLead,"respond",{sheetId:sheet.id,expectedVersion:sheet.version,parameterId:custom.id,department:"PUR",status:"Feasible",remarks:"Unauthorized"}),/INPUT_DEPARTMENT_NOT_ASSIGNED/);
+  await assert.rejects(sheetCall(salLead,"assign_owner",{sheetId:sheet.id,expectedVersion:sheet.version,ownerId:mids[hwLead]}),/INPUT_OWNER_ASSIGNMENT_DENIED/);
+  const client=uuid(990);await db.query("INSERT INTO auth.users VALUES($1,'client.input@example.test')",[client]);await db.query("INSERT INTO organization_members(organization_id,user_id,role,display_name) VALUES($1,$2,'viewer','Client')",[org,client]);
+  await assert.rejects(asUser(client,()=>db.query("SELECT get_project_input_sheets()")),/INPUT_ACCESS_DENIED/);
+  await assert.rejects(asUser(null,()=>db.query("SELECT get_project_input_sheets()")),/INPUT_ACCESS_DENIED/);
 
 });

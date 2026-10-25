@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { PROJECT_INPUT_PARAMETERS } from "@/lib/project-inputs";
 import { useMemo, useState } from "react";
 import {
   FolderKanban,
@@ -37,16 +39,18 @@ export function ProjectAnalysisOverview({
   documents,
   onOpenProject,
   showReferenceScenarios = true,
+  renderProjectInputs,
 }: {
   projects: AnalysisRecord[];
   records: AnalysisRecord[];
   documents: AnalysisDocument[];
   onOpenProject?: ((project: AnalysisRecord) => void) | undefined;
   showReferenceScenarios?: boolean;
+  renderProjectInputs?: ((projectId:string)=>ReactNode) | undefined;
 }) {
   const [projectId, setProjectId] = useState("all");
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"analysis" | "intake" | "scenarios">("analysis");
+  const [tab, setTab] = useState<"analysis" | "intake" | "scenarios" | "inputs">("analysis");
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("all");
 
   const visible = projects.filter(
@@ -112,6 +116,7 @@ export function ProjectAnalysisOverview({
           >
             Enquiry inputs
           </button>
+          <button className={`rounded px-3 py-1.5 font-medium ${tab === "inputs" ? "bg-background shadow-xs" : "text-muted-foreground"}`} onClick={()=>setTab("inputs")}>Inputs & Feasibility</button>
           {showReferenceScenarios && <button
             className={`rounded px-3 py-1.5 font-medium flex items-center gap-1.5 transition-colors ${tab === "scenarios" ? "bg-background shadow-xs text-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => setTab("scenarios")}
@@ -146,7 +151,7 @@ export function ProjectAnalysisOverview({
         )}
       </ResponsiveFilterBar>
 
-      {tab === "scenarios" ? (
+      {tab === "inputs" ? (renderProjectInputs ? renderProjectInputs(projectId) : <section className="space-y-3"><h2 className="font-semibold">Project Input & Feasibility Template</h2><p className="text-xs text-muted-foreground">Sign in to the shared TEST workspace to save requirements and department assessments against an enquiry or project.</p><div className="overflow-auto rounded border"><table className="w-full text-xs"><thead><tr>{["Section / parameter","Input to confirm","Primary review","Supporting reviews","Dependent teams"].map(t=><th className="p-2 text-left" key={t}>{t}</th>)}</tr></thead><tbody>{PROJECT_INPUT_PARAMETERS.map(p=><tr key={p.id} className="border-t"><td className="p-2">{p.section}<strong className="block">{p.label}</strong></td><td className="p-2">{p.hint}</td><td className="p-2">{p.lead}</td><td className="p-2">{p.reviewers.join(", ")}</td><td className="p-2">{p.consumers.join(", ")}</td></tr>)}</tbody></table></div></section>) : tab === "scenarios" ? (
         <div className="space-y-6">
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-2">
             <div className="flex items-center justify-between">

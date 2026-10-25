@@ -1,0 +1,342 @@
+[
+  {
+    "id": "system_voltage",
+    "section": "Power & Electrical Protection",
+    "label": "System voltage",
+    "hint": "Nominal supply in V (12 / 24 / 48 V are examples, not defaults).",
+    "lead": "EHW",
+    "reviewers": ["QA"],
+    "consumers": ["PUR", "EMF"],
+    "required": true
+  },
+  {
+    "id": "operating_range",
+    "section": "Power & Electrical Protection",
+    "label": "Operating voltage range",
+    "hint": "Minimum / maximum V, crank and brownout conditions.",
+    "lead": "EHW",
+    "reviewers": ["QA"],
+    "consumers": ["FW", "PUR"],
+    "required": true
+  },
+  {
+    "id": "transient_noise",
+    "section": "Power & Electrical Protection",
+    "label": "Transient noise",
+    "hint": "Motors, pumps, switching loads and operating environment; source evidence.",
+    "lead": "EHW",
+    "reviewers": ["QA"],
+    "consumers": ["MECH", "PUR"],
+    "required": true
+  },
+  {
+    "id": "sleep_current",
+    "section": "Power & Electrical Protection",
+    "label": "Sleep current",
+    "hint": "Maximum target in mA and sleep / wake conditions.",
+    "lead": "EHW",
+    "reviewers": ["FW", "QA"],
+    "consumers": ["PUR", "SIT"],
+    "required": true
+  },
+  {
+    "id": "supply_protection",
+    "section": "Power & Electrical Protection",
+    "label": "Supply protection",
+    "hint": "Reverse polarity, overcurrent, overvoltage and load-dump requirement; applicable test specification.",
+    "lead": "EHW",
+    "reviewers": ["QA"],
+    "consumers": ["PUR", "EMF"],
+    "required": true
+  },
+  {
+    "id": "cellular",
+    "section": "Processing & Connectivity",
+    "label": "Cellular network",
+    "hint": "Network technology, bands, coverage and operator requirements.",
+    "lead": "EHW",
+    "reviewers": ["FW", "SW"],
+    "consumers": ["PUR", "QA"],
+    "required": true
+  },
+  {
+    "id": "region",
+    "section": "Processing & Connectivity",
+    "label": "Usage region",
+    "hint": "Country / region, deployment and roaming constraints.",
+    "lead": "SAL",
+    "reviewers": ["QA", "SIT"],
+    "consumers": ["EHW", "FW", "PUR"],
+    "required": true
+  },
+  {
+    "id": "sim",
+    "section": "Processing & Connectivity",
+    "label": "SIM type",
+    "hint": "Removable SIM / eSIM, provisioning and service owner.",
+    "lead": "EHW",
+    "reviewers": ["FW", "SIT"],
+    "consumers": ["PUR", "SW"],
+    "required": true
+  },
+  {
+    "id": "gnss",
+    "section": "Processing & Connectivity",
+    "label": "Satellite / GNSS",
+    "hint": "GPS / NavIC or other required constellations, antenna and accuracy.",
+    "lead": "EHW",
+    "reviewers": ["FW", "QA"],
+    "consumers": ["PUR", "MECH"],
+    "required": true
+  },
+  {
+    "id": "can",
+    "section": "Processing & Connectivity",
+    "label": "CAN lines",
+    "hint": "Count, Classic / FD, speed and purpose such as UDS / IVN.",
+    "lead": "EHW",
+    "reviewers": ["FW", "SW"],
+    "consumers": ["QA", "TST"],
+    "required": true
+  },
+  {
+    "id": "can_termination",
+    "section": "Processing & Connectivity",
+    "label": "CAN termination",
+    "hint": "Whether / where 120-ohm termination is required; topology.",
+    "lead": "EHW",
+    "reviewers": ["FW", "QA"],
+    "consumers": ["EMF", "TST"],
+    "required": true
+  },
+  {
+    "id": "storage",
+    "section": "Processing & Connectivity",
+    "label": "Storage / memory",
+    "hint": "Capacity, retention, endurance, offline data and SD / flash / eMMC constraints.",
+    "lead": "EHW",
+    "reviewers": ["FW", "SW"],
+    "consumers": ["PUR", "QA"],
+    "required": true
+  },
+  {
+    "id": "digital_inputs",
+    "section": "Physical Interfaces & Quantities",
+    "label": "Digital inputs",
+    "hint": "Count, signal levels, ignition / switches, thresholds and protection.",
+    "lead": "EHW",
+    "reviewers": ["FW"],
+    "consumers": ["QA", "TST"],
+    "required": true
+  },
+  {
+    "id": "digital_outputs",
+    "section": "Physical Interfaces & Quantities",
+    "label": "Digital outputs",
+    "hint": "Count, voltage, current, load type and safe state.",
+    "lead": "EHW",
+    "reviewers": ["FW", "QA"],
+    "consumers": ["PUR", "TST"],
+    "required": true
+  },
+  {
+    "id": "switching",
+    "section": "Physical Interfaces & Quantities",
+    "label": "High / low switching",
+    "hint": "Separate high-side and low-side counts, current and protection.",
+    "lead": "EHW",
+    "reviewers": ["FW", "QA"],
+    "consumers": ["PUR", "TST"],
+    "required": true
+  },
+  {
+    "id": "analog_inputs",
+    "section": "Physical Interfaces & Quantities",
+    "label": "Analog inputs",
+    "hint": "Count, sensor voltage / current ranges, accuracy and sampling.",
+    "lead": "EHW",
+    "reviewers": ["FW", "QA"],
+    "consumers": ["TST"],
+    "required": true
+  },
+  {
+    "id": "serial_ports",
+    "section": "Physical Interfaces & Quantities",
+    "label": "External serial ports",
+    "hint": "USB / UART / RS232 / RS485, counts, speed and connector / isolation.",
+    "lead": "EHW",
+    "reviewers": ["FW", "SW"],
+    "consumers": ["MECH", "QA"],
+    "required": true
+  },
+  {
+    "id": "ip",
+    "section": "Physical, Thermal & Compliance",
+    "label": "IP rating",
+    "hint": "Required ingress rating, installation conditions and test evidence.",
+    "lead": "MECH",
+    "reviewers": ["EHW", "QA"],
+    "consumers": ["PUR", "EMF"],
+    "required": true
+  },
+  {
+    "id": "dimensions",
+    "section": "Physical, Thermal & Compliance",
+    "label": "Dimensions & weight",
+    "hint": "Maximum L × W × H in mm, weight, mounting and connector clearance.",
+    "lead": "MECH",
+    "reviewers": ["EHW"],
+    "consumers": ["PUR", "EMF"],
+    "required": true
+  },
+  {
+    "id": "battery",
+    "section": "Physical, Thermal & Compliance",
+    "label": "Internal battery",
+    "hint": "Required or not; runtime in h, capacity, chemistry, charging and safety.",
+    "lead": "EHW",
+    "reviewers": ["MECH", "FW", "QA"],
+    "consumers": ["PUR"],
+    "required": true
+  },
+  {
+    "id": "certifications",
+    "section": "Physical, Thermal & Compliance",
+    "label": "Certifications",
+    "hint": "Client / region requirements and applicable editions; no certification is inferred.",
+    "lead": "QA",
+    "reviewers": ["SAL", "EHW"],
+    "consumers": ["MECH", "PUR"],
+    "required": true
+  },
+  {
+    "id": "temperature",
+    "section": "Physical, Thermal & Compliance",
+    "label": "Operating temperature",
+    "hint": "Explicit minimum / maximum °C, duty cycle and any required grade.",
+    "lead": "EHW",
+    "reviewers": ["MECH", "QA"],
+    "consumers": ["PUR", "TST"],
+    "required": true
+  },
+  {
+    "id": "use_case",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Use case & acceptance",
+    "hint": "Intended use, user / vehicle interfaces, acceptance criteria and exclusions.",
+    "lead": "SAL",
+    "reviewers": ["EHW", "SW", "QA"],
+    "consumers": ["SIT", "FIN"],
+    "required": true
+  },
+  {
+    "id": "quantity",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Volumes & build stages",
+    "hint": "PoC, pilot and production quantities; milestones do not authorize bulk release.",
+    "lead": "SAL",
+    "reviewers": ["PUR", "EMF"],
+    "consumers": ["FIN", "QA"],
+    "required": true
+  },
+  {
+    "id": "delivery",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Delivery milestones",
+    "hint": "Required dates, dependencies, installation and handover acceptance.",
+    "lead": "SAL",
+    "reviewers": ["PUR", "EMF", "SIT"],
+    "consumers": ["FIN", "QA"],
+    "required": true
+  },
+  {
+    "id": "cost",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Cost & commercial constraints",
+    "hint": "Target cost, currency and commercial constraints; restricted financial records remain separate.",
+    "lead": "SAL",
+    "reviewers": ["PUR", "FIN"],
+    "consumers": ["EHW", "MECH"],
+    "required": true
+  },
+  {
+    "id": "sourcing",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Sourcing & component availability",
+    "hint": "Lead times, lifecycle, approved alternates and supplier / part master references.",
+    "lead": "PUR",
+    "reviewers": ["EHW", "QA"],
+    "consumers": ["EMF", "FIN"],
+    "required": true
+  },
+  {
+    "id": "firmware",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Firmware & software integration",
+    "hint": "Protocols, API / HSI, update method, cybersecurity and ownership.",
+    "lead": "FW",
+    "reviewers": ["SW", "EHW", "SIT"],
+    "consumers": ["QA", "TST"],
+    "required": true
+  },
+  {
+    "id": "manufacturing",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Manufacturing readiness",
+    "hint": "Assembly process, capacity, tooling, traceability and process controls.",
+    "lead": "EMF",
+    "reviewers": ["MECH", "EHW", "QA"],
+    "consumers": ["PUR", "TST"],
+    "required": true
+  },
+  {
+    "id": "testing",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Validation & production testing",
+    "hint": "Acceptance limits, methods, sample size, jig / EOL needs and evidence references.",
+    "lead": "QA",
+    "reviewers": ["EHW", "FW", "TST"],
+    "consumers": ["EMF", "PUR"],
+    "required": true
+  },
+  {
+    "id": "data_security",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Data & infrastructure",
+    "hint": "Hosting, data access, retention, privacy, deployment and backup expectations.",
+    "lead": "SIT",
+    "reviewers": ["SW", "FW"],
+    "consumers": ["QA", "SAL"],
+    "required": true
+  },
+  {
+    "id": "training",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Training & support readiness",
+    "hint": "Required skills, installation / operator training, support handover and resource gaps.",
+    "lead": "HR",
+    "reviewers": ["SIT", "EMF"],
+    "consumers": ["SAL", "QA"],
+    "required": true
+  },
+  {
+    "id": "service",
+    "section": "Project, Delivery & Department Readiness",
+    "label": "Service & maintainability",
+    "hint": "Diagnostics, repair, spare parts, warranty assumptions and escalation.",
+    "lead": "SIT",
+    "reviewers": ["EHW", "FW", "PUR"],
+    "consumers": ["SAL", "QA"],
+    "required": true
+  },
+  {
+    "id": "special",
+    "section": "Special Requirements",
+    "label": "Special requirements & open questions",
+    "hint": "Additional requirements, unresolved assumptions and who must supply clarification.",
+    "lead": "SAL",
+    "reviewers": ["EHW", "QA"],
+    "consumers": ["PUR", "MECH", "FW", "SW"],
+    "required": true
+  }
+]

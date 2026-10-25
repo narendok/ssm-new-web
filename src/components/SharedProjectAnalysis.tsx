@@ -1,3 +1,4 @@
+import { ProjectInputsWorkspace } from "./ProjectInputsWorkspace";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn, createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
@@ -60,6 +61,7 @@ export function SharedProjectAnalysis({
       )}
       <ProjectAnalysisOverview
         showReferenceScenarios={false}
+        renderProjectInputs={projectId=><ProjectInputsWorkspace key={projectId} membership={membership} sources={serverRecords} initialSourceId={projectId}/>}
         projects={serverRecords.filter((r) => r.type === "Project")}
         records={serverRecords}
         documents={serverDocuments}
