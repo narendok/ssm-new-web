@@ -56,3 +56,11 @@ The migrations add guarded business storage and replace RPC bodies without delet
 Stage only the source/tests/migrations for this repair. Never add the unrelated screenshots, launch scripts, sample files, supabase/.temp or local credentials. Use normal Git pushes without rewriting history.
 
 Source implementation commits: web `149ff0c`; Android `81bb41e`. This follow-up changes verification notes only.
+
+## Live cloud follow-up — 25 October 2026
+
+Forward migration 20261025091500_harden_downstream_master_guards.sql deployed atomically through the existing Lovable SQL editor to backend rzskhndweihuczbdhoxk. Exact source commit: bf4b4da; normalized-LF SHA256: 2ba62202533d68c4bfabda2c5db5a444430ccab2fa61fd949422692edf958422. Recorded in supabase_migrations.schema_migrations and drizzle.__drizzle_migrations (created_at 1792919700000). Live rollback validation passed before commit.
+
+Narrow safety fixes before deployment restrict the direct scenario seeder and manifest visibility to Admin, require TEST-prefixed run IDs, retain policy history via create/update rather than DROP, and revoke direct authenticated manifest writes before granting SELECT. Full regression run: 155 tests passed; final policy/grant changes also passed the focused three transactional tests. No frontend or Android source was changed in this cloud follow-up.
+
+Live post-commit verification: migration recorded true; Admin fixture guard true; anonymous fixture execution denied true; direct authenticated manifest writes denied true. Existing memberships 27, operational records 4 and business items 1 preserved; fixture manifest entries 0. The fixture generator was NOT executed. This establishes deployment, not full portal workflow completion or device parity. Screenshot: lovable-guards-deployed-2026-10-25.png in the working folder.
