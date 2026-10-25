@@ -2340,7 +2340,16 @@ function Portal() {
     return "home";
   });
   const [clientDeliverablesFocus, setClientDeliverablesFocus] = useState(0);
-  const openDocuments = () => { setModal(null); if (persona.kind === "client") { setView("queue"); setClientDeliverablesFocus(value => value + 1); } else setView("vault"); };
+  const openDocuments = () => {
+    setModal(null);
+    setShowSharedTestWorkspace(false);
+    if (persona.kind === "client") {
+      setView("queue");
+      setClientDeliverablesFocus(value => value + 1);
+    } else {
+      setView("vault");
+    }
+  };
   const [signedOut, setSignedOut] = useState(() => {
     if (typeof window === "undefined") return false;
     if (mustPromptRole) return true;
@@ -2496,7 +2505,7 @@ function Portal() {
       | "records"
       | "deliverables" = "queue",
   ) => {
-    setRecordTypeFilter(null);
+    if (targetView !== "deliverables") setRecordTypeFilter(null);
     if (persona.kind === "client") {
       if (area !== "home") {
         announce("Access restricted under ISO 27001 §A.9: External OEM Clients are contained within the Client Delivery Portal.");
@@ -2622,6 +2631,19 @@ function Portal() {
       setView("project");
     }
     announce(`${areaById(deptId).name} department workspace active.`);
+  };
+  const navigateToRecordType = (filter: string) => {
+    if (persona.kind === "admin") {
+      handleAdminDepartmentChange("ehw", "deliverables");
+    } else {
+      setActiveArea("ehw");
+      setView("deliverables");
+      setSelectedId(null);
+      setSelectedAssignee(null);
+      setQueueStage(null);
+      setMobileMenu(false);
+    }
+    setRecordTypeFilter(filter);
   };
   const switchPersona = (next: Persona) => {
     setPersona(next);
@@ -3332,7 +3354,7 @@ function Portal() {
     <div className="border-b border-border bg-card px-4 py-2 text-foreground">
       <button type="button" onClick={() => setShowSharedTestWorkspace(false)} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-secondary">Back to portal</button>
     </div>
-    <SharedTestWorkspace initialTab={sharedTestInitialTab} membership={testMembership} adminDepartment={effectiveArea} onLogout={handleLogout} darkMode={darkMode} />
+    <SharedTestWorkspace initialTab={sharedTestInitialTab} standaloneDocuments={sharedTestInitialTab === "Documents"} membership={testMembership} adminDepartment={effectiveArea} onLogout={handleLogout} darkMode={darkMode} />
   </div>;
   if(testAuthError)return <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground"><section className="max-w-lg rounded-xl border border-border bg-card p-6"><h1 className="text-lg font-semibold">Session verification unavailable</h1><p role="alert" className="my-3 text-sm">{testAuthError}</p><p className="text-xs text-muted-foreground">No local examples are used for this authenticated account.</p><button className="mt-4 rounded border border-border px-3 py-2 text-sm" onClick={()=>window.location.reload()}>Retry</button></section></main>;
   if (signedOut) return <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground"><section className="max-w-lg rounded-xl border border-border bg-card p-6"><p className="text-[11px] font-bold uppercase text-primary">TEST ONLY</p><h1 className="mt-1 text-xl font-semibold">Signed out</h1><p className="mt-3 text-sm text-muted-foreground">Sign in with a provisioned TEST account. Browser-local demo records remain separate.</p><button type="button" disabled={!testAuthReady} onClick={() => setLoginModalOpen(true)} className="mt-5 rounded border border-border px-4 py-2 text-sm disabled:opacity-50">Sign in to TEST workspace</button></section><DepartmentLeadLoginModal isOpen={loginModalOpen} demoMode={false} testMode currentPersonaId="" onClose={() => setLoginModalOpen(false)} onLoginSuccess={handleDemoLogin} onTestLogin={handleTestLogin} onLogout={handleLogout} /></main>;
@@ -3346,6 +3368,7 @@ function Portal() {
           view={view}
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
+          onNavigateRecordType={navigateToRecordType}
           sidebarExpanded={sidebarExpanded}
           onToggleExpanded={() => setSidebarExpanded((value) => !value)}
           purchasingSubView={purchasingSubView}
@@ -3484,7 +3507,7 @@ function Portal() {
         <div className="mx-auto max-w-[1600px] space-y-6 px-6 py-6 pb-28 lg:pb-10">
           {persona.kind === "client" ? (
             <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
-          ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","vault","index"].includes(view) ? (
+          ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","index"].includes(view) ? (
  <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} initialProjectScope={view === "project" ? selectedProjectId : undefined} darkMode={darkMode} onLogout={handleLogout}/>
           ) : view === "departments" ? (
             <CommonDepartmentSearchView
@@ -3526,7 +3549,7 @@ function Portal() {
               initialTab={view === "records" ? "records" : view === "deliverables" ? "deliverables" : undefined}
               recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
               departmentCode={active.short} departmentName={active.name} lead={leadName}
-              records={leadRecords} projects={leadProjects} documents={scopedDocuments}
+              records={leadRecords} projects={leadProjects} documents={scopedDocuments} sharedTestMembership={testMembership ?? undefined}
               approvals={portal.approvals.map(approvalScope).filter(approval => approvalInDepartment(approval, activeDepartmentScope))}
               team={allTeamMembers.filter(member => member.area === activeDepartmentScope)}
               projectScope={projectScopes[active.id] ?? "all"}
@@ -3535,7 +3558,7 @@ function Portal() {
               onCreateRecord={() => handleOpenCreate(active.recordType, (projectScopes[active.id] ?? "all") === "all" ? undefined : { projectCode: projectScopes[active.id] as string, projectId: projectScopes[active.id] as string })}
               onCreateDeliverable={() => setDraftHubOpen(true)}
               onOpenRecord={id => { const record = leadRecords.find(item => item.id === id); if (record) openRecord(record); }}
-              onOpenDocument={id => { const document = scopedDocuments.find(item => item.id === id); if (document) openDocument(document); }}
+              onOpenDocument={id => { const document = scopedDocuments.find(item => item.id === id) || portal.documents.find(item => item.id === id); if (document) openDocument(document); }}
               onUpdateTask={(id,patch,action) => { void updateTask(id, { ...(patch.fields ? { fields: patch.fields } : {}), ...(patch.status ? { status: patch.status } : {}) }, action); }}
               onCreateTask={handleCreateCustomTask}
             />
@@ -4014,6 +4037,7 @@ function Portal() {
       {mobileMenu && (
         <MobileMenu
           recordTypeFilter={recordTypeFilter} onRecordTypeFilterChange={setRecordTypeFilter}
+          onNavigateRecordType={navigateToRecordType}
           onClose={() => setMobileMenu(false)}
           onNavigate={(area, targetView) => {
             navigate(area as AreaId, (targetView as any) ?? "queue");
@@ -7086,6 +7110,34 @@ function DepartmentWorkspace({
             onOpenNewTask={() => onCreate("Task")}
             onOpenAssetCatalog={() => onOpenAssetCatalog?.()}
             onConfigureModularAssets={(projectCode) => onConfigureModularAssets?.(projectCode)}
+            onSubmitIntake={async (data) => {
+              if (data.mode === "convert" && data.enquiryIdToConvert) {
+                await handleDispatchFeasibility(
+                  data.enquiryIdToConvert,
+                  data.dispatchFeasibility ? data.feasibilityDepts : ["SAL", "FIN"],
+                  data.targetClosureDate
+                );
+              } else {
+                await addRecord({
+                  area: "sales",
+                  type: data.mode === "enquiry" ? "Enquiry" : "Opportunity",
+                  title: data.title,
+                  notes: data.scopeSummary,
+                  status: data.dispatchFeasibility ? "In review" : "Draft",
+                  priority: "High",
+                  fields: {
+                    customer: data.customerName,
+                    customerCode: data.customerCode,
+                    contactPerson: data.spocName,
+                    email: data.spocEmail,
+                    targetVolume: data.targetVolume,
+                    targetDate: data.targetClosureDate,
+                    projectTrack: data.track,
+                  },
+                });
+              }
+            }}
+            onAddCustomer={handleCustomerCreated}
           />
           {renderCoordinationCenter()}
         </section>
@@ -11220,6 +11272,7 @@ function MobileMenu({
   view,
   recordTypeFilter,
   onRecordTypeFilterChange,
+  onNavigateRecordType,
   onOpenCustomerRegister,
   onOpenAi4tLifecycle,
   onOpenProjectAnalysis,
@@ -11253,6 +11306,7 @@ function MobileMenu({
   view: string;
   recordTypeFilter?: RoleAwareSidebarProps["recordTypeFilter"];
   onRecordTypeFilterChange?: RoleAwareSidebarProps["onRecordTypeFilterChange"];
+  onNavigateRecordType?: RoleAwareSidebarProps["onNavigateRecordType"];
   onOpenCustomerRegister?: (() => void) | undefined;
   onOpenAi4tLifecycle?: (() => void) | undefined;
   onOpenProjectAnalysis?: (() => void) | undefined;
@@ -11283,6 +11337,7 @@ function MobileMenu({
           activeArea={activeArea}
           view={view}
           recordTypeFilter={recordTypeFilter} onRecordTypeFilterChange={onRecordTypeFilterChange}
+          onNavigateRecordType={onNavigateRecordType}
           sidebarExpanded={true}
           isMobile={true}
           onCloseMobile={onClose}

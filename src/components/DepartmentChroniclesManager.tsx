@@ -100,10 +100,8 @@ export function DepartmentChroniclesManager({
     const deptInfo = DEPARTMENT_FULL_NAMES[dept] || { short: dept, full: dept, description: "" };
     if (matching.length > 0) {
       if (newRole === "") {
-        updated = chronicles.map((c) =>
-          c.stageIndex === stageIndex && c.departmentCode.trim().toUpperCase() === dept.trim().toUpperCase()
-            ? { ...c, raciRole: "I" as const }
-            : c
+        updated = chronicles.filter((c) =>
+          !(c.stageIndex === stageIndex && c.departmentCode.trim().toUpperCase() === dept.trim().toUpperCase())
         );
       } else {
         updated = chronicles.map((c) =>
@@ -387,7 +385,7 @@ export function DepartmentChroniclesManager({
             <div className="bg-muted/20 border-b border-border px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-1.5">
                 <span className="font-mono text-[10px] uppercase font-bold text-muted-foreground mr-1">Project Technical Scope:</span>
-                {(["all", "turnkey", "software", "firmware"] as const).map((track) => (
+                {(["all", "turnkey", "software", "firmware", "ready_made"] as const).map((track) => (
                   <button
                     key={track}
                     type="button"
@@ -404,7 +402,9 @@ export function DepartmentChroniclesManager({
                         ? "Turnkey Hardware & Embedded Track (Hardware, Firmware, Mechanical & Manufacturing)"
                         : track === "software"
                         ? "Pure Software Track (Cloud, Web, APIs, Mobile Apps — Skips PCB & SMT)"
-                        : "Firmware / IoT Device Track (Firmware on Pre-Certified / Reused HW)"
+                        : track === "firmware"
+                        ? "Firmware / IoT Device Track (Firmware on Pre-Certified / Reused HW)"
+                        : "Ready-Made Device Track (Off-the-shelf commercial selling — HW/FW Waived)"
                     }
                   >
                     {track === "all"

@@ -107,6 +107,7 @@ export type RoleAwareSidebarProps = {
   view: string;
   recordTypeFilter?: string | null | undefined;
   onRecordTypeFilterChange?: ((filter:string|null)=>void) | undefined;
+  onNavigateRecordType?: ((filter:string)=>void) | undefined;
   sidebarExpanded: boolean;
   onToggleExpanded: () => void;
   purchasingSubView?: "recordage" | "smart_bom" | "ingestion_gate" | "quotations" | "orders" | "suppliers" | undefined;
@@ -202,7 +203,7 @@ export function RoleAwareSidebar({
   persona,
   activeArea,
   view,
-  recordTypeFilter, onRecordTypeFilterChange,
+  recordTypeFilter, onRecordTypeFilterChange, onNavigateRecordType,
   sidebarExpanded,
   onToggleExpanded,
   purchasingSubView = "recordage",
@@ -786,7 +787,7 @@ export function RoleAwareSidebar({
     openTaskCounts,
     approvalCounts,
     purchasingSubView,
-    recordTypeFilter, onRecordTypeFilterChange,
+    recordTypeFilter, onRecordTypeFilterChange, onNavigateRecordType,
     onNavigate,
     onOpenApprovals,
   onOpenBudgets,
@@ -920,8 +921,8 @@ export function RoleAwareSidebar({
           return [
             {
               id: "ehw-hub",
-              label: "Hardware Engineering (HW_01-HW_37)",
-              shortLabel: "EHW Hub",
+              label: "Hardware Records",
+              shortLabel: "Records",
               icon: Wrench,
               isActive: activeArea === "ehw" && view === "queue",
               onClick: () => handleItemClick(() => onNavigate("ehw")),
@@ -932,7 +933,7 @@ export function RoleAwareSidebar({
               shortLabel: "PRS",
               icon: FileText,
               isActive: activeArea === "ehw" && view === "deliverables" && recordTypeFilter === "PRS",
-              onClick: () => handleItemClick(() => { onNavigate("ehw", "deliverables"); onRecordTypeFilterChange?.("PRS"); }),
+              onClick: () => handleItemClick(() => onNavigateRecordType ? onNavigateRecordType("PRS") : (onRecordTypeFilterChange?.("PRS"), onNavigate("ehw", "deliverables"))),
             },
             {
               id: "ehw-schematics",
@@ -940,7 +941,7 @@ export function RoleAwareSidebar({
               shortLabel: "Schematics",
               icon: Cpu,
               isActive: activeArea === "ehw" && view === "deliverables" && recordTypeFilter === "SCHEMATIC",
-              onClick: () => handleItemClick(() => { onNavigate("ehw", "deliverables"); onRecordTypeFilterChange?.("SCHEMATIC"); }),
+              onClick: () => handleItemClick(() => onNavigateRecordType ? onNavigateRecordType("SCHEMATIC") : (onRecordTypeFilterChange?.("SCHEMATIC"), onNavigate("ehw", "deliverables"))),
             },
             {
               id: "ehw-gerber",
@@ -948,7 +949,7 @@ export function RoleAwareSidebar({
               shortLabel: "DFMEA",
               icon: Layers,
               isActive: activeArea === "ehw" && view === "deliverables" && recordTypeFilter === "DFMEA",
-              onClick: () => handleItemClick(() => { onNavigate("ehw", "deliverables"); onRecordTypeFilterChange?.("DFMEA"); }),
+              onClick: () => handleItemClick(() => onNavigateRecordType ? onNavigateRecordType("DFMEA") : (onRecordTypeFilterChange?.("DFMEA"), onNavigate("ehw", "deliverables"))),
             },
           ];
         case "sales":
@@ -1216,14 +1217,6 @@ export function RoleAwareSidebar({
             onClick: () => handleItemClick(() => onNavigate(deptId as AreaId, "project")),
           },
           {
-            id: "dept-records",
-            label: "Department Records Register",
-            shortLabel: "Records",
-            icon: Layers,
-            isActive: view === "records",
-            onClick: () => handleItemClick(() => onNavigate(deptId as AreaId, "records")),
-          },
-          {
             id: "dept-drive",
             label: "Project Documents & Vault",
             shortLabel: "Vault",
@@ -1318,7 +1311,7 @@ export function RoleAwareSidebar({
     openTaskCounts,
     approvalCounts,
     purchasingSubView,
-    recordTypeFilter, onRecordTypeFilterChange,
+    recordTypeFilter, onRecordTypeFilterChange, onNavigateRecordType,
     onNavigate,
     onOpenApprovals,
   onOpenBudgets,

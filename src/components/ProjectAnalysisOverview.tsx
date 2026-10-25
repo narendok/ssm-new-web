@@ -20,10 +20,8 @@ import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/Responsiv
 import {
   projectAnalysis,
   savedLifecycleHistory,
-  enquiryAnalysis,
   analysisComplete,
   approvedInput,
-  inputState,
   type AnalysisRecord,
   type AnalysisDocument,
 } from "@/lib/project-analysis-data";
@@ -50,7 +48,7 @@ export function ProjectAnalysisOverview({
 }) {
   const [projectId, setProjectId] = useState("all");
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"analysis" | "intake" | "scenarios" | "inputs">("analysis");
+  const [tab, setTab] = useState<"analysis" | "scenarios" | "inputs">("inputs");
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("all");
 
   const visible = projects.filter(
@@ -61,16 +59,6 @@ export function ProjectAnalysisOverview({
   const analyses = useMemo(
     () => visible.map((p) => projectAnalysis(p, records, documents)),
     [visible, records, documents],
-  );
-  const enquiries = enquiryAnalysis(records).filter(
-    ({ enquiry: e }) =>
-      `${e.reference} ${e.title} ${e.fields["customer"] || ""}`
-        .toLowerCase()
-        .includes(query.toLowerCase()) &&
-      (projectId === "all" ||
-        [e.fields["projectId"], e.fields["projectCode"]].some(
-          (key) => key === projectId || key === projects.find((p) => p.id === projectId)?.reference,
-        )),
   );
   const dependencies = analyses.flatMap((a) =>
     a.dependencies.map((d) => ({ ...d, project: a.project.reference })),
@@ -100,7 +88,7 @@ export function ProjectAnalysisOverview({
         <div>
           <h1 className="text-xl font-semibold">Project Analysis</h1>
           <p className="text-xs text-muted-foreground">
-            Saved inputs, reviews and dependencies within your access.
+            One shared feasibility sheet per enquiry or project; overview tracks lifecycle progress and dependencies.
           </p>
         </div>
         <div className="flex gap-1 rounded-lg bg-muted p-1 text-xs">
@@ -108,15 +96,9 @@ export function ProjectAnalysisOverview({
             className={`rounded px-3 py-1.5 font-medium transition-colors ${tab === "analysis" ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => setTab("analysis")}
           >
-            Overview
+            Readiness & Dependencies
           </button>
-          <button
-            className={`rounded px-3 py-1.5 font-medium transition-colors ${tab === "intake" ? "bg-background shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setTab("intake")}
-          >
-            Enquiry inputs
-          </button>
-          <button className={`rounded px-3 py-1.5 font-medium ${tab === "inputs" ? "bg-background shadow-xs" : "text-muted-foreground"}`} onClick={()=>setTab("inputs")}>Inputs & Feasibility</button>
+          <button className={`rounded px-3 py-1.5 font-medium ${tab === "inputs" ? "bg-background shadow-xs" : "text-muted-foreground"}`} onClick={()=>setTab("inputs")}>Project Inputs & Feasibility</button>
           {showReferenceScenarios && <button
             className={`rounded px-3 py-1.5 font-medium flex items-center gap-1.5 transition-colors ${tab === "scenarios" ? "bg-background shadow-xs text-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => setTab("scenarios")}
@@ -127,29 +109,31 @@ export function ProjectAnalysisOverview({
         </div>
       </header>
 
-      <ResponsiveFilterBar label="Project analysis filters">
-        <div className="filter-search">
-          <Search />
-          <input
-            aria-label="Search project analysis"
-            placeholder="Search code, title or client…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        {tab !== "scenarios" && (
-          <CompactFilterSelect
-            label="Project"
-            icon={FolderKanban}
-            value={projectId}
-            onChange={setProjectId}
-            options={[
-              { value: "all", label: "All permitted projects" },
-              ...projects.map((p) => ({ value: p.id, label: `${p.reference} · ${p.title}` })),
-            ]}
-          />
-        )}
-      </ResponsiveFilterBar>
+      {tab !== "inputs" && (
+        <ResponsiveFilterBar label="Project analysis filters">
+          <div className="filter-search">
+            <Search />
+            <input
+              aria-label="Search project analysis"
+              placeholder="Search code, title or client…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+          {tab !== "scenarios" && (
+            <CompactFilterSelect
+              label="Project"
+              icon={FolderKanban}
+              value={projectId}
+              onChange={setProjectId}
+              options={[
+                { value: "all", label: "All permitted projects" },
+                ...projects.map((p) => ({ value: p.id, label: `${p.reference} · ${p.title}` })),
+              ]}
+            />
+          )}
+        </ResponsiveFilterBar>
+      )}
 
       {tab === "inputs" ? (renderProjectInputs ? renderProjectInputs(projectId) : <section className="space-y-3"><h2 className="font-semibold">Project Input & Feasibility Template</h2><p className="text-xs text-muted-foreground">Sign in to the shared TEST workspace to save requirements and department assessments against an enquiry or project.</p><div className="overflow-auto rounded border"><table className="w-full text-xs"><thead><tr>{["Section / parameter","Input to confirm","Primary review","Supporting reviews","Dependent teams"].map(t=><th className="p-2 text-left" key={t}>{t}</th>)}</tr></thead><tbody>{PROJECT_INPUT_PARAMETERS.map(p=><tr key={p.id} className="border-t"><td className="p-2">{p.section}<strong className="block">{p.label}</strong></td><td className="p-2">{p.hint}</td><td className="p-2">{p.lead}</td><td className="p-2">{p.reviewers.join(", ")}</td><td className="p-2">{p.consumers.join(", ")}</td></tr>)}</tbody></table></div></section>) : tab === "scenarios" ? (
         <div className="space-y-6">
@@ -423,74 +407,14 @@ export function ProjectAnalysisOverview({
             ))}
           </div>
         </div>
-      ) : tab === "intake" ? (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {!enquiries.length && (
-            <p className="text-sm text-muted-foreground">
-              No permitted enquiry inputs in this context.
-            </p>
-          )}
-          {enquiries.map(({ enquiry: e, responses }) => (
-            <article
-              key={e.id}
-              className="rounded-xl border border-border/70 bg-card p-4 text-xs space-y-3"
-            >
-              <div>
-                <p className="font-mono text-primary">{e.reference}</p>
-                <h2 className="text-sm font-semibold">{e.title}</h2>
-              </div>
-              <dl className="grid grid-cols-2 gap-3">
-                {[
-                  ["Client", e.fields["customer"]],
-                  ["Owner", e.fields["owner"]],
-                  ["Project", e.fields["projectId"] || e.fields["projectCode"] || (e.fields["outcome"] === "Declined" ? "Not applicable — declined before project" : "Not linked yet")],
-                  ["Target", e.fields["targetDate"]],
-                ].map(([k, v]) => (
-                  <div key={k}>
-                    <dt className="text-muted-foreground">{k}</dt>
-                    <dd>{v || "Not recorded"}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="whitespace-pre-wrap">
-                {e.fields["scope"] || e.notes || "Client requirements not recorded."}
-              </p>
-              <p>
-                Status: <strong>{e.fields["outcome"] || e.status}</strong>
-                {e.fields["terminalReason"] && <span className="block mt-1">Reason: {e.fields["terminalReason"]}</span>}
-              </p>
-              <div className="border-t border-border/50 pt-2 space-y-2">
-                <h3 className="font-medium">Department responses ({responses.length})</h3>
-                {responses.length ? (
-                  responses.map((r) => (
-                    <div key={r.id} className="rounded border border-border/50 p-2">
-                      <span className="font-mono">{r.reference}</span>
-                      <p>
-                        {r.title} · {inputState(r.status)}
-                      </p>
-                      <p className="text-muted-foreground whitespace-pre-wrap">
-                        {r.fields["scope"] ||
-                          r.fields["notes"] ||
-                          r.notes ||
-                          "No response details recorded"}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-muted-foreground">No linked department responses.</p>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {[
               ["Projects", analyses.length],
-              ["Approved input records", `${approved} / ${inputs.length}`],
+              ["Approved department records", `${approved} / ${inputs.length}`],
               ["Open dependencies", dependencies.filter((d) => d.blocked).length],
-              ["Departments with inputs", deptCodes.length],
+              ["Departments with records", deptCodes.length],
             ].map(([label, value]) => (
               <div key={label} className="rounded-xl border border-border/70 bg-card p-3">
                 <p className="text-xs text-muted-foreground">{label}</p>
@@ -503,7 +427,7 @@ export function ProjectAnalysisOverview({
             requirements remain unknown.
           </p>
           <section className="rounded-xl border border-border/70 bg-card p-4 space-y-3">
-            <h2 className="text-sm font-semibold">Department inputs</h2>
+            <h2 className="text-sm font-semibold">Department work records</h2>
             <div className="flex flex-wrap gap-2">
               {deptCodes.length ? (
                 deptCodes.map((code) => {
@@ -515,13 +439,13 @@ export function ProjectAnalysisOverview({
                       <strong>{code}</strong>
                       <p>
                         {rows.reduce((n, d) => n + d.approved, 0)} /{" "}
-                        {rows.reduce((n, d) => n + d.total, 0)} approved input records
+                        {rows.reduce((n, d) => n + d.total, 0)} approved records
                       </p>
                     </div>
                   );
                 })
               ) : (
-                <p className="text-xs text-muted-foreground">No department inputs recorded.</p>
+                <p className="text-xs text-muted-foreground">No department work records recorded.</p>
               )}
             </div>
           </section>
@@ -616,29 +540,6 @@ export function ProjectAnalysisOverview({
                     <p className="font-medium">{step.name} · {step.status.replaceAll("_"," ")}</p><p className="text-muted-foreground">{step.startDate}{step.endDate ? ` → ${step.endDate}` : ""}</p><p>{step.remark}</p>{step.nextAction && <p>Next: {step.nextAction}</p>}
                   </div>)}</div>
                 </details>}
-                <details>
-                  <summary className="cursor-pointer font-medium">
-                    Inputs & reviews ({a.inputs.length})
-                  </summary>
-                  <div className="mt-2 space-y-2">
-                    {a.inputs.map((r) => (
-                      <div key={r.id} className="border border-border/50 rounded p-2">
-                        <p>
-                          {r.reference} · {r.title}
-                        </p>
-                        <p className="text-muted-foreground">
-                          {r.area?.toUpperCase() ||
-                            r.fields["department"] ||
-                            "Department not recorded"}{" "}
-                          · {inputState(r.status)}
-                        </p>
-                        <p className="whitespace-pre-wrap">
-                          {r.fields["scope"] || r.fields["nextAction"] || r.notes || ""}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </details>
                 {onOpenProject && (
                   <button
                     className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 hover:bg-secondary"

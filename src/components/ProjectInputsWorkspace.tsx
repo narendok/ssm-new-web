@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { changedInputDrafts, readInputDraft } from "@/lib/project-input-drafts";
 import { useServerFn } from "@tanstack/react-start";
 import { getProjectInputs, mutateProjectInputs } from "@/lib/project-inputs.functions";
 import { getSharedTestWorkspace } from "@/lib/shared-test.functions";
@@ -44,6 +45,23 @@ type Action =
   | "link_project"
   | "assign_owner"
   | "add_parameter";
+function inferScope(source: AnalysisRecord | undefined): "Client" | "Internal" {
+  if (!source) return "Client";
+  if (source.type === "Enquiry" || source.type === "Opportunity") return "Client";
+  const marker = [
+    source.fields["projectType"],
+    source.fields["projectOrigin"],
+    source.fields["scopeType"],
+    source.fields["classification"],
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (/internal|in.house|company project/.test(marker)) return "Internal";
+  if (/client|external/.test(marker)) return "Client";
+  if ([source.fields["customer"], source.fields["customerName"], source.fields["client"], source.fields["clientName"]].some((value) => Boolean(value?.trim()))) return "Client";
+  return "Client";
+}
 export function ProjectInputsWorkspace({
   membership,
   sources,
@@ -56,6 +74,7 @@ export function ProjectInputsWorkspace({
   const load = useServerFn(getProjectInputs),
     write = useServerFn(mutateProjectInputs),
     loadMembers = useServerFn(getSharedTestWorkspace);
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["project-inputs", membership.organizationId, membership.membershipId],
     queryFn: () => load(),
@@ -68,19 +87,14 @@ export function ProjectInputsWorkspace({
   const [sourceId, setSourceId] = useState(
     initialSourceId && initialSourceId !== "all" ? initialSourceId : "",
   );
-  const [scope, setScope] = useState<"Client" | "Internal">("Client"),
+  const [scope, setScope] = useState<"Client" | "Internal">(() =>
+    inferScope(sources.find((source) => source.id === initialSourceId)),
+  ),
     [filter, setFilter] = useState(""),
-    [section, setSection] = useState("All"),
-    [mine, setMine] = useState(false);
+    [section, setSection] = useState("All");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
-  const [editing, setEditing] = useState<{
-      id: string;
-      mode: "input" | "respond";
-      version: number;
-    } | null>(null),
-    [draft, setDraft] = useState<Record<string, string>>({});
   const [newQuestion, setNewQuestion] = useState(false),
     [questionLabel, setQuestionLabel] = useState(""),
     [questionHint, setQuestionHint] = useState(""),
@@ -88,8 +102,42 @@ export function ProjectInputsWorkspace({
   const [reason, setReason] = useState(""),
     [clientEvidence, setClientEvidence] = useState(""),
     [linkId, setLinkId] = useState("");
+  const [departmentView, setDepartmentView] = useState("All");
+  const [quickInputsDraft, setQuickInputsDraft] = useState<Record<string, { input: string; source: string; finalValue: string }>>({});
+  const [inputDraftDirty, setInputDraftDirty] = useState(false);
+  const [autoSavePaused, setAutoSavePaused] = useState(false);
+  const [draftRecoveryError, setDraftRecoveryError] = useState("");
+  const inputEditGeneration = useRef(0);
+  const inputSaveInFlight = useRef(false);
+  const [assessmentDrafts, setAssessmentDrafts] = useState<Record<string, ParameterResponse>>({});
+  const [assessmentDraftDirty, setAssessmentDraftDirty] = useState(false);
+  const inputDraftSheetId = useRef("");
+  const assessmentDraftScope = useRef("");
   const sheet = query.data?.sheets.find(
     (s) => s.source_record_id === sourceId || s.project_record_id === sourceId,
+  );
+  const savedSheets = (query.data?.sheets || []).filter((saved) => {
+    if (sourceId && saved.source_record_id !== sourceId && saved.project_record_id !== sourceId) return false;
+    const source = sources.find((record) => record.id === saved.source_record_id || record.id === saved.project_record_id);
+    return !filter || `${source?.reference || ""} ${source?.title || ""} ${saved.scope} ${saved.status}`.toLowerCase().includes(filter.toLowerCase());
+  });
+  const availableSources = sources.filter((record) => {
+    if (!["Project", "Enquiry", "Opportunity"].includes(record.type)) return false;
+    if (sourceId && record.id !== sourceId) return false;
+    const exists = (query.data?.sheets || []).some((saved) => saved.source_record_id === record.id || saved.project_record_id === record.id);
+    return !exists && `${record.reference} ${record.title} ${record.fields["customer"] || record.fields["client"] || ""}`.toLowerCase().includes(filter.toLowerCase());
+  });
+  const portfolioTotals = savedSheets.reduce(
+    (totals, saved) => {
+      const readiness = inputReadiness(saved.parameter_values, [...PROJECT_INPUT_PARAMETERS, ...saved.custom_parameters]);
+      return {
+        ready: totals.ready + readiness.ready,
+        missing: totals.missing + readiness.missing,
+        pending: totals.pending + readiness.pending,
+        blocked: totals.blocked + readiness.blocked,
+      };
+    },
+    { ready: 0, missing: 0, pending: 0, blocked: 0 },
   );
   const inputOwner =
     !!sheet && (sheet.input_owner_id === membership.membershipId || membership.role === "admin");
@@ -100,7 +148,73 @@ export function ProjectInputsWorkspace({
       (m) => m.department_id === people.data?.departments.find((d) => d.code === dept)?.id,
     ) || [];
   const parameters = [...PROJECT_INPUT_PARAMETERS, ...(sheet?.custom_parameters || [])];
+  const draftKey = sheet ? `ssm:input-draft:${membership.organizationId}:${membership.membershipId}:${sheet.id}` : "";
+  const draftMatchesSheet = !!sheet && inputDraftSheetId.current === sheet.id;
+  useEffect(() => {
+    if (!sheet) {
+      inputDraftSheetId.current = "";
+      setQuickInputsDraft({});
+      return;
+    }
+    const sheetChanged = inputDraftSheetId.current !== sheet.id;
+    if (!sheetChanged && inputDraftDirty) return;
+    inputDraftSheetId.current = sheet.id;
+    const savedValues = Object.fromEntries(parameters.map((p) => {
+      const value = sheet.parameter_values[p.id] || emptyRow;
+      return [p.id, { input: value.input || "", source: value.source || "", finalValue: value.finalValue || "" }];
+    }));
+    let recovered: ReturnType<typeof readInputDraft>;
+    if (sheetChanged && editable && inputOwner) {
+      try { recovered = readInputDraft(localStorage.getItem(draftKey), sheet.revision); } catch { /* Storage can be disabled. */ }
+    }
+    const recoveredValues = Object.fromEntries(Object.entries(recovered?.values || {}).filter(([id]) => parameters.some(p => p.id === id)));
+    setQuickInputsDraft({ ...savedValues, ...recoveredValues });
+    if (sheetChanged) {
+      setInputDraftDirty(Object.keys(changedInputDrafts(recoveredValues, savedValues)).length > 0);
+      setAutoSavePaused(!!recovered && recovered.version !== sheet.version);
+      setError(recovered && recovered.version !== sheet.version ? "Recovered your draft, but the shared sheet has changed. Review the values and click Save inputs before autosave resumes." : "");
+      setDraftRecoveryError("");
+    }
+  }, [sheet?.id, sheet?.version, inputDraftDirty]);
+  useEffect(() => {
+    if (!sheet || !draftKey || !draftMatchesSheet || !inputDraftDirty || !editable || !inputOwner) return;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ revision: sheet.revision, version: sheet.version, values: changedInputDrafts(quickInputsDraft, sheet.parameter_values) }));
+      setDraftRecoveryError("");
+    } catch { setDraftRecoveryError("Browser recovery storage is unavailable. Keep this page open until the shared save succeeds."); }
+  }, [quickInputsDraft, inputDraftDirty, sheet?.id, sheet?.version, editable, inputOwner, draftKey, draftMatchesSheet]);
+  useEffect(() => {
+    if (!inputDraftDirty || !editable || !inputOwner || busy || autoSavePaused || !draftMatchesSheet) return;
+    const timer = window.setTimeout(() => { void saveQuickInputs(); }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [quickInputsDraft, inputDraftDirty, editable, inputOwner, busy, autoSavePaused, sheet?.id, draftMatchesSheet]);
+  useEffect(() => {
+    if (!sheet) {
+      assessmentDraftScope.current = "";
+      setAssessmentDrafts({});
+      return;
+    }
+    const currentScope = `${sheet.id}:${dept}`;
+    const scopeChanged = assessmentDraftScope.current !== currentScope;
+    if (!scopeChanged && assessmentDraftDirty) return;
+    assessmentDraftScope.current = currentScope;
+    setAssessmentDrafts(Object.fromEntries(parameters
+      .filter((p) => p.lead === dept || p.reviewers.includes(dept))
+      .map((p) => [p.id, { ...emptyResponse, ...sheet.parameter_values[p.id]?.responses[dept] }])));
+    if (scopeChanged) setAssessmentDraftDirty(false);
+  }, [sheet?.id, sheet?.version, dept, assessmentDraftDirty]);
   const stats = inputReadiness(sheet?.parameter_values || {}, parameters);
+  const changedInputCount = sheet ? parameters.filter((p) => {
+    const before = sheet.parameter_values[p.id] || emptyRow;
+    const after = quickInputsDraft[p.id] || { input: "", source: "", finalValue: "" };
+    return before.input !== after.input || before.source !== after.source || before.finalValue !== after.finalValue;
+  }).length : 0;
+  const assessmentParameters = parameters.filter((p) => p.lead === dept || p.reviewers.includes(dept));
+  const changedAssessmentCount = sheet ? assessmentParameters.filter((p) => {
+    const before = sheet.parameter_values[p.id]?.responses[dept] || emptyResponse;
+    const after = assessmentDrafts[p.id] || emptyResponse;
+    return before.status !== after.status || before.remarks !== after.remarks || before.evidence !== after.evidence || before.ownerId !== after.ownerId || before.dueDate !== after.dueDate;
+  }).length : 0;
   async function save(
     action: Action,
     payload: Record<string, string | number | boolean | null>,
@@ -133,28 +247,112 @@ export function ProjectInputsWorkspace({
   const rows = parameters.filter(
     (p) =>
       (section === "All" || p.section === section) &&
-      (!mine || [p.lead, ...p.reviewers, ...p.consumers].includes(dept)) &&
+      (departmentView === "All" || [p.lead, ...p.reviewers, ...p.consumers].includes(departmentView)) &&
       `${p.label} ${p.hint} ${sheet?.parameter_values[p.id]?.input || ""}`
         .toLowerCase()
         .includes(filter.toLowerCase()),
   );
-  function edit(id: string, mode: "input" | "respond") {
-    if (!sheet) return;
-    const row = sheet.parameter_values[id] || emptyRow;
-    setDraft(
-      mode === "input"
-        ? {
-            input: row.input,
-            source: row.source,
-            finalValue: row.finalValue,
-            required: String(row.required !== false),
-            exclusionReason:
-              (row as ParameterValue & { exclusionReason?: string }).exclusionReason || "",
-          }
-        : { ...emptyResponse, ...row.responses[dept] },
-    );
+  const departments = [...new Set(parameters.flatMap((p) => [p.lead, ...p.reviewers, ...p.consumers]))].sort();
+  async function saveQuickInputs() {
+    if (!sheet || busy || inputSaveInFlight.current || !editable || !inputOwner) return;
+    inputSaveInFlight.current = true;
+    const savingSheetId = sheet.id;
+    const savingDraftKey = draftKey;
+    const generation = inputEditGeneration.current;
+    const snapshot = quickInputsDraft;
+    setBusy(true);
     setError("");
-    setEditing({ id, mode, version: sheet.version });
+    setNotice("");
+    let currentVersion = sheet.version;
+    let saved = 0;
+    const changed = parameters.filter((p) => {
+      const before = sheet.parameter_values[p.id] || emptyRow;
+      const after = snapshot[p.id] || { input: "", source: "", finalValue: "" };
+      return before.input !== after.input || before.source !== after.source || before.finalValue !== after.finalValue;
+    });
+    try {
+      for (const p of changed) {
+        const current = sheet.parameter_values[p.id] || emptyRow;
+        const result = await write({ data: { action: "input", payload: {
+          sheetId: sheet.id,
+          expectedVersion: currentVersion,
+          parameterId: p.id,
+          input: snapshot[p.id]?.input || "",
+          source: snapshot[p.id]?.source || "",
+          finalValue: snapshot[p.id]?.finalValue || "",
+          required: current.required !== false,
+          exclusionReason: (current as ParameterValue & { exclusionReason?: string }).exclusionReason || "",
+        } } });
+        currentVersion = result.version;
+        queryClient.setQueryData<import("@/lib/project-inputs.functions").InputSnapshot>(["project-inputs", membership.organizationId, membership.membershipId], current => current ? { ...current, sheets: current.sheets.map(existing => existing.id === result.id ? result : existing) } : current);
+        saved += 1;
+      }
+      await query.refetch();
+      if (inputDraftSheetId.current === savingSheetId) {
+        if (inputEditGeneration.current === generation) {
+          setInputDraftDirty(false);
+          try { localStorage.removeItem(savingDraftKey); } catch { /* Server save is already confirmed. */ }
+        }
+        setAutoSavePaused(false);
+        setNotice(changed.length ? `Saved ${saved} parameter${saved === 1 ? "" : "s"} to the shared project sheet.` : "No input changes to save.");
+      }
+    } catch (e) {
+      await query.refetch();
+      if (inputDraftSheetId.current === savingSheetId) {
+      setAutoSavePaused(true);
+      setError(saved
+        ? `Saved ${saved} of ${changed.length} changed parameters. The remaining inputs are still in this editor; refresh the sheet before retrying. ${e instanceof Error ? e.message : "Save failed."}`
+        : e instanceof Error ? e.message : "Save failed. Your input is preserved.");
+      }
+    } finally {
+      inputSaveInFlight.current = false;
+      setBusy(false);
+    }
+  }
+  async function saveDepartmentInputs() {
+    if (!sheet || busy) return;
+    const changed = assessmentParameters.filter((p) => {
+      const before = sheet.parameter_values[p.id]?.responses[dept] || emptyResponse;
+      const after = assessmentDrafts[p.id] || emptyResponse;
+      return before.status !== after.status || before.remarks !== after.remarks || before.evidence !== after.evidence || before.ownerId !== after.ownerId || before.dueDate !== after.dueDate;
+    });
+    if (changed.some((p) => !(assessmentDrafts[p.id]?.remarks || "").trim())) {
+      setError("Add an assessment or review comment to each changed parameter before saving.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    let currentVersion = sheet.version;
+    let saved = 0;
+    try {
+      for (const p of changed) {
+        const response = assessmentDrafts[p.id] || emptyResponse;
+        const result = await write({ data: { action: "respond", payload: {
+          sheetId: sheet.id,
+          expectedVersion: currentVersion,
+          parameterId: p.id,
+          department: dept,
+          status: response.status,
+          remarks: response.remarks,
+          evidence: response.evidence,
+          ownerId: response.ownerId,
+          dueDate: response.dueDate,
+        } } });
+        currentVersion = result.version;
+        saved += 1;
+      }
+      await query.refetch();
+      setAssessmentDraftDirty(false);
+      setNotice(changed.length ? `Saved ${saved} ${dept} department assessment${saved === 1 ? "" : "s"}.` : "No department assessment changes to save.");
+    } catch (e) {
+      await query.refetch();
+      setError(saved
+        ? `Saved ${saved} of ${changed.length} department updates. Remaining edits are still here; refresh the shared sheet before retrying. ${e instanceof Error ? e.message : "Save failed."}`
+        : e instanceof Error ? e.message : "Department update failed. Your edits are preserved.");
+    } finally {
+      setBusy(false);
+    }
   }
   return (
     <section className="space-y-4" aria-label="Project inputs and feasibility">
@@ -175,6 +373,7 @@ export function ProjectInputsWorkspace({
             value={sourceId}
             onChange={(id) => {
               setSourceId(id);
+              setScope(inferScope(sources.find((source) => source.id === id)));
               setError("");
               setNotice("");
             }}
@@ -205,27 +404,96 @@ export function ProjectInputsWorkspace({
         </p>
       )}
       {!sheet && sourceId && !query.isPending && !query.error && (
-        <div className="rounded-lg border p-3 space-y-2">
-          <p className="text-xs">
-            No sheet exists for this entry. The source owner or Admin can start it without creating
-            a new project.
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3">
+          <div>
+            <p className="text-xs font-medium">No input sheet yet</p>
+            <p className="text-[11px] text-muted-foreground">Start the shared feasibility sheet for this entry.</p>
+          </div>
           {["admin", "department_lead"].includes(membership.role) && (
-            <div className="flex gap-2">
-              <select
-                aria-label="Project origin"
-                className={field}
-                value={scope}
-                onChange={(e) => setScope(e.target.value as typeof scope)}
-              >
-                <option>Client</option>
-                <option>Internal</option>
-              </select>
-              <Button disabled={busy} onClick={() => void save("create", { sourceId, scope })}>
-                Start input sheet
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground">Scope</span>
+              <div className="inline-flex rounded-md bg-muted p-0.5" role="group" aria-label="Project scope">
+                {(["Client", "Internal"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={scope === value}
+                    className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${scope === value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => setScope(value)}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+              <Button size="sm" disabled={busy} onClick={() => void save("create", { sourceId, scope })}>
+                Start sheet
               </Button>
             </div>
           )}
+        </div>
+      )}
+      {!sourceId && !query.isPending && !query.error && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold">All permitted project inputs</h3>
+              <p className="text-xs text-muted-foreground">One shared sheet holds requirements and every assigned department’s assessment.</p>
+            </div>
+            <span className="text-xs text-muted-foreground">{savedSheets.length} saved {savedSheets.length === 1 ? "sheet" : "sheets"}</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+              ["Ready", portfolioTotals.ready],
+              ["Missing", portfolioTotals.missing],
+              ["Reviews due", portfolioTotals.pending],
+              ["Blocked", portfolioTotals.blocked],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border border-border/60 bg-card px-3 py-2">
+                <p className="text-[11px] text-muted-foreground">{label}</p>
+                <p className="text-base font-semibold leading-tight">{value}</p>
+              </div>
+            ))}
+          </div>
+          {savedSheets.length ? (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {savedSheets.map((saved) => {
+                const source = sources.find((record) => record.id === saved.source_record_id || record.id === saved.project_record_id);
+                const readiness = inputReadiness(saved.parameter_values, [...PROJECT_INPUT_PARAMETERS, ...saved.custom_parameters]);
+                return (
+                  <article key={saved.id} className="rounded-lg border border-border/70 bg-card p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-xs text-primary">{source?.reference || "Enquiry / project"}</p>
+                        <h4 className="truncate text-sm font-medium">{source?.title || "Source record is not in this view"}</h4>
+                      </div>
+                      <span className="shrink-0 rounded border px-2 py-0.5 text-[10px]">{saved.status}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{saved.scope} · Rev {String(saved.revision).padStart(2, "0")} · {readiness.ready}/{readiness.total} ready · {readiness.pending} awaiting review · {readiness.missing} missing</p>
+                  <Button size="sm" variant="outline" onClick={() => { setSourceId(saved.project_record_id || saved.source_record_id); setFilter(""); }}>Open shared sheet</Button>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">No saved input sheets are available yet. Select an enquiry, opportunity or project below to start one. Nothing needs to be entered twice.</p>
+          )}
+          <details className="rounded-lg border border-border/70 bg-card">
+            <summary className="cursor-pointer px-3 py-2 text-xs font-medium">Enquiries and projects without a sheet ({availableSources.length})</summary>
+            <div className="space-y-2 border-t border-border/50 p-3">
+              <input className={field} aria-label="Search enquiries and projects" placeholder="Search code, title or client…" value={filter} onChange={(event) => setFilter(event.target.value)} />
+              {availableSources.length ? availableSources.map((record) => (
+                <div key={record.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-border/50 p-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-xs text-primary">{record.reference}</p>
+                    <p className="truncate text-xs">{record.title} <span className="text-muted-foreground">· {record.type}</span></p>
+                  </div>
+                  <Button size="sm" variant="outline" disabled={busy || !["admin", "department_lead"].includes(membership.role)} onClick={() => { setSourceId(record.id); setScope(inferScope(record)); setFilter(""); }}>
+                    Select to start
+                  </Button>
+                </div>
+              )) : <p className="text-xs text-muted-foreground">No unstarted records match this search.</p>}
+            </div>
+          </details>
         </div>
       )}
       {sheet && (
@@ -253,9 +521,10 @@ export function ProjectInputsWorkspace({
               </select>
             </label>
           )}
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
             {[
               ["Missing inputs", stats.missing],
+              ["Awaiting agreed value", stats.awaitingAgreement],
               ["Blocked / conditional", stats.blocked],
               ["Awaiting department review", stats.pending],
               ["Ready parameters", stats.ready],
@@ -266,6 +535,7 @@ export function ProjectInputsWorkspace({
               </div>
             ))}
           </div>
+          {editable && inputOwner && <p role="status" className="text-[11px] text-muted-foreground">{busy ? "Saving to shared project inputs…" : autoSavePaused ? "Automatic save paused — review your draft and use Save inputs to retry." : inputDraftDirty ? "Draft changed · automatically saving after you finish typing…" : "Inputs saved · draft autosave is on."}{draftRecoveryError ? ` ${draftRecoveryError}` : ""}</p>}
           <div className="flex flex-wrap gap-2">
             <input
               aria-label="Search input parameters"
@@ -284,19 +554,123 @@ export function ProjectInputsWorkspace({
                 <option key={s}>{s}</option>
               ))}
             </select>
-            <label className="flex items-center gap-1 text-xs">
-              <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
-              My responsibilities
-            </label>
+            <select aria-label="Department responsibility" className="max-w-56 rounded border bg-background p-2 text-xs" value={departmentView} onChange={(event) => setDepartmentView(event.target.value)}>
+              <option value="All">All departments · {parameters.length}</option>
+              {departments.map((code) => {
+                const count = parameters.filter((p) => [p.lead, ...p.reviewers, ...p.consumers].includes(code)).length;
+                const leadCount = parameters.filter((p) => p.lead === code).length;
+                const reviewCount = parameters.filter((p) => p.reviewers.includes(code)).length;
+                return <option key={code} value={code}>{code} · {count} related ({leadCount} lead / {reviewCount} review)</option>;
+              })}
+            </select>
+            {editable && inputOwner && (
+              <Button size="sm" disabled={busy || changedInputCount === 0} onClick={() => void saveQuickInputs()}>
+                {busy ? "Saving…" : `Save inputs${changedInputCount ? ` · ${changedInputCount}` : ""}`}
+              </Button>
+            )}
+            {editable && membership.role === "department_lead" && changedAssessmentCount > 0 && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => void saveDepartmentInputs()}>
+                {busy ? "Saving…" : `Save ${dept} updates · ${changedAssessmentCount}`}
+              </Button>
+            )}
           </div>
+          {departmentView !== "All" && <p className="text-[11px] text-muted-foreground">Showing {rows.length} shared parameters related to {departmentView}; lead fields are editable only by that primary department, while assigned reviewers can add review questions.</p>}
+          <div className="space-y-2">
+            {rows.map((p) => {
+              const row = sheet.parameter_values[p.id] || emptyRow;
+              const assigned = [p.lead, ...p.reviewers];
+              const inputDraft = quickInputsDraft[p.id] || { input: "", source: "", finalValue: "" };
+              return (
+                <article key={p.id} className="rounded-lg border border-border/70 bg-card p-3">
+                  <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-muted-foreground">{p.section} · Primary {p.lead}{p.reviewers.length ? ` · Review ${p.reviewers.join(", ")}` : ""}</p>
+                      <h3 className="text-sm font-semibold">{p.label}</h3>
+                      <p className="text-[11px] text-muted-foreground">{p.hint}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="rounded border px-2 py-0.5 text-[10px]">{row.required === false ? "Not required" : row.finalValue ? "Value agreed" : row.input?.trim() ? "Input received · awaiting agreement" : "Input pending"}</span>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <label className="grid gap-1 text-[10px] text-muted-foreground">Project / client input
+                      <textarea rows={2} className={field} placeholder="Value or information supplied / requested" disabled={!editable || !inputOwner} value={inputDraft.input}
+                        onChange={(event) => { inputEditGeneration.current++; setInputDraftDirty(true); setQuickInputsDraft((prev) => ({ ...prev, [p.id]: { ...inputDraft, input: event.target.value } })); }} />
+                    </label>
+                    <label className="grid gap-1 text-[10px] text-muted-foreground">Source / client comment
+                      <textarea rows={2} className={field} placeholder="Form, email, meeting note or context" disabled={!editable || !inputOwner} value={inputDraft.source}
+                        onChange={(event) => { inputEditGeneration.current++; setInputDraftDirty(true); setQuickInputsDraft((prev) => ({ ...prev, [p.id]: { ...inputDraft, source: event.target.value } })); }} />
+                    </label>
+                    <label className="grid gap-1 text-[10px] text-muted-foreground">Agreed value
+                      <textarea rows={2} className={field} placeholder="Final agreed value, when known" disabled={!editable || !inputOwner} value={inputDraft.finalValue}
+                        onChange={(event) => { inputEditGeneration.current++; setInputDraftDirty(true); setQuickInputsDraft((prev) => ({ ...prev, [p.id]: { ...inputDraft, finalValue: event.target.value } })); }} />
+                    </label>
+                  </div>
+                  {row.required === false && <p className="mt-1 text-[10px] text-muted-foreground">Excluded: {(row as ParameterValue & { exclusionReason?: string }).exclusionReason}</p>}
+                  <details className="mt-2 rounded border border-border/50 px-2.5 py-2">
+                    <summary className="cursor-pointer text-[11px] font-medium">Department inputs & comments · {assigned.length} responsible / review teams</summary>
+                    <p className="mt-2 text-[10px] text-muted-foreground">Dependent teams: {p.consumers.join(", ") || "None listed"}</p>
+                    {assigned.map((code) => {
+                      const response = row.responses[code];
+                      const canAssess = code === dept && p.lead === dept && editable && membership.role === "department_lead";
+                      const canQuery = code === dept && p.lead !== dept && p.reviewers.includes(dept) && editable && membership.role === "department_lead";
+                      const responseDraft = assessmentDrafts[p.id] || { ...emptyResponse, ...response };
+                      return (
+                        <div className="mt-2 border-t border-border/50 pt-2" key={code}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-medium">{code} · {response?.status || "Awaiting assessment"}{response?.reviewedBy ? " · Reviewed" : ""}{p.lead === code ? " · Primary owner" : " · Reviewer"}</p>
+                            {canAssess && response && response.status !== "Pending" && !response.reviewedBy && <Button size="sm" variant="outline" disabled={busy} onClick={() => void save("review_response", { parameterId: p.id, department: dept })}>Confirm department review</Button>}
+                          </div>
+                          {canAssess && <div className="mt-2 grid gap-2 md:grid-cols-2">
+                            <label className="grid gap-1 text-[10px] text-muted-foreground">Department feasibility
+                              <select className={field} value={responseDraft.status} onChange={(event) => { setAssessmentDraftDirty(true); setAssessmentDrafts((prev) => ({ ...prev, [p.id]: { ...responseDraft, status: event.target.value as ParameterResponse["status"] } })); }}>
+                                {FEASIBILITY_STATES.map((value) => <option key={value}>{value}</option>)}
+                              </select>
+                            </label>
+                            <label className="grid gap-1 text-[10px] text-muted-foreground">Responsible member
+                              <select className={field} value={responseDraft.ownerId} onChange={(event) => { setAssessmentDraftDirty(true); setAssessmentDrafts((prev) => ({ ...prev, [p.id]: { ...responseDraft, ownerId: event.target.value } })); }}>
+                                <option value="">Unassigned</option>
+                                {members.map((member) => <option value={member.id} key={member.id}>{member.display_name}</option>)}
+                              </select>
+                            </label>
+                          </div>}
+                          {(canAssess || canQuery) ? <div className="mt-2 grid gap-2 md:grid-cols-2">
+                            <label className="grid gap-1 text-[10px] text-muted-foreground">{canAssess ? "Department assessment / comments" : "Review question / comment"}
+                              <textarea rows={2} className={field} placeholder={canAssess ? "Feasibility, constraints, assumptions or clarification needed" : "Ask the responsible department a question or add a review comment"} value={responseDraft.remarks} onChange={(event) => { setAssessmentDraftDirty(true); setAssessmentDrafts((prev) => ({ ...prev, [p.id]: { ...responseDraft, remarks: event.target.value } })); }} />
+                            </label>
+                            <div className="grid gap-2">
+                              <label className="grid gap-1 text-[10px] text-muted-foreground">Evidence reference
+                                <textarea rows={1} className={field} placeholder="Document or record reference" value={responseDraft.evidence} onChange={(event) => { setAssessmentDraftDirty(true); setAssessmentDrafts((prev) => ({ ...prev, [p.id]: { ...responseDraft, evidence: event.target.value } })); }} />
+                              </label>
+                              {canAssess && <label className="grid gap-1 text-[10px] text-muted-foreground">Target date
+                                <input type="date" className={field} value={responseDraft.dueDate} onChange={(event) => { setAssessmentDraftDirty(true); setAssessmentDrafts((prev) => ({ ...prev, [p.id]: { ...responseDraft, dueDate: event.target.value } })); }} />
+                              </label>}
+                            </div>
+                          </div> : <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{response?.remarks || "No department comment yet."}</p>}
+                          {response?.ownerId && <p className="mt-1 text-[10px]">Owner: {people.data?.members.find((m) => m.id === response.ownerId)?.display_name || "Assigned member"}</p>}
+                          {response?.dueDate && <p className="text-[10px]">Target: {response.dueDate}</p>}
+                        </div>
+                      );
+                    })}
+                  </details>
+                </article>
+              );
+            })}
+            {!rows.length && <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">No parameters match these filters.</p>}
+            <div className="flex justify-end gap-2">
+              {editable && membership.role === "department_lead" && changedAssessmentCount > 0 && <Button variant="outline" disabled={busy} onClick={() => void saveDepartmentInputs()}>{busy ? "Saving…" : `Save ${dept} assessments · ${changedAssessmentCount}`}</Button>}
+              {editable && inputOwner && <Button disabled={busy || changedInputCount === 0} onClick={() => void saveQuickInputs()}>{busy ? "Saving…" : `Save project inputs${changedInputCount ? ` · ${changedInputCount} changed` : ""}`}</Button>}
+            </div>
+          </div>
+          {/* Previous table view replaced by the inline shared input cards.
           <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-xs">
               <thead className="bg-muted/40 text-left">
                 <tr>
                   {[
                     "Parameter / responsibility",
-                    "Required input & source",
-                    "Department responses",
+                    "Project / client input & source",
+                    "Department assessment & comments",
                     "Final agreed value",
                     "Details",
                   ].map((t) => (
@@ -334,9 +708,10 @@ export function ProjectInputsWorkspace({
                       </td>
                       <td className="p-3 min-w-48 space-y-1">
                         {assigned.map((d) => (
-                          <p key={d}>
+                          <p key={d} className="mb-1">
                             {d}: {row.responses[d]?.status || "Pending"}
                             {row.responses[d]?.reviewedBy ? " · Reviewed" : ""}
+                            {row.responses[d]?.remarks && <span className="block max-w-64 truncate text-muted-foreground">{row.responses[d]?.remarks}</span>}
                           </p>
                         ))}
                       </td>
@@ -418,6 +793,7 @@ export function ProjectInputsWorkspace({
               </tbody>
             </table>
           </div>
+          */}
           {editable && inputOwner && sheet.scope === "Client" && (
             <div className="rounded border p-3 space-y-2">
               <p className="text-xs font-medium">Client approval evidence reference</p>
@@ -591,160 +967,6 @@ export function ProjectInputsWorkspace({
               </p>
             )}
             <Button disabled={busy}>Add question</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
-      <Dialog
-        open={!!editing}
-        onOpenChange={(open) => {
-          if (!open && !busy) setEditing(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{parameters.find((p) => p.id === editing?.id)?.label}</DialogTitle>
-            <DialogDescription>
-              {editing?.mode === "input"
-                ? "Record source facts and the proposed final requirement. Changes invalidate prior department review confirmations."
-                : `${dept} assessment only. Other departments' responses are preserved.`}
-            </DialogDescription>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!editing) return;
-              const payload: Record<string, string | number | boolean | null> = {
-                parameterId: editing.id,
-                ...draft,
-              };
-              if (editing.mode === "input") payload["required"] = draft["required"] !== "false";
-              else payload["department"] = dept;
-              if (await save(editing.mode, payload, editing.version)) setEditing(null);
-            }}
-          >
-            {(editing?.mode === "input"
-              ? [
-                  ["input", "Required input"],
-                  ["source", "Source reference"],
-                  ["finalValue", "Final agreed value"],
-                ]
-              : [
-                  ["remarks", "Technical remarks / constraints / clarification needed"],
-                  ["evidence", "Evidence reference"],
-                ]
-            ).map(([key, label]) => (
-              <label key={key} className="grid gap-1 text-xs">
-                {label}
-                <textarea
-                  className={field}
-                  required={key === "remarks"}
-                  value={draft[key!] || ""}
-                  onChange={(e) => setDraft((d) => ({ ...d, [key!]: e.target.value }))}
-                />
-              </label>
-            ))}
-            <SharedMasterSelect
-              label="Use an existing source or evidence"
-              value=""
-              options={[
-                ...(people.data?.records || []).map((r) => ({
-                  value: `record:${r.id}`,
-                  label: `${r.reference} · ${r.title}`,
-                })),
-                ...(people.data?.documents || []).map((d) => ({
-                  value: `document:${d.id}`,
-                  label: `Document · ${d.title}`,
-                })),
-              ]}
-              onChange={(value) =>
-                setDraft((current) => ({
-                  ...current,
-                  [editing?.mode === "input" ? "source" : "evidence"]: value,
-                }))
-              }
-            />
-            {editing?.mode === "input" ? (
-              <>
-                <label className="flex gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={draft["required"] !== "false"}
-                    onChange={(e) =>
-                      setDraft((d) => ({ ...d, required: String(e.target.checked) }))
-                    }
-                  />
-                  Required for this project
-                </label>
-                {draft["required"] === "false" && (
-                  <label className="grid gap-1 text-xs">
-                    Exclusion reason
-                    <textarea
-                      required
-                      minLength={5}
-                      className={field}
-                      value={draft["exclusionReason"] || ""}
-                      onChange={(e) => setDraft((d) => ({ ...d, exclusionReason: e.target.value }))}
-                    />
-                  </label>
-                )}
-              </>
-            ) : (
-              <>
-                <label className="grid gap-1 text-xs">
-                  Feasibility
-                  <select
-                    className={field}
-                    value={draft["status"] || "Pending"}
-                    onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value }))}
-                  >
-                    {FEASIBILITY_STATES.map((s) => (
-                      <option key={s}>{s}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-1 text-xs">
-                  Responsible member
-                  <select
-                    className={field}
-                    value={draft["ownerId"] || ""}
-                    onChange={(e) => setDraft((d) => ({ ...d, ownerId: e.target.value }))}
-                  >
-                    <option value="">Unassigned</option>
-                    {members.map((m) => (
-                      <option value={m.id} key={m.id}>
-                        {m.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-1 text-xs">
-                  Target date
-                  <input
-                    type="date"
-                    className={field}
-                    value={draft["dueDate"] || ""}
-                    onChange={(e) => setDraft((d) => ({ ...d, dueDate: e.target.value }))}
-                  />
-                </label>
-              </>
-            )}
-            {error && (
-              <p role="alert" className="text-xs text-destructive">
-                {error}
-              </p>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={() => setEditing(null)}
-              >
-                Cancel
-              </Button>
-              <Button disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
-            </div>
           </form>
         </DialogContent>
       </Dialog>

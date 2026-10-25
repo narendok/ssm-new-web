@@ -61,7 +61,7 @@ export function SharedOperationalWorkspace({
   });
   const [scope, setScope] = useState(initialProjectScope || "all"),
     [department, setDepartment] = useState(""),
-    [advanced, setAdvanced] = useState<Register | null>(view === "vault" ? "Documents" : null);
+    [advanced, setAdvanced] = useState<Register | null>(null);
   const [form, setForm] = useState<"create_project" | "create_record" | "update_record" | null>(
       null,
     ),

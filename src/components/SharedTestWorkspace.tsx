@@ -31,12 +31,14 @@ export function SharedTestWorkspace({
   darkMode,
   initialTab = "Tasks",
   adminDepartment,
+  standaloneDocuments = false,
 }: {
   adminDepartment?: string;
   membership: TestMembership;
   onLogout: () => Promise<void>;
   darkMode: boolean;
   initialTab?: Tab | undefined;
+  standaloneDocuments?: boolean;
 }) {
   const load = useServerFn(getSharedTestWorkspace),
     write = useServerFn(mutateSharedTestWorkspace),
@@ -68,6 +70,8 @@ export function SharedTestWorkspace({
     [file, setFile] = useState<File | null>(null),
     [revision, setRevision] = useState("01");
   const [stageTarget, setStageTarget] = useState<Record<string, string>>({});
+  const [documentSearch, setDocumentSearch] = useState("");
+  const [documentProjectFilter, setDocumentProjectFilter] = useState("all");
   const pendingRequest = useRef<{ signature: string; id: string } | null>(null);
   async function run(action: SharedTestAction, payload: Record<string, SharedJson>) {
     setBusy(true);
@@ -137,6 +141,22 @@ export function SharedTestWorkspace({
   const generatedReference = generatedReferenceBase ? referenceAtRevision(generatedReferenceBase, selectedRevision) : "";
   const projects = data.records.filter((r) => r.record_type === "Project");
   const projectName = (id: string | null) => projects.find((p) => p.id === id)?.reference || "—";
+  const documentProject = (document: SharedTestSnapshot["documents"][number]) => {
+    const record = data.records.find((item) => item.id === document.record_id);
+    const projectRefs = [
+      document.record_id || "",
+      ...["projectId", "project_id", "linkedProjectId", "projectCode", "projectReference", "project"]
+        .map((key) => String(record?.fields[key] || "")),
+    ];
+    return projects.find((project) => projectRefs.includes(project.id) || projectRefs.includes(project.reference));
+  };
+  const visibleDocuments = data.documents.filter((document) => {
+    const project = documentProject(document);
+    const record = data.records.find((item) => item.id === document.record_id);
+    const searchText = `${document.title} ${document.document_type} ${project?.reference || ""} ${project?.title || ""} ${record?.reference || ""} ${record?.title || ""}`.toLowerCase();
+    return (documentProjectFilter === "all" || project?.id === documentProjectFilter) &&
+      (!documentSearch.trim() || searchText.includes(documentSearch.trim().toLowerCase()));
+  });
   const deptName = (id: string | null) => data.departments.find((d) => d.id === id)?.code || "—";
   const memberName = (id: string | null) =>
     data.members.find((m) => m.id === id)?.display_name || "Unassigned";
@@ -292,19 +312,21 @@ export function SharedTestWorkspace({
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
           <p className="text-xs font-bold uppercase text-primary">
-            Shared TEST · {actor.organization_name}
+            {standaloneDocuments ? "Project Documents & Vault" : `Shared TEST · ${actor.organization_name}`}
           </p>
           <h1 className="text-lg font-semibold">
-            {actor.display_name} · {actor.department_code || "Administration"}
+            {standaloneDocuments ? "Department-accessible project files" : `${actor.display_name} · ${actor.department_code || "Administration"}`}
           </h1>
           <p className="text-xs text-muted-foreground">
-            {actor.role} · Updated {date(data.serverTime)} · refreshes every 10 seconds
+            {standaloneDocuments
+              ? "Browse controlled document records and their original files and revisions. Access follows your department permissions."
+              : `${actor.role} · Updated ${date(data.serverTime)} · refreshes every 10 seconds`}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs">
+          {!standaloneDocuments && <span className="text-xs">
             Inbox: {pending.length} reviews · {myTasks.length} assigned tasks
-          </span>
+          </span>}
           <button
             className={button}
             disabled={busy || query.isFetching}
@@ -318,7 +340,7 @@ export function SharedTestWorkspace({
         </div>
       </header>
       <div className="mx-auto max-w-[1600px] space-y-4 p-4 md:p-6">
-        <nav aria-label="Shared TEST sections" className="flex flex-wrap gap-2">
+        {!standaloneDocuments && <nav aria-label="Shared TEST sections" className="flex flex-wrap gap-2">
           {tabs.map((item) => (
             <button
               key={item}
@@ -333,7 +355,7 @@ export function SharedTestWorkspace({
               {item === "Approvals" ? ` (${pending.length})` : ""}
             </button>
           ))}
-        </nav>
+        </nav>}
         {error && (
           <p
             role="alert"
@@ -727,8 +749,8 @@ export function SharedTestWorkspace({
             )}
             {tab === "Documents" && (
               <section className="space-y-3">
-                <div className="flex justify-between">
-                  <h2 className="font-semibold">Private document register</h2>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="font-semibold">Controlled document register</h2>
                   <button
                     className={button}
                     disabled={!data.records.some((r) => r.department_id === ownDepartment || admin)}
@@ -743,23 +765,33 @@ export function SharedTestWorkspace({
                     Register document
                   </button>
                 </div>
-                {data.documents.map((d) => (
+                <div className="flex flex-wrap gap-2">
+                  <input aria-label="Search documents" className={`${input} min-w-48 flex-1`} placeholder="Search title, type or project…" value={documentSearch} onChange={(event) => setDocumentSearch(event.target.value)} />
+                  <select aria-label="Filter documents by project" className={`${input} min-w-48`} value={documentProjectFilter} onChange={(event) => setDocumentProjectFilter(event.target.value)}>
+                    <option value="all">All permitted projects</option>
+                    {projects.map((project) => <option key={project.id} value={project.id}>{project.reference} · {project.title}</option>)}
+                  </select>
+                </div>
+                {visibleDocuments.map((d) => {
+                  const record = data.records.find((item) => item.id === d.record_id);
+                  const project = documentProject(d);
+                  return (
                   <article key={d.id} className="flex justify-between rounded border p-4">
                     <div>
                       <p>{d.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        {d.document_type} · {deptName(d.department_id)}
+                        {d.document_type} · {deptName(d.department_id)} · {project ? `${project.reference} · ${project.title}` : record ? `${record.reference} · ${record.title}` : "Common / unlinked"}
                       </p>
                     </div>
                     <button className={button} disabled={busy} onClick={() => void openFiles(d)}>
                       Files & revisions
                     </button>
                   </article>
-                ))}
-                {!data.documents.length && (
+                  );
+                })}
+                {!visibleDocuments.length && (
                   <p className="text-sm text-muted-foreground">
-                    No shared document metadata in this scope. Browser-local attachments have not
-                    been imported.
+                    {data.documents.length ? "No shared documents match these filters." : "No shared document metadata in this scope. Browser-local attachments have not been imported."}
                   </p>
                 )}
               </section>

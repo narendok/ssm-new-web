@@ -1,0 +1,6 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript');
+const m={exports:{}};new Function('module','exports',ts.transpileModule(fs.readFileSync('src/lib/project-input-drafts.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(m,m.exports);
+const {changedInputDrafts,readInputDraft}=m.exports;
+const blank={input:'',source:'',finalValue:''};
+test('draft recovery stores changed rows only, including intentional clearing of an input',()=>{assert.deepEqual(changedInputDrafts({voltage:{...blank,input:'12'},can:blank},{voltage:blank,can:blank}),{voltage:{...blank,input:'12'}});assert.deepEqual(changedInputDrafts({voltage:blank},{voltage:{...blank,input:'12'}}),{voltage:blank});});
+test('drafts round-trip without inventing final values, and reject corrupt or different-revision recovery data',()=>{const values={voltage:{...blank,input:'12'}};const raw=JSON.stringify({revision:1,version:4,values});assert.deepEqual(readInputDraft(raw,1),{version:4,values});assert.equal(readInputDraft(raw,2),undefined);assert.equal(readInputDraft('{broken',1),undefined);assert.equal(readInputDraft(JSON.stringify({revision:1,version:4,values:{voltage:{input:12}}}),1),undefined);});

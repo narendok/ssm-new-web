@@ -277,6 +277,32 @@ export const DEFAULT_DEPARTMENT_CHRONICLES: DepartmentChronicle[] = [
     description: "Resource planning, operator IPC-A-610 competency baseline, and organizational readiness requirements frozen.",
     status: "Approved",
   },
+  {
+    id: "CHRON-S3-SAL-BRO",
+    stageIndex: 2,
+    stageName: "Stage 3: Requirement Freeze & Commercial Lock",
+    departmentCode: "SAL",
+    title: "Product Marketing Brochure (Ready-Made Track)",
+    deliverableCode: "SAL-BRO-01",
+    documentType: "BRO",
+    raciRole: "R",
+    mandatory: false,
+    description: "Commercial sales brochure, pitch deck, and customer presentation for off-the-shelf ready-made device sales.",
+    status: "Approved",
+  },
+  {
+    id: "CHRON-S3-SAL-TDS",
+    stageIndex: 2,
+    stageName: "Stage 3: Requirement Freeze & Commercial Lock",
+    departmentCode: "SAL",
+    title: "Technical Data Sheet (Ready-Made Track)",
+    deliverableCode: "SAL-TDS-01",
+    documentType: "TDS",
+    raciRole: "R",
+    mandatory: false,
+    description: "Ready-made device physical, electrical, and pinout technical data sheet for customer integration.",
+    status: "Approved",
+  },
 
   // Stage 4: Design & Development PoC
   {
@@ -563,8 +589,8 @@ export function deriveRaciMatrixFromChronicles(
           row[dept] = "";
         }
       } else {
-        // Baseline fallback for unassigned departments in this stage
-        row[dept] = dept === "SAL" ? (sIdx === 0 ? "A" : "I") : "I";
+        // Unassigned departments have no role in this stage
+        row[dept] = "";
       }
     }
 
@@ -603,7 +629,7 @@ export function deriveDeliverablesForStage(
     }));
 }
 
-export type ProjectTrack = "turnkey" | "software" | "firmware";
+export type ProjectTrack = "turnkey" | "software" | "firmware" | "ready_made";
 
 export const DEPARTMENT_FULL_NAMES: Record<
   string,
@@ -701,6 +727,8 @@ export function getTechnicalDepartmentsForTrack(track: ProjectTrack): string[] {
       return ["SW"];
     case "firmware":
       return ["FW", "EHW"];
+    case "ready_made":
+      return []; // Off-the-shelf catalog products require zero technical engineering development
     case "turnkey":
     default:
       return ["EHW", "FW", "SW", "MECH", "PUR", "EMF", "MMF"];

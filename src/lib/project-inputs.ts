@@ -52,13 +52,15 @@ export function inputReadiness(
   parameters: InputParameter[] = PROJECT_INPUT_PARAMETERS,
 ) {
   let missing = 0,
+    awaitingAgreement = 0,
     blocked = 0,
     pending = 0,
     ready = 0;
   for (const p of parameters) {
     const row = values[p.id];
     if (!row || row.required !== false || (row.exclusionReason || "").trim().length < 5) {
-      if (!row?.input?.trim() || !row?.finalValue?.trim()) missing++;
+      if (!row?.input?.trim()) missing++;
+      else if (!row?.finalValue?.trim()) awaitingAgreement++;
       const responses = [p.lead, ...p.reviewers].map((d) => row?.responses?.[d]);
       if (
         responses.some(
@@ -78,5 +80,5 @@ export function inputReadiness(
       else if (row?.input?.trim() && row.finalValue?.trim()) ready++;
     }
   }
-  return { missing, blocked, pending, ready, total: parameters.length };
+  return { missing, awaitingAgreement, blocked, pending, ready, total: parameters.length };
 }

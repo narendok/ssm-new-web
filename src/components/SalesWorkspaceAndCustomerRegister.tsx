@@ -30,6 +30,7 @@ import {
   Code2,
   Box,
   Zap,
+  ArrowRight,
 } from "lucide-react";
 import {
   defaultPcbCatalog,
@@ -1239,6 +1240,476 @@ export function CustomerRegisterModal({
   );
 }
 
+
+// ============================================================================
+// Unified Sales Intake Modal: Enquiry, Opportunity, Convert & Feasibility
+// ============================================================================
+export function UnifiedSalesIntakeModal({
+  isOpen,
+  initialMode = "opportunity",
+  initialEnquiryId,
+  customers,
+  enquiries,
+  onClose,
+  onSubmitIntake,
+  onAddCustomer,
+}: {
+  isOpen: boolean;
+  initialMode?: "enquiry" | "opportunity" | "convert";
+  initialEnquiryId?: string;
+  customers: CustomerRecord[];
+  enquiries: EnquiryOpportunity[];
+  onClose: () => void;
+  onSubmitIntake: (data: {
+    mode: "enquiry" | "opportunity" | "convert";
+    title: string;
+    customerCode: string;
+    customerName: string;
+    spocName: string;
+    spocEmail: string;
+    scopeSummary: string;
+    targetVolume: string;
+    targetClosureDate: string;
+    track: "turnkey" | "software" | "ready_made";
+    dispatchFeasibility: boolean;
+    feasibilityDepts: string[];
+    enquiryIdToConvert?: string;
+  }) => Promise<void>;
+  onAddCustomer?: (customer: CustomerRecord) => void;
+}) {
+  const [mode, setMode] = useState<"enquiry" | "opportunity" | "convert">(initialMode);
+  const [selectedEnquiryId, setSelectedEnquiryId] = useState(initialEnquiryId || "");
+  const [selectedCustomerCode, setSelectedCustomerCode] = useState(customers[0]?.code || "");
+  const [title, setTitle] = useState("");
+  const [scopeSummary, setScopeSummary] = useState("");
+  const [targetVolume, setTargetVolume] = useState("50,000 Units / Year");
+  const [targetClosureDate, setTargetClosureDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().split("T")[0];
+  });
+  const [track, setTrack] = useState<"turnkey" | "software" | "ready_made">("turnkey");
+  const [dispatchFeasibility, setDispatchFeasibility] = useState(true);
+  const [selectedDepts, setSelectedDepts] = useState<string[]>([
+    "EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF", "FIN", "SIT", "HR"
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [inlineCustomerOpen, setInlineCustomerOpen] = useState(false);
+
+  // Sync when initialMode or initialEnquiryId changes
+  useEffect(() => {
+    setMode(initialMode);
+    if (initialEnquiryId) {
+      setSelectedEnquiryId(initialEnquiryId);
+      const enq = enquiries.find((e) => e.id === initialEnquiryId);
+      if (enq) {
+        setSelectedCustomerCode(enq.customerCode);
+        setTitle(enq.title.startsWith("Opportunity") ? enq.title : "Opportunity · " + enq.title);
+        setScopeSummary(enq.scopeSummary);
+        setTargetVolume(enq.targetVolume || "50,000 Units / Year");
+        if (enq.targetClosureDate) setTargetClosureDate(enq.targetClosureDate);
+      }
+    }
+  }, [initialMode, initialEnquiryId, enquiries]);
+
+  // Handle convert selection
+  const handleSelectEnquiryToConvert = (id: string) => {
+    setSelectedEnquiryId(id);
+    const enq = enquiries.find((e) => e.id === id);
+    if (enq) {
+      setSelectedCustomerCode(enq.customerCode);
+      setTitle(enq.title.startsWith("Opportunity") ? enq.title : "Opportunity · " + enq.title);
+      setScopeSummary(enq.scopeSummary);
+      setTargetVolume(enq.targetVolume || "50,000 Units / Year");
+      if (enq.targetClosureDate) setTargetClosureDate(enq.targetClosureDate);
+    }
+  };
+
+  const currentCustomer = customers.find((c) => c.code === selectedCustomerCode) || customers[0];
+
+  const allDepts = [
+    { code: "EHW", label: "EHW · Hardware", desc: "Schematics, PCB layout & TVS" },
+    { code: "FW", label: "FW · Firmware", desc: "Drivers, RTOS kernel & CAN" },
+    { code: "SW", label: "SW · Software", desc: "Cloud APIs, Web & Mobile App" },
+    { code: "MECH", label: "MECH · Mechanical", desc: "IP67 Enclosure & 3D CAD" },
+    { code: "PUR", label: "PUR · Purchasing", desc: "BOM Sourcing & ASL Lead Times" },
+    { code: "QA", label: "QA · Quality", desc: "DVP&R matrix & APQP testing" },
+    { code: "EMF", label: "EMF · Electronics Mfg", desc: "SMT line & box-build assembly" },
+    { code: "MMF", label: "MMF · Mechanical Mfg", desc: "Tooling & metal fabrication" },
+    { code: "FIN", label: "FIN · Finance", desc: "Cost targets & gross margin" },
+    { code: "SIT", label: "SIT · Service/IT", desc: "Cloud infra & field telemetry" },
+    { code: "HR", label: "HR · HR/Ops", desc: "Staffing & IPC competency" },
+  ];
+
+  const handleToggleDept = (code: string) => {
+    setSelectedDepts((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+    );
+  };
+
+  const handleSelectAllDepts = () => {
+    setSelectedDepts(allDepts.map((d) => d.code));
+  };
+
+  const handleDeselectAllDepts = () => {
+    setSelectedDepts([]);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return setError("Title / Subject is required.");
+    if (!currentCustomer) return setError("Please select or add a customer.");
+    if (mode === "convert" && !selectedEnquiryId) return setError("Please select an enquiry to convert.");
+    if ((mode === "opportunity" || mode === "convert") && dispatchFeasibility && selectedDepts.length === 0) {
+      return setError("Please select at least one department for feasibility analysis or uncheck dispatch.");
+    }
+
+    setSubmitting(true);
+    setError("");
+    try {
+      await onSubmitIntake({
+        mode,
+        title: title.trim(),
+        customerCode: currentCustomer.code,
+        customerName: currentCustomer.name,
+        spocName: currentCustomer.spocName,
+        spocEmail: currentCustomer.spocEmail,
+        scopeSummary: scopeSummary.trim(),
+        targetVolume: targetVolume.trim(),
+        targetClosureDate,
+        track,
+        dispatchFeasibility: mode !== "enquiry" && dispatchFeasibility,
+        feasibilityDepts: selectedDepts,
+        enquiryIdToConvert: mode === "convert" ? selectedEnquiryId : undefined,
+      });
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || "Failed to submit. Please check inputs and retry.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-card shadow-xl overflow-hidden animate-in fade-in zoom-in-95">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-border bg-muted/40 px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <Sparkles className="size-4 text-primary" />
+            <h2 className="text-base font-bold text-foreground">
+              {mode === "enquiry"
+                ? "Add Sales Customer Enquiry"
+                : mode === "opportunity"
+                ? "Add Commercial Opportunity & Feasibility"
+                : "Convert Enquiry to Opportunity"}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Segmented Mode Selector Tabs */}
+        <div className="grid grid-cols-3 border-b border-border bg-muted/20 p-1 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setMode("enquiry")}
+            className={"rounded-md py-1.5 transition " + (mode === "enquiry" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}
+          >
+            + Add Enquiry
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("opportunity")}
+            className={"rounded-md py-1.5 transition " + (mode === "opportunity" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}
+          >
+            + Add Opportunity
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("convert");
+              if (!selectedEnquiryId && enquiries.some(e => e.kind === "enquiry")) {
+                handleSelectEnquiryToConvert(enquiries.find(e => e.kind === "enquiry")!.id);
+              }
+            }}
+            className={"rounded-md py-1.5 transition " + (mode === "convert" ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground")}
+          >
+            Convert Enquiry → Opportunity
+          </button>
+        </div>
+
+        {/* Modal Form Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+          {error && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive">
+              {error}
+            </div>
+          )}
+
+          {/* If Convert mode: Select which enquiry to convert */}
+          {mode === "convert" && (
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-1.5">
+              <label className="block font-semibold text-foreground">
+                Select Pending Enquiry to Convert:
+              </label>
+              <select
+                aria-label="Select enquiry to convert"
+                value={selectedEnquiryId}
+                onChange={(e) => handleSelectEnquiryToConvert(e.target.value)}
+                className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground"
+              >
+                <option value="">Choose an existing enquiry…</option>
+                {enquiries
+                  .filter((e) => e.kind === "enquiry")
+                  .map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.reference} · {e.title} ({e.customerName})
+                    </option>
+                  ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground">
+                Converting an enquiry automatically generates an active Opportunity and sets up multi-department feasibility review.
+              </p>
+            </div>
+          )}
+
+          {/* Customer Selection Row */}
+          <div className="grid gap-3 sm:grid-cols-3 items-end">
+            <div className="sm:col-span-2 space-y-1">
+              <label className="block font-semibold text-foreground">
+                Customer OEM / Client Account:
+              </label>
+              <select
+                aria-label="Select customer"
+                value={selectedCustomerCode}
+                onChange={(e) => setSelectedCustomerCode(e.target.value)}
+                className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground"
+              >
+                {customers.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} · {c.name} ({c.cityState || "India"})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <button
+                type="button"
+                onClick={() => setInlineCustomerOpen(true)}
+                className="h-9 w-full rounded-md border border-dashed border-primary/50 bg-primary/5 text-xs font-semibold text-primary hover:bg-primary/10 transition"
+              >
+                + New Customer
+              </button>
+            </div>
+          </div>
+
+          {/* Title & Subject */}
+          <div className="space-y-1">
+            <label className="block font-semibold text-foreground">
+              {mode === "enquiry" ? "Enquiry Subject / RFP Reference:" : "Opportunity Title:"}
+            </label>
+            <input
+              type="text"
+              required
+              placeholder={mode === "enquiry" ? "e.g. RFQ-2026-TATA-04 · Telematics Control Unit" : "e.g. Opportunity · AIS-140 Smart Tracker"}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground font-medium"
+            />
+          </div>
+
+          {/* Target Volume, Target Closure Date, & Project Track */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <label className="block font-semibold text-foreground">
+                Annual Target Volume:
+              </label>
+              <input
+                type="text"
+                placeholder="50,000 Units / Year"
+                value={targetVolume}
+                onChange={(e) => setTargetVolume(e.target.value)}
+                className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block font-semibold text-foreground">
+                Target Closure Date:
+              </label>
+              <input
+                type="date"
+                value={targetClosureDate}
+                onChange={(e) => setTargetClosureDate(e.target.value)}
+                className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block font-semibold text-foreground" title="Select project technical track">
+                Project Technical Track:
+              </label>
+              <select
+                aria-label="Project technical track"
+                value={track}
+                onChange={(e) => setTrack(e.target.value as any)}
+                className="h-9 w-full rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground"
+              >
+                <option value="turnkey">Turnkey HW+SW (Full Dev)</option>
+                <option value="software">Pure Software (Cloud & App)</option>
+                <option value="ready_made">Ready-Made Device (Off-the-shelf)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Scope Summary */}
+          <div className="space-y-1">
+            <label className="block font-semibold text-foreground">
+              Scope Summary & Technical Requirements:
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Outline specific customer constraints, communication interfaces (CAN J1939, RS485, 4G LTE), input voltage, IP rating, or off-the-shelf device selection..."
+              value={scopeSummary}
+              onChange={(e) => setScopeSummary(e.target.value)}
+              className="w-full rounded-md border border-border bg-background p-2.5 text-xs text-foreground"
+            />
+          </div>
+
+          {/* Ready-Made Track Banner */}
+          {track === "ready_made" && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1">
+              <div className="flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300">
+                <CheckCircle2 className="size-3.5" />
+                <span>Ready-Made Device / Off-the-Shelf Commercial Track Active</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Hardware & firmware engineering development stages are waived. The sales team independently prepares the commercial proposal, <strong>Sales Brochure (SAL-BRO-01)</strong>, and <strong>Technical Datasheet (SAL-TDS-01)</strong>.
+              </p>
+            </div>
+          )}
+
+          {/* Feasibility Analysis Dispatch (Available on Opportunity and Convert modes) */}
+          {mode !== "enquiry" && (
+            <div className="rounded-xl border border-border bg-panel/50 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="flex items-center gap-2 font-semibold text-foreground cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={dispatchFeasibility}
+                    onChange={(e) => setDispatchFeasibility(e.target.checked)}
+                    className="size-4 rounded border-border text-primary focus:ring-primary"
+                  />
+                  <span>Assign to Technical Teams for Feasibility Analysis (IATF 16949 §8.2.3)</span>
+                </label>
+                {dispatchFeasibility && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllDepts}
+                      className="rounded bg-secondary px-2 py-0.5 text-[10px] font-bold text-foreground hover:bg-muted"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllDepts}
+                      className="rounded bg-secondary px-2 py-0.5 text-[10px] font-bold text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {dispatchFeasibility && (
+                <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 pt-1">
+                  {allDepts.map((d) => {
+                    const isChecked = selectedDepts.includes(d.code);
+                    return (
+                      <label
+                        key={d.code}
+                        className={"flex items-start gap-2 rounded-lg border p-2 cursor-pointer transition " + (isChecked ? "border-primary/50 bg-primary/5" : "border-border/60 bg-card hover:bg-secondary")}
+                        title={d.desc}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleDept(d.code)}
+                          className="mt-0.5 size-3.5 rounded border-border text-primary focus:ring-primary"
+                        />
+                        <div className="min-w-0">
+                          <span className="block font-bold text-foreground">{d.label}</span>
+                          <span className="block truncate text-[10px] text-muted-foreground">{d.desc}</span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Form Actions Footer */}
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-lg border border-border px-4 py-2 font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 font-bold text-primary-foreground shadow-xs hover:opacity-90 transition disabled:opacity-50"
+            >
+              {submitting ? (
+                "Submitting…"
+              ) : mode === "enquiry" ? (
+                <>
+                  <Plus className="size-3.5" />
+                  <span>Create Enquiry</span>
+                </>
+              ) : mode === "opportunity" ? (
+                <>
+                  <Sparkles className="size-3.5" />
+                  <span>{dispatchFeasibility ? "Create & Dispatch for Feasibility" : "Create Opportunity"}</span>
+                </>
+              ) : (
+                <>
+                  <Send className="size-3.5" />
+                  <span>Convert & Dispatch for Feasibility</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* Inline Customer Modal */}
+      {inlineCustomerOpen && (
+        <InlineCustomerModal
+          onClose={() => setInlineCustomerOpen(false)}
+          onCustomerCreated={(newCust) => {
+            onAddCustomer?.(newCust);
+            setSelectedCustomerCode(newCust.code);
+            setInlineCustomerOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 // Unified Enquiries & Opportunities View (Master Plan §4)
 export function SalesEnquiriesAndOpportunities({
   customers,
@@ -1250,6 +1721,8 @@ export function SalesEnquiriesAndOpportunities({
   onOpenNewTask,
   onOpenAssetCatalog,
   onConfigureModularAssets,
+  onSubmitIntake,
+  onAddCustomer,
 }: {
   customers: CustomerRecord[];
   enquiries: EnquiryOpportunity[];
@@ -1260,7 +1733,26 @@ export function SalesEnquiriesAndOpportunities({
   onOpenNewTask?: () => void;
   onOpenAssetCatalog?: () => void;
   onConfigureModularAssets?: (projectCode: string) => void;
+  onSubmitIntake?: (data: {
+    mode: "enquiry" | "opportunity" | "convert";
+    title: string;
+    customerCode: string;
+    customerName: string;
+    spocName: string;
+    spocEmail: string;
+    scopeSummary: string;
+    targetVolume: string;
+    targetClosureDate: string;
+    track: "turnkey" | "software" | "ready_made";
+    dispatchFeasibility: boolean;
+    feasibilityDepts: string[];
+    enquiryIdToConvert?: string;
+  }) => Promise<void>;
+  onAddCustomer?: (customer: CustomerRecord) => void;
 }) {
+  const [intakeModalOpen, setIntakeModalOpen] = useState(false);
+  const [intakeModalMode, setIntakeModalMode] = useState<"enquiry" | "opportunity" | "convert">("opportunity");
+  const [intakeEnquiryId, setIntakeEnquiryId] = useState<string | undefined>(undefined);
   const [filterTab, setFilterTab] = useState<
     "all" | "opportunities" | "enquiries" | "feasibility" | "locked"
   >("all");
@@ -1404,11 +1896,29 @@ export function SalesEnquiriesAndOpportunities({
             </button>
             <button
               type="button"
-              onClick={onOpenNewEnquiry}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs transition hover:opacity-90"
+              onClick={() => {
+                setIntakeModalMode("enquiry");
+                setIntakeEnquiryId(undefined);
+                setIntakeModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs transition hover:bg-secondary"
+              title="Add a new customer requirement or tender inquiry"
             >
               <Plus className="size-3.5" />
-              New Enquiry
+              Add Enquiry
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIntakeModalMode("opportunity");
+                setIntakeEnquiryId(undefined);
+                setIntakeModalOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs transition hover:opacity-90"
+              title="Add an active commercial opportunity with feasibility assignment"
+            >
+              <Sparkles className="size-3.5" />
+              Add Opportunity
             </button>
           </div>
         </div>
@@ -1632,6 +2142,20 @@ export function SalesEnquiriesAndOpportunities({
                           <ChevronRight className="size-3" />
                         </button>
                       ) : (
+                        <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIntakeModalMode("convert");
+                            setIntakeEnquiryId(item.id);
+                            setIntakeModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20"
+                          title="Convert this enquiry to an Opportunity and dispatch for Feasibility"
+                        >
+                          <ArrowRight className="size-3.5" />
+                          Convert to Opportunity
+                        </button>
                         <button
                           onClick={() => onSendForFeasibility(item)}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-600 transition hover:bg-amber-500/20 dark:text-amber-400"
@@ -1639,6 +2163,7 @@ export function SalesEnquiriesAndOpportunities({
                           <Send className="size-3.5" />
                           Send for Feasibility
                         </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1648,6 +2173,28 @@ export function SalesEnquiriesAndOpportunities({
           )}
         </div>
       </section>
+      {intakeModalOpen && (
+        <UnifiedSalesIntakeModal
+          isOpen={intakeModalOpen}
+          initialMode={intakeModalMode}
+          initialEnquiryId={intakeEnquiryId}
+          customers={customers}
+          enquiries={enquiries}
+          onClose={() => setIntakeModalOpen(false)}
+          onSubmitIntake={async (data) => {
+            if (onSubmitIntake) {
+              await onSubmitIntake(data);
+            } else if (data.mode === "convert" && data.enquiryIdToConvert) {
+              const enq = enquiries.find((e) => e.id === data.enquiryIdToConvert);
+              if (enq) onSendForFeasibility(enq);
+            } else {
+              onOpenNewEnquiry();
+            }
+          }}
+          onAddCustomer={onAddCustomer}
+        />
+      )}
+
     </div>
   );
 }

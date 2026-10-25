@@ -1,5 +1,9 @@
 import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/ResponsiveFilterBar";
 import { matchesWorkspaceDocument } from "@/lib/sidebar-selection";
+import { getSharedTestWorkspace } from "@/lib/shared-test.functions";
+import type { TestMembership } from "@/lib/test-auth.functions";
+import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import React, { useState, useEffect } from "react";
 import { DepartmentLeadCoordinationCenter, type TaskRecord, type TeamMember } from "./DepartmentLeadCoordinationCenter";
 import type { ApprovalRecord } from "./ApprovalsFullPageView";
@@ -39,6 +43,7 @@ type Props = {
   records: TaskRecord[];
   projects: TaskRecord[];
   documents: WorkspaceDocument[];
+  sharedTestMembership?: TestMembership | undefined;
   approvals: ApprovalRecord[];
   team: TeamMember[];
   projectScope: string;
@@ -64,6 +69,25 @@ type Props = {
 
 export function DepartmentProjectWorkspace(props: Props) {
   const { departmentCode, departmentName, lead, projects, projectScope } = props;
+  const loadSharedWorkspace = useServerFn(getSharedTestWorkspace);
+  const sharedWorkspace = useQuery({
+    queryKey: ["shared-test-workspace", props.sharedTestMembership?.organizationId, props.sharedTestMembership?.membershipId],
+    queryFn: () => loadSharedWorkspace(),
+    enabled: Boolean(props.sharedTestMembership),
+    refetchInterval: 15000,
+  });
+  const sharedDocs: WorkspaceDocument[] = (sharedWorkspace.data?.documents || []).map((document) => ({
+    id: document.id,
+    title: document.title,
+    type: document.document_type,
+    lifecycle: "Registered",
+    revision: "Not recorded",
+    linkedRecordRefs: document.record_id ? [document.record_id] : [],
+  }));
+  const workspaceDocuments: WorkspaceDocument[] = [
+    ...props.documents,
+    ...sharedDocs.filter((sd) => !props.documents.some((d) => d.id === sd.id || d.title === sd.title)),
+  ];
   const [activeTab, setActiveTab] = useState<"overview" | "tasks" | "deliverables" | "approvals" | "records" | "team">(
     props.initialTab ?? "overview"
   );
@@ -78,7 +102,7 @@ export function DepartmentProjectWorkspace(props: Props) {
   const project = projects.find((item) => item.reference === projectScope || item.id === projectScope);
   const all = projectScope === "all";
   const records = all ? props.records : recordsForProject(props.records, project);
-  const documents = (all ? props.documents : project ? documentsForProject(props.documents, records, project) : []).filter(document => matchesWorkspaceDocument(document, props.recordTypeFilter));
+  const documents = (all ? workspaceDocuments : project ? documentsForProject(workspaceDocuments, records, project) : []).filter(document => matchesWorkspaceDocument(document, props.recordTypeFilter));
   const sourceIds = new Set(records.map((record) => record.id));
   const approvals = props.approvals.filter(
     (approval) =>
@@ -191,7 +215,7 @@ export function DepartmentProjectWorkspace(props: Props) {
         {[
           ["Department progress", `${progress}%`, `${completed} of ${work.length} records complete`],
           ["Tasks", String(taskRecords.length), "Checklist, Kanban & Table"],
-          ["Deliverables & Vault", String(documents.length), "Authorized linked documents"],
+          ["Project deliverables", String(documents.length), "Selected project files only"],
           ["Pending approvals", String(approvals.filter((approval) => approval.outcome === "Pending").length), "Human decisions required"],
         ].map(([label, value, detail]) => (
           <div key={label} className="rounded-xl border border-border/80 bg-card p-3 shadow-xs">
@@ -207,7 +231,7 @@ export function DepartmentProjectWorkspace(props: Props) {
         {[
           { key: "overview", label: "Overview", icon: LayoutDashboard },
           { key: "tasks", label: `Tasks (${taskRecords.length})`, icon: CheckSquare },
-          { key: "deliverables", label: `Deliverables & Docs (${documents.length})`, icon: FileSpreadsheet },
+          { key: "deliverables", label: `Project Deliverables (${documents.length})`, icon: FileSpreadsheet },
           { key: "approvals", label: `Approvals (${approvals.length})`, icon: ShieldCheck },
           { key: "records", label: `Department Records (${deptWorkRecords.length})`, icon: Layers },
           { key: "team", label: `Team & Capacity (${team.length})`, icon: Users },
@@ -311,7 +335,7 @@ export function DepartmentProjectWorkspace(props: Props) {
             <section aria-label="Project documents" className="rounded-xl border border-border bg-card p-4 shadow-xs space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Deliverables & Documents ({documents.length})
+                  Project Deliverables ({documents.length})
                 </h3>
                 <button
                   onClick={() => setActiveTab("deliverables")}
@@ -329,7 +353,7 @@ export function DepartmentProjectWorkspace(props: Props) {
                   >
                     <strong className="text-xs text-foreground block truncate">{doc.title}</strong>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {doc.type} · {doc.lifecycle || "Draft"} · Rev {doc.revision || "01"}
+                      {doc.type} · {doc.lifecycle || "Draft"} · {doc.revision && doc.revision !== "Not recorded" ? `Rev ${doc.revision}` : "Revision not recorded"}
                     </p>
                   </button>
                 ))}
@@ -421,10 +445,10 @@ export function DepartmentProjectWorkspace(props: Props) {
             <div>
               <h2 className="text-base font-bold text-foreground flex items-center gap-2">
                 <FileSpreadsheet className="size-4 text-primary" />
-                Unified Technical Deliverables Board
+                Project Deliverables & Linked Files
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Project-scoped technical deliverables, schematics, BOM, Gerbers, requirements, and DFMEA records with authorized revision tracking.
+                Authorized files and deliverable records for the selected project. Open Project Documents & Vault to search across all projects you can access.
               </p>
             </div>
             <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded">
@@ -467,7 +491,7 @@ export function DepartmentProjectWorkspace(props: Props) {
                           </span>
                         </td>
                         <td className="px-3 py-3 font-mono text-[11px] font-semibold text-foreground">
-                          Rev {doc.revision || "01"}
+                          {doc.revision && doc.revision !== "Not recorded" ? `Rev ${doc.revision}` : "Not recorded"}
                         </td>
                         <td className="px-3 py-3">
                           <span

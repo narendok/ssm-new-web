@@ -1033,56 +1033,158 @@ export function FeasibilityAndHardwareKickoff({
               </div>
             </div>
 
-            {/* Locked PRS Baseline (Pillar 3 - Consulted Specification) */}
-            <div className="rounded-lg border border-border bg-panel/70 p-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <span
-                    className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground"
-                    title="Embedded Hardware Engineering (Technical Requirements Consulted Input)"
+            {/* Dynamic Technical / Commercial Specification (Pillar 3) */}
+            {/slct|ready|off.?the.?shelf|catalog/i.test(projectId) ? (
+              <div className="rounded-lg border border-border bg-panel/70 p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span
+                      className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground"
+                      title="Ready-Made Device: Hardware development waived; Sales Marketing Brochure and Technical Datasheet provided."
+                    >
+                      SAL Ready-Made Baseline (HW Waived)
+                    </span>
+                    <h4 className="mt-2 text-sm font-bold text-foreground">
+                      Brochure & Technical Datasheet
+                    </h4>
+                    <p className="font-mono text-xs text-muted-foreground">SAL-BRO-01 · SAL-TDS-01</p>
+                  </div>
+                  <button
+                    onClick={() => onOpenDocumentView("SAL-TDS-01", "Technical Data Sheet", "SAL")}
+                    className="rounded p-1 text-steel hover:bg-secondary"
+                    title="View Technical Data Sheet"
                   >
-                    EHW Technical Baseline (Consulted)
+                    <ExternalLink className="size-4" />
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-2 rounded-md bg-secondary/50 p-3 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Device Type:</span>
+                    <span className="font-medium text-foreground">Pre-Certified Ready-Made Unit</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Datasheet:</span>
+                    <span className="font-medium text-foreground">SAL-TDS-01 Technical Spec</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Sales Brochure:</span>
+                    <span className="font-medium text-foreground">SAL-BRO-01 Client Pitch Deck</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Engineering Role:</span>
+                    <span className="font-medium text-foreground">HW/FW Dev Waived (Direct Sell)</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between text-[11px] text-emerald-600 dark:text-emerald-400">
+                  <span className="flex items-center gap-1 font-semibold">
+                    <CheckCircle2 className="size-3.5" /> Catalog Baseline Confirmed
                   </span>
-                  <h4 className="mt-2 text-sm font-bold text-foreground">
-                    Product Requirement Spec (PRS)
-                  </h4>
-                  <p className="font-mono text-xs text-muted-foreground">HLPL-AI4T-EHW-PRS-01 · Rev 01</p>
+                  <span className="font-mono text-[10px]">Sales: Priya Sharma</span>
                 </div>
-                <button
-                  onClick={() => onOpenDocumentView("HLPL-AI4T-EHW-PRS-01", "Product Requirement Spec", "EHW")}
-                  className="rounded p-1 text-steel hover:bg-secondary"
-                  title="View complete PRS document"
-                >
-                  <ExternalLink className="size-4" />
-                </button>
               </div>
+            ) : /sw|software|cloud|app/i.test(projectId) ? (
+              <div className="rounded-lg border border-border bg-panel/70 p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span
+                      className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground"
+                      title="Software Track: Cloud Microservices, APIs, and Web/Mobile Application Specifications."
+                    >
+                      SW Software Baseline (HW Waived)
+                    </span>
+                    <h4 className="mt-2 text-sm font-bold text-foreground">
+                      Software Requirement Spec (SRS)
+                    </h4>
+                    <p className="font-mono text-xs text-muted-foreground">HLPL-SW-SRS-01 · Rev 01</p>
+                  </div>
+                  <button
+                    onClick={() => onOpenDocumentView("HLPL-SW-SRS-01", "Software Requirement Spec", "SW")}
+                    className="rounded p-1 text-steel hover:bg-secondary"
+                    title="View complete SRS document"
+                  >
+                    <ExternalLink className="size-4" />
+                  </button>
+                </div>
 
-              <div className="mt-3 space-y-2 rounded-md bg-secondary/50 p-3 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Controller:</span>
-                  <span className="font-medium text-foreground">STM32F405VG Automotive MCU</span>
+                <div className="mt-3 space-y-2 rounded-md bg-secondary/50 p-3 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Architecture:</span>
+                    <span className="font-medium text-foreground">Cloud Telematics & MQTT Parser</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Frontend:</span>
+                    <span className="font-medium text-foreground">Web Operations & Mobile App</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Security:</span>
+                    <span className="font-medium text-foreground">OAuth2, mTLS & ISO 27001</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">HW Development:</span>
+                    <span className="font-medium text-foreground">Waived (Pure Software Scope)</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Modem:</span>
-                  <span className="font-medium text-foreground">4G LTE Cat-1 eSIM (2G Fallback)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Vehicle Telematics:</span>
-                  <span className="font-medium text-foreground">AIS-140 Amd 1 & 2 + CAN J1939</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Enclosure:</span>
-                  <span className="font-medium text-foreground">IP67 Polycarbonate UV-Stabilized</span>
-                </div>
-              </div>
 
-              <div className="mt-3 flex items-center justify-between text-[11px] text-emerald-600 dark:text-emerald-400">
-                <span className="flex items-center gap-1 font-semibold">
-                  <CheckCircle2 className="size-3.5" /> Technical Input Confirmed
-                </span>
-                <span className="font-mono text-[10px]">EHW Lead: Avery Vale</span>
+                <div className="mt-3 flex items-center justify-between text-[11px] text-emerald-600 dark:text-emerald-400">
+                  <span className="flex items-center gap-1 font-semibold">
+                    <CheckCircle2 className="size-3.5" /> Software Spec Confirmed
+                  </span>
+                  <span className="font-mono text-[10px]">SW Lead: Siddharth Roy</span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-lg border border-border bg-panel/70 p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span
+                      className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground"
+                      title="Embedded Hardware Engineering (Technical Requirements Consulted Input)"
+                    >
+                      EHW Technical Baseline (Consulted)
+                    </span>
+                    <h4 className="mt-2 text-sm font-bold text-foreground">
+                      Product Requirement Spec (PRS)
+                    </h4>
+                    <p className="font-mono text-xs text-muted-foreground">HLPL-AI4T-EHW-PRS-01 · Rev 01</p>
+                  </div>
+                  <button
+                    onClick={() => onOpenDocumentView("HLPL-AI4T-EHW-PRS-01", "Product Requirement Spec", "EHW")}
+                    className="rounded p-1 text-steel hover:bg-secondary"
+                    title="View complete PRS document"
+                  >
+                    <ExternalLink className="size-4" />
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-2 rounded-md bg-secondary/50 p-3 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Controller:</span>
+                    <span className="font-medium text-foreground">STM32F405VG Automotive MCU</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Modem:</span>
+                    <span className="font-medium text-foreground">4G LTE Cat-1 eSIM (2G Fallback)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Vehicle Telematics:</span>
+                    <span className="font-medium text-foreground">AIS-140 Amd 1 & 2 + CAN J1939</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Enclosure:</span>
+                    <span className="font-medium text-foreground">IP67 Polycarbonate UV-Stabilized</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between text-[11px] text-emerald-600 dark:text-emerald-400">
+                  <span className="flex items-center gap-1 font-semibold">
+                    <CheckCircle2 className="size-3.5" /> Technical Input Confirmed
+                  </span>
+                  <span className="font-mono text-[10px]">EHW Lead: Avery Vale</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Recorded Client Approval Card */}
