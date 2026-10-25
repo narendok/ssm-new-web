@@ -475,38 +475,83 @@ export function DepartmentLeadLoginModal({
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-xs font-bold text-foreground">
                     <Sparkles className="size-3.5 text-amber-500" />
-                    <span>Demo Role Directory</span>
+                    <span>Select Login Type / Role Access</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground font-mono">
-                    Select a demo role to preview
+                    Select a login type to sign in
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                  {DEPARTMENT_CREDENTIALS.filter(c => c.departmentCode !== "TST").map((cred) => (
-                    <button
-                      key={cred.id}
-                      type="button"
-                      onClick={() => handleAutofill(cred)}
-                      className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all hover:border-primary/50 hover:bg-accent/40 ${
-                        email.toLowerCase() === cred.email.toLowerCase()
-                          ? "border-primary bg-primary/5 shadow-xs"
-                          : "border-border/80 bg-card/60"
-                      }`}
-                    >
-                      <span className={`grid size-7 shrink-0 place-items-center rounded-md font-mono text-[10px] font-bold border ${cred.badgeTone}`}>
-                        {cred.departmentCode}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-semibold text-foreground truncate">{cred.leadName}</span>
-                          <span className="font-mono text-[9px] text-muted-foreground">{cred.departmentCode}</span>
+                {/* 1. Featured Executive Admin / Main Admin Selection */}
+                {(() => {
+                  const adminCred = DEPARTMENT_CREDENTIALS.find((c) => c.id === "admin");
+                  if (!adminCred) return null;
+                  const isSelected = email.toLowerCase() === adminCred.email.toLowerCase();
+                  return (
+                    <div className="rounded-xl border border-primary/40 bg-primary/5 p-3.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-primary/20 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-primary border border-primary/30">
+                            MASTER ACCESS
+                          </span>
+                          <span className="text-xs font-bold text-foreground">Main Admin · Executive Portal</span>
                         </div>
-                        <p className="font-mono text-[10px] text-muted-foreground truncate">{cred.email}</p>
-                        <p className="font-mono text-[9px] text-primary/80 font-medium mt-0.5">Password: {cred.password}</p>
+                        <span className="text-[10px] text-muted-foreground font-mono">Full Department Access</span>
                       </div>
-                    </button>
-                  ))}
+                      <p className="text-xs text-muted-foreground">
+                        Sign in as Managing Director / Executive Admin to inspect any department with one-click department access.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleAutofill(adminCred)}
+                        className={`w-full flex items-center justify-between rounded-lg border p-2.5 text-left transition-all hover:border-primary/60 hover:bg-primary/10 ${
+                          isSelected ? "border-primary bg-primary/15 shadow-xs font-bold" : "border-border/80 bg-card"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="grid size-7 shrink-0 place-items-center rounded-md font-mono text-[10px] font-bold border bg-primary/15 text-primary border-primary/30">
+                            ADM
+                          </span>
+                          <div>
+                            <p className="text-xs font-bold text-foreground">{adminCred.leadName} ({adminCred.roleTitle})</p>
+                            <p className="text-[10px] font-mono text-muted-foreground">{adminCred.email}</p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-mono font-semibold text-primary">Select Main Admin →</span>
+                      </button>
+                    </div>
+                  );
+                })()}
+
+                {/* 2. Department Leads Directory */}
+                <div className="pt-2">
+                  <p className="text-xs font-bold text-foreground mb-2">Department Lead Credentials</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {DEPARTMENT_CREDENTIALS.filter(c => c.departmentCode !== "TST" && c.id !== "admin").map((cred) => (
+                      <button
+                        key={cred.id}
+                        type="button"
+                        onClick={() => handleAutofill(cred)}
+                        className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-all hover:border-primary/50 hover:bg-accent/40 ${
+                          email.toLowerCase() === cred.email.toLowerCase()
+                            ? "border-primary bg-primary/5 shadow-xs"
+                            : "border-border/80 bg-card/60"
+                        }`}
+                      >
+                        <span className={`grid size-7 shrink-0 place-items-center rounded-md font-mono text-[10px] font-bold border ${cred.badgeTone}`}>
+                          {cred.departmentCode}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-semibold text-foreground truncate">{cred.leadName}</span>
+                            <span className="font-mono text-[9px] text-muted-foreground">{cred.departmentCode}</span>
+                          </div>
+                          <p className="font-mono text-[10px] text-muted-foreground truncate">{cred.email}</p>
+                          <p className="font-mono text-[9px] text-primary/80 font-medium mt-0.5">Password: {cred.password}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 {testMode && !demoMode && <>
                   <p className="text-xs font-bold text-foreground">Department employee TEST accounts</p>

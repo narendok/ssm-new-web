@@ -2295,7 +2295,35 @@ function Portal() {
         ? (personas.find((p) => p.id === initialRole) ?? safeUnassignedPersona)
         : (personas[0] ?? safeUnassignedPersona));
 
-  const [activeArea, setActiveArea] = useState<AreaId>(() => ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId ? initialPersona.departmentId : "home"));
+  const [adminDepartment, setAdminDepartment] = useState<AreaId>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.sessionStorage.getItem("scms_admin_department") || window.localStorage.getItem("scms_admin_department");
+        if (saved && ["ehw", "fw", "sw", "mech", "pur", "qa", "emf", "mmf", "sales", "fin", "sit", "hrops"].includes(saved)) {
+          return saved as AreaId;
+        }
+      } catch {}
+    }
+    return "ehw";
+  });
+
+  const [activeArea, setActiveArea] = useState<AreaId>(() => {
+    if ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId) {
+      return initialPersona.departmentId;
+    }
+    if (initialPersona.kind === "admin") {
+      if (typeof window !== "undefined") {
+        try {
+          const saved = window.sessionStorage.getItem("scms_admin_department") || window.localStorage.getItem("scms_admin_department");
+          if (saved && ["ehw", "fw", "sw", "mech", "pur", "qa", "emf", "mmf", "sales", "fin", "sit", "hrops"].includes(saved)) {
+            return saved as AreaId;
+          }
+        } catch {}
+      }
+      return "ehw";
+    }
+    return "home";
+  });
   const [clientDeliverablesFocus, setClientDeliverablesFocus] = useState(0);
   const openDocuments = () => { setModal(null); if (persona.kind === "client") { setView("queue"); setClientDeliverablesFocus(value => value + 1); } else setView("vault"); };
   const [signedOut, setSignedOut] = useState(() => {
@@ -2341,7 +2369,15 @@ function Portal() {
   const [createInitialValues, setCreateInitialValues] = useState<Record<string, string> | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [departmentContext, setDepartmentContext] = useState<string | null>(() => ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId ? `demo-dept-${initialPersona.departmentId}` : null));
+  const [departmentContext, setDepartmentContext] = useState<string | null>(() => {
+    if ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId) {
+      return `demo-dept-${initialPersona.departmentId}`;
+    }
+    if (initialPersona.kind === "admin") {
+      return "demo-dept-ehw";
+    }
+    return null;
+  });
   const [persona, setPersona] = useState<Persona>(() => initialPersona);
   const [recordTypeFilter, setRecordTypeFilter] = useState<string|null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -2547,12 +2583,31 @@ function Portal() {
     setCreateInitialValues(initialValues ? { ...initialValues, ...(initialValues["projectCode"] ? { projectId: initialValues["projectCode"] } : {}) } : null);
     setModal("create");
   };
+  const handleAdminDepartmentChange = (deptId: AreaId) => {
+    setAdminDepartment(deptId);
+    setActiveArea(deptId);
+    setDepartmentContext(findAreaDepartment(portal.departments, deptId)?.id ?? `demo-dept-${deptId}`);
+    try {
+      window.sessionStorage.setItem("scms_admin_department", deptId);
+    } catch {}
+    if (!["project", "queue", "records", "deliverables", "assignee", "approvals", "vault", "analysis"].includes(view)) {
+      setView("project");
+    }
+    announce(`${areaById(deptId).name} department workspace active.`);
+  };
   const switchPersona = (next: Persona) => {
     setPersona(next);
-    const nextDepartment = (next.kind === "lead" || next.kind === "member") ? findAreaDepartment(portal.departments, next.departmentId ?? "home")?.id ?? null : null;
-    setDepartmentContext(nextDepartment);
-    setActiveArea((next.kind === "lead" || next.kind === "member") && next.departmentId ? next.departmentId : "home");
-    setView("queue");
+    if (next.kind === "admin") {
+      const deptToUse = adminDepartment || "ehw";
+      setDepartmentContext(findAreaDepartment(portal.departments, deptToUse)?.id ?? `demo-dept-${deptToUse}`);
+      setActiveArea(deptToUse);
+      setView("project");
+    } else {
+      const nextDepartment = (next.kind === "lead" || next.kind === "member") ? findAreaDepartment(portal.departments, next.departmentId ?? "home")?.id ?? null : null;
+      setDepartmentContext(nextDepartment);
+      setActiveArea((next.kind === "lead" || next.kind === "member") && next.departmentId ? next.departmentId : "home");
+      setView("queue");
+    }
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       url.searchParams.delete("signedout");
@@ -3187,26 +3242,36 @@ function Portal() {
     announce(`${item.partNumber}: ${quantity} ${item.unit} allocated to ${assignee}.`);
   };
   const activeRecords = portal.records.filter((record) => !record.archived);
-  const leadRecords = activeRecords.filter(record => record.area === persona.departmentId);
+  const effectiveArea: AreaId =
+    persona.kind === "client"
+      ? "home"
+      : (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
+      ? persona.departmentId
+      : persona.kind === "admin"
+      ? (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : adminDepartment)
+      : activeArea;
+  const active = areaById(effectiveArea);
+  const activeDepartmentScope = (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
+    ? persona.departmentId
+    : effectiveArea;
+  const leadRecords = activeRecords.filter(record => record.area === activeDepartmentScope);
   const leadTasks = leadRecords.filter(record => record.type === "Task");
-  const leadName = persona.kind === "member" ? findAreaDepartment(portal.departments, persona.departmentId ?? activeArea)?.lead || "Lead not recorded" : persona.person.split(" · ")[0] ?? "";
+  const currentDeptObj = findAreaDepartment(portal.departments, activeDepartmentScope);
+  const leadName = persona.kind === "member"
+    ? currentDeptObj?.lead || "Lead not recorded"
+    : persona.kind === "admin"
+    ? currentDeptObj?.lead || "Department Lead"
+    : persona.person.split(" · ")[0] ?? "";
   const leadProjectCodes = new Set(leadRecords.flatMap(projectReferences));
-  const leadProjects = activeRecords.filter(record => record.type === "Project" && (leadProjectCodes.has(record.reference) || leadProjectCodes.has(record.id)));
+  const leadProjects = activeRecords.filter(record => record.type === "Project" && (leadProjectCodes.has(record.reference) || leadProjectCodes.has(record.id) || activeDepartmentScope === "sales" || persona.kind === "admin"));
   const scopedAlerts = portal.alerts.filter(alert => persona.kind === "admin" || ((persona.kind === "lead" || persona.kind === "member") && [persona.departmentId, departmentContext].includes(alert.departmentId)));
-  const scopedDocuments = portal.documents.filter(document => canDepartmentAccessDocument(document, persona, departmentContext));
+  const scopedDocuments = portal.documents.filter(document => canDepartmentAccessDocument(document, persona, departmentContext || `demo-dept-${activeDepartmentScope}`));
   const scopedApprovalCounts = Object.fromEntries(areas.map(area => [area.id, portal.approvals.map(approvalScope).filter(approval => approval.outcome === "Pending" && approvalInDepartment(approval, area.id)).length]));
   const selected = activeRecords.find((record) => record.id === selectedId);
   const selectedDocument = portal.documents.find((document) => document.id === selectedDocumentId);
   const selectedProjectProfile = activeRecords.find(
     (record) => record.reference === selectedProjectId && record.type === "Project",
   );
-  const effectiveArea: AreaId =
-    persona.kind === "client"
-      ? "home"
-      : (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
-      ? persona.departmentId
-      : activeArea;
-  const active = areaById(effectiveArea);
   const openRecord = (record: RecordItem) => {
     if (persona.kind === "client") {
       announce("Internal records require an explicit customer release and recipient grant.");
@@ -3332,9 +3397,7 @@ function Portal() {
                   ? "Rohan Verma · Client Representative"
                   : (persona.kind === "lead" || persona.kind === "member")
                   ? `${persona.label}`
-                  : departmentContext
-                  ? `${portal?.departments.find((item) => item.id === departmentContext)?.name?.replace(/^DEMO · /, "") ?? "Department"} · Admin`
-                  : `All departments · ${portal?.setup.location ?? ""}`}
+                  : `Executive Admin · ${active.short} Department Access`}
               </p>
             </button>
             {testMembership && <HeaderAction label="Shared TEST records" icon={Layers} onClick={() => {setSharedTestInitialTab("Tasks"); setShowSharedTestWorkspace(true);}} />}
@@ -3343,33 +3406,9 @@ function Portal() {
               onSelect={switchPersona}
               onOpenAuth={() => setLoginModalOpen(true)}
               onLogout={handleLogout}
+              adminDepartment={effectiveArea}
+              onAdminDepartmentChange={handleAdminDepartmentChange}
             />
-            {persona.id === "admin" && (
-              <button
-                type="button"
-                onClick={() => setLoginModalOpen(true)}
-                title="Department Lead Sign-In & Authentication Modal"
-                className="hidden items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary transition-all hover:bg-primary/20 hover:border-primary shadow-sm sm:inline-flex"
-              >
-                <Key className="size-3.5 text-primary" />
-                <span>Lead Auth</span>
-              </button>
-            )}
-            {persona.id === "admin" && (
-              <HeaderAction label="PMSS" icon={ClipboardCheck} onClick={() => setView("pmss")} />
-            )}
-            {persona.id === "admin" && (
-              <HeaderAction
-                label="Project Analysis (Page 1)"
-                icon={Layers}
-                onClick={() => {
-                  setSelectedProjectId((prev) => prev || "HLPL-AI4T-01");
-                  const match = activeRecords.find((r) => (r.reference === selectedProjectId || r.reference === "HLPL-AI4T-01") && r.type === "Project");
-                  if (match) setSelectedId(match.id);
-                  setView("project");
-                }}
-              />
-            )}
             {persona.kind !== "client" && <>
               <div className="relative hidden w-44 shrink xl:block 2xl:w-56"><Search className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" /><input aria-label="Search portal" placeholder="Search…" value={globalSearchQuery} onFocus={() => setSearchOpen(true)} onChange={event => { setGlobalSearchQuery(event.target.value); setSearchOpen(true); }} className="h-9 w-full rounded-lg border border-border bg-card pl-8 pr-2 text-xs" /></div>
               <button type="button" aria-label="Search portal" title="Search" onClick={() => { setSearchOpen(true); setMobileMenu(false); }} className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-secondary xl:hidden"><Search className="size-4" /></button>
@@ -3387,23 +3426,9 @@ function Portal() {
                 onClick={openDocuments}
               />
             )}
-            {(persona.id === "admin" || persona.id === "pur") && (
-              <HeaderAction label="Live Inventory" icon={PackageSearch} onClick={() => navigate("pur")} />
-            )}
-            {persona.id === "admin" && (
-              <HeaderAction label="Hardware Deliverables Drive" icon={FolderOpen} onClick={openDocuments} />
-            )}
             {persona.kind !== "client" && (
               <HeaderAction label="Directory" icon={Users} onClick={() => setDirectoryOpen(true)} />
             )}
-            {persona.id === "admin" && (
-              <HeaderAction label="Decision Log" icon={BookOpen} onClick={() => setDecisionLogOpen(true)} />
-            )}
-            {persona.id === "admin" && (
-              <HeaderAction label="Legal Hub" icon={Shield} onClick={() => setLegalHubOpen(true)} />
-            )}
-
-
             {persona.id === "admin" && (
               <HeaderAction
                 label="Settings"
@@ -3414,7 +3439,6 @@ function Portal() {
                 }}
               />
             )}
-
             <HeaderAction
               label={`Notifications (${scopedAlerts.filter((alert) => !alert.resolved).length})`}
               icon={Bell}
@@ -3429,14 +3453,14 @@ function Portal() {
             <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
           ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","vault","index"].includes(view) ? (
  <SharedOperationalWorkspace key={`${testMembership.membershipId}:${view}`} membership={testMembership} view={view} darkMode={darkMode} onLogout={handleLogout}/>
-          ) : (persona.kind === "lead" || persona.kind === "member") && view === "assignee" ? (
+          ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") && view === "assignee" ? (
             <section className="space-y-4">
               <h1 className="text-xl font-semibold">{active.name} — My Tasks & Action Queue</h1>
-              <DepartmentLeadCoordinationCenter key={persona.id}
+              <DepartmentLeadCoordinationCenter key={`${persona.id}:${activeDepartmentScope}`}
                 hideHeader
                 hideProjectsAndTeam
                 departmentCode={active.short} departmentName={active.name} departmentLead={leadName}
-                records={leadRecords} teamMembers={allTeamMembers.filter(member => member.area === persona.departmentId)}
+                records={leadRecords} teamMembers={allTeamMembers.filter(member => member.area === activeDepartmentScope)}
                 initialAssignee={leadName}
                 projects={leadProjects.map(project => ({ id: project.reference, name: project.title, customer: project.fields["customer"] || "Not provided", currentStage: project.fields["lifecycleStage"] || "Not provided", targetDate: project.fields["targetDate"] || "Not provided", volume: project.fields["quantity"] || "Not provided" }))}
                 projectScope={projectScopes[active.id] ?? "all"}
@@ -3445,20 +3469,20 @@ function Portal() {
                 onUpdateTaskStatus={(id, status) => { void updateTask(id, { status, ...(status === "Open" ? { fields: { workStatus: "To do" } } : {}) }, "Task status updated"); }}
                 onStartTask={id => { void updateTask(id, { status: "Open", fields: { workStatus: "In progress" } }, "Task started"); }}
                 onOpenTask={task => { const source = leadRecords.find(record => record.id === task.id); if (source) openRecord(source); }}
-                onCreateTask={handleCreateCustomTask} onAddTeamMember={member => handleAddTeamMember({ ...member, area: persona.departmentId as TeamMember["area"] })}
+                onCreateTask={handleCreateCustomTask} onAddTeamMember={member => handleAddTeamMember({ ...member, area: activeDepartmentScope as TeamMember["area"] })}
               />
             </section>
-          ) : (persona.kind === "lead" || persona.kind === "member") && (view === "project" || view === "queue" || view === "summary" || view === "records" || view === "deliverables") ? (
-            <DepartmentProjectWorkspace key={`${persona.id}:${view}`}
+          ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") && (view === "project" || view === "queue" || view === "summary" || view === "records" || view === "deliverables") ? (
+            <DepartmentProjectWorkspace key={`${persona.id}:${activeDepartmentScope}:${view}`}
               initialTab={view === "records" ? "records" : view === "deliverables" ? "deliverables" : undefined}
               recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
               departmentCode={active.short} departmentName={active.name} lead={leadName}
               records={leadRecords} projects={leadProjects} documents={scopedDocuments}
-              approvals={portal.approvals.map(approvalScope).filter(approval => approvalInDepartment(approval, persona.departmentId))}
-              team={allTeamMembers.filter(member => member.area === persona.departmentId)}
+              approvals={portal.approvals.map(approvalScope).filter(approval => approvalInDepartment(approval, activeDepartmentScope))}
+              team={allTeamMembers.filter(member => member.area === activeDepartmentScope)}
               projectScope={projectScopes[active.id] ?? "all"}
               onProjectChange={scope => setProjectScopes(current => ({ ...current, [active.id]: scope as ProjectScope }))}
-              onCreateProject={persona.departmentId === "sales" ? () => handleOpenCreate("Project") : undefined}
+              onCreateProject={(activeDepartmentScope === "sales" || (persona.kind === "admin" && activeDepartmentScope === "sales")) ? () => handleOpenCreate("Project") : undefined}
               onCreateRecord={() => handleOpenCreate(active.recordType, (projectScopes[active.id] ?? "all") === "all" ? undefined : { projectCode: projectScopes[active.id] as string, projectId: projectScopes[active.id] as string })}
               onCreateDeliverable={() => setDraftHubOpen(true)}
               onOpenRecord={id => { const record = leadRecords.find(item => item.id === id); if (record) openRecord(record); }}
@@ -10898,11 +10922,15 @@ function PersonaSwitcher({
   onSelect,
   onOpenAuth,
   onLogout,
+  adminDepartment,
+  onAdminDepartmentChange,
 }: {
   persona: Persona;
   onSelect: (persona: Persona) => void;
   onOpenAuth?: () => void;
   onLogout?: () => void;
+  adminDepartment?: AreaId;
+  onAdminDepartmentChange?: (deptId: AreaId) => void;
 }) {
   if (persona.kind === "client") {
     return (
@@ -10965,30 +10993,55 @@ function PersonaSwitcher({
   }
 
   return (
-    <div className="hidden items-center gap-1.5 md:flex">
-      <label className="flex min-w-48 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground transition-colors hover:border-ring/50">
-        <UserRoundCog className="size-4 shrink-0 text-steel" />
-        <span className="sr-only">Switch role and department</span>
+    <div className="hidden items-center gap-2 md:flex">
+      {/* 1. Login Type: Main Admin indicator with Switch button */}
+      <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs">
+        <span className="flex size-2 rounded-full bg-primary animate-pulse" />
+        <span className="rounded bg-primary/20 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase text-primary border border-primary/30">
+          MAIN ADMIN
+        </span>
+        <span className="font-semibold text-foreground hidden xl:inline">
+          Executive Access
+        </span>
+        {onOpenAuth && (
+          <button
+            type="button"
+            onClick={onOpenAuth}
+            title="Authenticate or switch lead/client login"
+            className="ml-1 inline-flex items-center gap-1 rounded bg-background/80 hover:bg-background px-2 py-0.5 text-[11px] font-bold text-foreground transition-colors border border-border shadow-2xs cursor-pointer"
+          >
+            <Key className="size-3 text-primary" />
+            <span>Switch Login</span>
+          </button>
+        )}
+      </div>
+
+      {/* 2. The simple Department Selection Dropdown Box */}
+      <label className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground shadow-xs transition-colors hover:border-primary">
+        <Building className="size-3.5 text-primary shrink-0" />
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
+          Department:
+        </span>
         <select
-          aria-label="Switch role and department"
-          value={persona.id}
-          onChange={(event) => onSelect(personas.find((item) => item.id === event.target.value) ?? personas[0] ?? persona)}
-          className="min-w-0 flex-1 bg-transparent text-xs font-semibold outline-none"
+          aria-label="Select department access"
+          value={adminDepartment ?? "ehw"}
+          onChange={(event) => onAdminDepartmentChange?.(event.target.value as AreaId)}
+          className="min-w-0 bg-transparent text-xs font-bold text-foreground outline-none cursor-pointer [&>option]:bg-background [&>option]:text-foreground"
         >
-          {personas.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          <option value="ehw">EHW · Embedded Hardware</option>
+          <option value="fw">FW · Firmware</option>
+          <option value="sw">SW · Cloud & Application Software</option>
+          <option value="mech">MECH · Mechanical Engineering</option>
+          <option value="pur">PUR · Purchasing & SCM</option>
+          <option value="qa">QA · Quality Assurance & APQP</option>
+          <option value="emf">EMF · Electronics Manufacturing</option>
+          <option value="mmf">MMF · Mechanical Manufacturing</option>
+          <option value="sales">SAL · Sales & Business Development</option>
+          <option value="fin">FIN · Accounts & Finance</option>
+          <option value="sit">SIT · Service & IT</option>
+          <option value="hrops">HR · HR & Operations</option>
         </select>
       </label>
-      {onOpenAuth && (
-        <button
-          type="button"
-          title="Authenticate / Sign In as Department Lead with Email & Password"
-          aria-label="Department Lead Credentials Login"
-          onClick={onOpenAuth}
-          className="inline-flex size-9 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-primary transition-colors hover:bg-primary/20 hover:border-primary shadow-sm"
-        >
-          <Key className="size-3.5" />
-        </button>
-      )}
       <button
         type="button"
         title={`Open ${persona.label} in a new browser tab`}

@@ -233,7 +233,9 @@ export function RoleAwareSidebar({
   onCloseMobile,
 }: RoleAwareSidebarProps) {
   const isAdmin = persona.kind === "admin";
-  const userRoleKey = isAdmin ? "admin" : persona.departmentId ?? persona.id;
+  const userRoleKey = (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
+    ? persona.departmentId
+    : (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw");
 
   // 1. Favorites State Management with LocalStorage persistence
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
@@ -274,13 +276,10 @@ export function RoleAwareSidebar({
     if (isAdmin) {
       return {
         favorites: true,
-        overview: false,
-        commercial: false,
-        engineering: false,
-        inventory: false,
-        quality: false,
-        documents: false,
-        people: false,
+        dept_mywork: true,
+        dept_projects: true,
+        dept_workspace: true,
+        dept_reference: true,
         administration: false,
       };
     } else if (persona.kind === "client") {
@@ -305,13 +304,10 @@ export function RoleAwareSidebar({
     if (isAdmin) {
       setExpandedGroups({
         favorites: true,
-        overview: false,
-        commercial: false,
-        engineering: false,
-        inventory: false,
-        quality: false,
-        documents: false,
-        people: false,
+        dept_mywork: true,
+        dept_projects: true,
+        dept_workspace: true,
+        dept_reference: true,
         administration: false,
       });
     } else if (persona.kind === "client") {
@@ -805,9 +801,11 @@ export function RoleAwareSidebar({
     onCloseMobile,
   ]);
 
-  // 4. Define Department-Specific Work Groups for Department Leads / Client
+  // 4. Define Department-Specific Work Groups for Department Leads / Client / Admin
   const deptWorkGroups: SidebarWorkGroup[] = useMemo(() => {
-    const deptId = persona.departmentId ?? "home";
+    const deptId = (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
+      ? persona.departmentId
+      : (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw");
 
     // Build department primary workspace items
     const getWorkspaceItems = (): SidebarMenuItem[] => {
@@ -1329,7 +1327,35 @@ export function RoleAwareSidebar({
     onCloseMobile,
   ]);
 
-  const activeWorkGroups = useMemo(() => singleActiveDestination(isAdmin ? adminWorkGroups : deptWorkGroups), [isAdmin, adminWorkGroups, deptWorkGroups]);
+  const adminSettingsGroup: SidebarWorkGroup = useMemo(() => ({
+    id: "administration",
+    title: "Settings & System",
+    icon: Sliders,
+    items: [
+      {
+        id: "adm-settings",
+        label: "Organization & RACI Settings",
+        shortLabel: "Settings",
+        icon: Sliders,
+        isActive: false,
+        onClick: () => handleItemClick(() => onOpenAdminSettings?.()),
+      },
+      {
+        id: "adm-wizard",
+        label: "Portal Setup Wizard",
+        shortLabel: "Wizard",
+        icon: Settings2,
+        badge: `${setupStep + 1}/${totalSetupSteps}`,
+        isActive: false,
+        onClick: () => handleItemClick(() => onOpenWizard?.()),
+      },
+    ],
+  }), [setupStep, totalSetupSteps, onOpenAdminSettings, onOpenWizard]);
+
+  const activeWorkGroups = useMemo(
+    () => singleActiveDestination(isAdmin ? [...deptWorkGroups, adminSettingsGroup] : deptWorkGroups),
+    [isAdmin, deptWorkGroups, adminSettingsGroup]
+  );
 
   // Auto-expand group containing active item
   useEffect(() => {
@@ -1660,7 +1686,12 @@ export function RoleAwareSidebar({
         </div>
       </nav>
 
-
+      {isAdmin && (
+        <div className="mt-auto pt-2.5 pb-1 border-t border-sidebar-border/60 px-3 py-2 flex items-center justify-between text-[11px] text-muted-foreground bg-sidebar-accent/20 rounded-lg mx-2 mb-2">
+          <span className="font-mono uppercase tracking-wider text-[10px] text-primary font-bold">Admin Authority</span>
+          <span className="font-mono text-[10px] text-muted-foreground">Full Rights</span>
+        </div>
+      )}
     </div>
   );
 }
