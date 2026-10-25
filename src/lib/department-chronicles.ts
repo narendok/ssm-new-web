@@ -264,6 +264,19 @@ export const DEFAULT_DEPARTMENT_CHRONICLES: DepartmentChronicle[] = [
     description: "Baseline requirements frozen for engineering development. ECN control enforced.",
     status: "Approved",
   },
+  {
+    id: "CHRON-S3-HROPS-CRS",
+    stageIndex: 2,
+    stageName: "Stage 3: Requirement Freeze & Commercial Lock",
+    departmentCode: "HR",
+    title: "Competency, Safety & Staffing Requirement Freeze (HR-OPS)",
+    deliverableCode: "HROPS-CRS-01",
+    documentType: "CRS",
+    raciRole: "R",
+    mandatory: true,
+    description: "Resource planning, operator IPC-A-610 competency baseline, and organizational readiness requirements frozen.",
+    status: "Approved",
+  },
 
   // Stage 4: Design & Development PoC
   {

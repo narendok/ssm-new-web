@@ -211,14 +211,15 @@ export const projectLifecycleData: Record<string, {
         leadName: "Avery Vale & Riley Stone",
         leadDept: "EHW/SAL",
         leadRole: "System Architect & Commercial Lead",
-        alignedTeam: ["Mr. K. Ramanathan (Client SPOC)", "Priya Voss (Finance Lead)"],
-        summary: "Auto-compiled Product Requirement Specification (PRS HLPL-BCU-EHW-PRS-01) and Commercial Quotation HLPL-BCU-SAL-QUO-02 frozen and signed by Ashok Leyland. 30% advance deposit confirmed.",
+        alignedTeam: ["Mr. K. Ramanathan (Client SPOC)", "Priya Voss (Finance Lead)", "Taylor Quinn (HR/Operations Lead)"],
+        summary: "Auto-compiled Product Requirement Specification (PRS HLPL-BCU-EHW-PRS-01), Commercial Quotation HLPL-BCU-SAL-QUO-02, and HR-OPS Requirement Freeze frozen and signed by Ashok Leyland. 30% advance deposit confirmed.",
         hardwareNote: "Architecture baseline locked: Modified PCB HLPL-MOD-PCB-04-BLE, Molex MX150 harness, and SABIC Lexan enclosure with RF window.",
         batteryNote: "Battery specification locked: 3.7V 1000mAh Lithium-ion pouch cell with internal protection circuit module (PCM).",
         regulatoryNote: "Design targets locked against AIS-140 Amendment 2 and CMVR Rule 125H.",
         deliverables: [
           { docId: "HLPL-BCU-EHW-PRS-01", title: "Product Requirement Specification (PRS - Frozen)", dept: "EHW", status: "Approved", description: "Comprehensive specification covering BLE 5.2, dual CAN, 3.7V Li-ion battery, and IP67." },
           { docId: "HLPL-BCU-SAL-QUO-02", title: "Commercial Quotation & Volume Tiers", dept: "SAL", status: "Approved", description: "₹4,480 / unit across 15,000 units/year commitment with 50% NRE contribution." },
+          { docId: "HLPL-BCU-HROPS-CRS-01", title: "Competency & Safety Requirement Freeze (HR-OPS)", dept: "HR", status: "Approved", description: "Resource planning, training certifications and plant staffing matrix frozen." },
         ],
         defaultComments: [
           {
@@ -572,7 +573,7 @@ export const projectLifecycleData: Record<string, {
         leadName: "Riley Stone",
         leadDept: "SAL",
         leadRole: "Sales Lead",
-        alignedTeam: ["Mr. Vikram Singhania (Client SPOC)"],
+        alignedTeam: ["Mr. Vikram Singhania (Client SPOC)", "Taylor Quinn (HR/Operations Lead)"],
         summary: "Commercial quotation HLPL-SLCT-SAL-QUO-01 accepted. Total contract value ₹3.45 Crores across 10,000 units.",
         hardwareNote: "Architecture baseline locked to ready PCB-01 Rev 03 + HARN-LIB-002 OBD-II harness.",
         batteryNote: "Standard 3.7V 1000mAh battery allocated.",
@@ -580,6 +581,7 @@ export const projectLifecycleData: Record<string, {
         deliverables: [
           { docId: "HLPL-SLCT-EHW-PRS-01", title: "Product Requirement Specification (PRS)", dept: "EHW", status: "Approved", description: "Standard AIS-140 4G Cat-1 specification." },
           { docId: "HLPL-SLCT-SAL-QUO-01", title: "Commercial Quotation (₹3,450/unit)", dept: "SAL", status: "Approved", description: "Contract proposal signed by Select Motors." },
+          { docId: "HLPL-SLCT-HROPS-CRS-01", title: "Competency & Safety Requirement Freeze (HR-OPS)", dept: "HR", status: "Approved", description: "Resource planning, training certifications and plant staffing matrix frozen." },
         ],
         defaultComments: [
           {

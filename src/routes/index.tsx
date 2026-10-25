@@ -523,7 +523,19 @@ const projectDocumentProfiles: Record<string, ProjectDocumentProfile> = {
   "HLPL-XLINK-03": { name: "Commercial Fleet Gateway", customer: "Commercial Fleet Solutions Limited", contact: "Demo fleet programme SPOC", quantity: "25,000 units / year", techSpec: "Dual CAN · OBD-II · GNSS · 4G fleet gateway", commercialValue: "Commercial value pending controlled review", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AEC-Q100 · ISO 7637-2 · RoHS / REACH" },
 };
 function defaultRaciMatrix(): RaciMatrix {
-  return Object.fromEntries(ai4tStages.map(([stage], index) => [stage, Object.fromEntries(raciDepartments.map((department) => [department, department === (index < 3 ? "SAL" : index === 5 ? "QA" : index === 8 ? "EMF" : "EHW") ? "R" : department === "SAL" ? "A" : ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"].includes(department) ? "C" : "I"]))]));
+  return Object.fromEntries(ai4tStages.map(([stage], index) => [
+    stage,
+    Object.fromEntries(raciDepartments.map((department) => [
+      department,
+      department === (index < 3 ? "SAL" : index === 5 ? "QA" : index === 8 ? "EMF" : "EHW") || (index === 2 && department === "HR")
+        ? "R"
+        : department === "SAL"
+        ? "A"
+        : ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"].includes(department)
+        ? "C"
+        : "I"
+    ]))
+  ]));
 }
 const ai4tDossier = [
   ["Customer SOR", "HLPL-AI4T-SAL-SOR-01", "SAL", "Stage 1"],
@@ -531,6 +543,7 @@ const ai4tDossier = [
   ["Contract Review Record", "HLPL/F/MKT/01", "SAL", "Stage 2"],
   ["Product Requirement Specification", "HLPL-AI4T-EHW-PRS-01", "EHW", "Stage 3"],
   ["Commercial Quotation", "HLPL-AI4T-SAL-QUO-01", "SAL", "Stage 3"],
+  ["Competency & Staffing Requirements Freeze", "HLPL-AI4T-HROPS-CRS-01", "HR/OPS", "Stage 3"],
   ["Schematic package", "HLPL-AI4T-EHW-SCH-01", "EHW", "Stage 4"],
   ["Preliminary BOM", "HLPL-AI4T-EHW-BOM-01", "EHW", "Stage 4"],
   ["Control Plan", "HLPL-AI4T-EMF-CP-01", "EMF", "Stage 5"],
