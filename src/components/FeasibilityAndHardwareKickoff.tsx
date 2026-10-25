@@ -914,31 +914,42 @@ export function FeasibilityAndHardwareKickoff({
                 Client Approval & Final Requirement Baseline Lock
               </h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Per Master Plan §5: Formal client approval of the final requirement specification (PRS-01) and commercial quotation (QUO-01), with immutable baseline locking.
+                Per Master Plan §5: Governed by HR/Operations & Sales. Formal approval of the final requirement specification (PRS/SRS), commercial quotation (QUO-01), and HR-OPS staffing & competency baseline freeze.
               </p>
             </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              <Lock className="size-3.5" /> Baseline Ready for Lock
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              <span
+                className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-foreground cursor-help"
+                title="Responsible Leads: Taylor Quinn (HR & Operations Lead) & Riley Stone / Priya Sharma (Sales Lead) — HR/SAL"
+              >
+                Lead: Taylor Quinn & Riley Stone (HR/SAL)
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                HR/Operations Governance & Commercial Lead
+              </span>
+            </div>
           </div>
 
-          <div className="mt-5 grid gap-5 md:grid-cols-2">
-            {/* Locked PRS Baseline */}
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            {/* Locked HR/OPS Competency Baseline (Pillar 1) */}
             <div className="rounded-lg border border-border bg-panel/70 p-4">
               <div className="flex items-start justify-between">
                 <div>
-                  <span className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground">
-                    EHW Technical Baseline
+                  <span
+                    className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground"
+                    title="HR & Operations Governance (Staffing, Operator IPC Certifications & Safety)"
+                  >
+                    HR/OPS Governance Baseline
                   </span>
                   <h4 className="mt-2 text-sm font-bold text-foreground">
-                    Product Requirement Spec (PRS)
+                    Competency & Safety Freeze (CRS)
                   </h4>
-                  <p className="font-mono text-xs text-muted-foreground">HLPL-AI4T-EHW-PRS-01 · Rev 01</p>
+                  <p className="font-mono text-xs text-muted-foreground">HLPL-AI4T-HROPS-CRS-01 · Rev 01</p>
                 </div>
                 <button
-                  onClick={() => onOpenDocumentView("HLPL-AI4T-EHW-PRS-01", "Product Requirement Spec", "EHW")}
+                  onClick={() => onOpenDocumentView("HLPL-AI4T-HROPS-CRS-01", "Competency & Safety Freeze", "HR")}
                   className="rounded p-1 text-steel hover:bg-secondary"
-                  title="View complete PRS document"
+                  title="View complete HR-OPS document"
                 >
                   <ExternalLink className="size-4" />
                 </button>
@@ -946,36 +957,39 @@ export function FeasibilityAndHardwareKickoff({
 
               <div className="mt-3 space-y-2 rounded-md bg-secondary/50 p-3 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Controller:</span>
-                  <span className="font-medium text-foreground">STM32F405VG Automotive MCU</span>
+                  <span className="text-muted-foreground">Plant Competency:</span>
+                  <span className="font-medium text-foreground">IPC-A-610 Class 3 Certified</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Modem:</span>
-                  <span className="font-medium text-foreground">4G LTE Cat-1 eSIM (2G Fallback)</span>
+                  <span className="text-muted-foreground">Staffing Squad:</span>
+                  <span className="font-medium text-foreground">Dedicated SMT & Assembly Cell</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Vehicle Telematics:</span>
-                  <span className="font-medium text-foreground">AIS-140 Amd 1 & 2 + CAN J1939</span>
+                  <span className="text-muted-foreground">EHS & Safety:</span>
+                  <span className="font-medium text-foreground">ISO 45001 / Factories Act 1948</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Enclosure:</span>
-                  <span className="font-medium text-foreground">IP67 Polycarbonate UV-Stabilized</span>
+                  <span className="text-muted-foreground">Resource Baseline:</span>
+                  <span className="font-medium text-foreground">Locked under Rev 01 Freeze</span>
                 </div>
               </div>
 
               <div className="mt-3 flex items-center justify-between text-[11px] text-emerald-600 dark:text-emerald-400">
                 <span className="flex items-center gap-1 font-semibold">
-                  <CheckCircle2 className="size-3.5" /> Technical Lock Confirmed
+                  <CheckCircle2 className="size-3.5" /> Staffing & Safety Lock Confirmed
                 </span>
-                <span className="font-mono text-[10px]">EHW Lead: Avery Vale</span>
+                <span className="font-mono text-[10px]">HR Lead: Taylor Quinn</span>
               </div>
             </div>
 
-            {/* Locked Quotation Baseline */}
+            {/* Locked Quotation Baseline (Pillar 2) */}
             <div className="rounded-lg border border-border bg-panel/70 p-4">
               <div className="flex items-start justify-between">
                 <div>
-                  <span className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground">
+                  <span
+                    className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground"
+                    title="Sales & Business Development (Customer Contract & Price Commitment)"
+                  >
                     SAL Commercial Baseline
                   </span>
                   <h4 className="mt-2 text-sm font-bold text-foreground">
@@ -1016,6 +1030,57 @@ export function FeasibilityAndHardwareKickoff({
                   <CheckCircle2 className="size-3.5" /> Commercial Lock Confirmed
                 </span>
                 <span className="font-mono text-[10px]">Sales Lead: Priya Sharma</span>
+              </div>
+            </div>
+
+            {/* Locked PRS Baseline (Pillar 3 - Consulted Specification) */}
+            <div className="rounded-lg border border-border bg-panel/70 p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <span
+                    className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-bold text-foreground"
+                    title="Embedded Hardware Engineering (Technical Requirements Consulted Input)"
+                  >
+                    EHW Technical Baseline (Consulted)
+                  </span>
+                  <h4 className="mt-2 text-sm font-bold text-foreground">
+                    Product Requirement Spec (PRS)
+                  </h4>
+                  <p className="font-mono text-xs text-muted-foreground">HLPL-AI4T-EHW-PRS-01 · Rev 01</p>
+                </div>
+                <button
+                  onClick={() => onOpenDocumentView("HLPL-AI4T-EHW-PRS-01", "Product Requirement Spec", "EHW")}
+                  className="rounded p-1 text-steel hover:bg-secondary"
+                  title="View complete PRS document"
+                >
+                  <ExternalLink className="size-4" />
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-2 rounded-md bg-secondary/50 p-3 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Controller:</span>
+                  <span className="font-medium text-foreground">STM32F405VG Automotive MCU</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Modem:</span>
+                  <span className="font-medium text-foreground">4G LTE Cat-1 eSIM (2G Fallback)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Vehicle Telematics:</span>
+                  <span className="font-medium text-foreground">AIS-140 Amd 1 & 2 + CAN J1939</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Enclosure:</span>
+                  <span className="font-medium text-foreground">IP67 Polycarbonate UV-Stabilized</span>
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between text-[11px] text-emerald-600 dark:text-emerald-400">
+                <span className="flex items-center gap-1 font-semibold">
+                  <CheckCircle2 className="size-3.5" /> Technical Input Confirmed
+                </span>
+                <span className="font-mono text-[10px]">EHW Lead: Avery Vale</span>
               </div>
             </div>
           </div>

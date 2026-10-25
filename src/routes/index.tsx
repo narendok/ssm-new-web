@@ -506,7 +506,7 @@ export function normalizePersonaId(role: string | null | undefined): string {
 const ai4tStages = [
   ["Stage 1", "Client & Sales Intake", "SOR HLPL-AI4T-SAL-SOR-01 and Mutual NDA HLPL-AI4T-SAL-mNDA-01 are recorded."],
   ["Stage 2", "Feasibility & Contract Review", "EHW, FW, SW, MECH, PUR, QA and FIN feasibility requirement sheets compile Contract Review HLPL/F/MKT/01."],
-  ["Stage 3", "Requirement & Commercial Lock", "Consolidated Requirements Package (EHW-PRS-01, FW-FRS-01, SW-SRS-01, MECH-MRS-01, QA-QRS-01) and quotation HLPL-AI4T-SAL-QUO-01 are generated."],
+  ["Stage 3", "Requirement Freeze & Commercial Lock", "Governed by HR/Operations & Sales: HR-OPS Competency & Safety Freeze (HLPL-AI4T-HROPS-CRS-01), Commercial Quotation (HLPL-AI4T-SAL-QUO-01), and domain specifications baseline are locked."],
   ["Stage 4", "Design & Development PoC", "SCH-01, preliminary BOM, MCU RTOS bring-up (FW) and CAN/telematics software stack (SW) are checked."],
   ["Stage 5", "Pilot Build & Manufacturing Readiness", "Accepted outsourced PCBA lots, EMF-CP-01, box-build checks and mechanical fitment evidence are reviewed."],
   ["Stage 6", "DVP&R Pre-Compliance", "QA-DVP-01 records 18 illustrative electrical and environmental verification checks."],
@@ -520,6 +520,7 @@ const projectDocumentProfiles: Record<string, ProjectDocumentProfile> = {
   "HLPL-AI4T-01": { name: "Tata Ace EV 4G Telematics Gateway", customer: "Tata Motors Limited · EV Fleet Division, Pune", contact: "Mr. Rajesh Sharma · Lead D&D EV", quantity: "50,000 units / year", techSpec: "4G Cat-1 · IP67 · CAN J1939 · Dual SIM · GNSS", commercialValue: "₹20,33,50,000 · $2.45M", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AIS-140 · AEC-Q100/Q200 · ISO 7637-2 · RoHS / REACH" },
   "HLPL-BCU-02": { name: "Ashok Leyland Telematics & BLE Sensor Gateway (OEM Modification)", customer: "Ashok Leyland Limited · Commercial Vehicle Telematics, Chennai", contact: "Mr. K. Ramanathan · General Manager Telematics", quantity: "15,000 units / year", techSpec: "4G Cat-1 · Dual CAN J1939 · BLE 5.2 Nordic nRF52840 · 3.7V NABL Li-ion Battery · iCAT TAC", commercialValue: "₹6,72,00,000 · $810k", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AIS-140 Annexure 8 · ETSI EN 300 328 · IS 16046 / UN 38.3 · ISO 7637-2" },
   "HLPL-SLCT-01": { name: "Select Motors AIS-140 GPS Telematics Tracker (Reusable Platform)", customer: "Select Motors Limited · Telematics Division, Noida", contact: "Mr. Vikram Singhania · Lead Telematics", quantity: "10,000 units / year", techSpec: "100% Platform Reused PCB · 4G Cat-1 · OBD-II · 3.7V Li-ion Battery · IP67", commercialValue: "₹3,45,00,000 · $415k", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AIS-140 · AEC-Q100 · ISO 7637-2 · RoHS" },
+  "HLPL-SW-01": { name: "Commercial Fleet Telematics & Driver Analytics Cloud Platform", customer: "Commercial Fleet Solutions Ltd · Enterprise Cloud Services", contact: "Mr. Ananya Rao · VP Cloud Engineering", quantity: "25,000 vehicles / year SaaS", techSpec: "Microservices · Kafka Streaming · REST/GraphQL APIs · Mobile Driver App", commercialValue: "₹2,55,00,000 / year ($310k ARR)", environmental: "Cloud Hosted (AWS / GCP Multi-AZ) · 99.9% SLA", compliance: "ISO 27001 · SOC 2 Type II · GDPR / DPDP Act 2023" },
   "HLPL-XLINK-03": { name: "Commercial Fleet Gateway", customer: "Commercial Fleet Solutions Limited", contact: "Demo fleet programme SPOC", quantity: "25,000 units / year", techSpec: "Dual CAN · OBD-II · GNSS · 4G fleet gateway", commercialValue: "Commercial value pending controlled review", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AEC-Q100 · ISO 7637-2 · RoHS / REACH" },
 };
 function defaultRaciMatrix(): RaciMatrix {
@@ -3354,7 +3355,10 @@ function Portal() {
           onOpenDirectory={() => setDirectoryOpen(true)}
           onOpenLegalHub={() => setLegalHubOpen(true)}
           onOpenDecisionLog={() => setDecisionLogOpen(true)}
-          onOpenAdminSettings={() => setModal("admin")}
+          onOpenAdminSettings={() => {
+            setAdminTab("chronicles");
+            setModal("admin");
+          }}
           onOpenWizard={() => setModal("wizard")}
           onOpenAssetCatalog={() => setAssetCatalogOpen(true)}
           onOpenApprovals={() => setView("approvals")}
@@ -4023,7 +4027,10 @@ function Portal() {
           onOpenDirectory={() => setDirectoryOpen(true)}
           onOpenLegalHub={() => setLegalHubOpen(true)}
           onOpenDecisionLog={() => setDecisionLogOpen(true)}
-          onOpenAdminSettings={() => setModal("admin")}
+          onOpenAdminSettings={() => {
+            setAdminTab("chronicles");
+            setModal("admin");
+          }}
           onOpenWizard={() => setModal("wizard")}
           onOpenAssetCatalog={() => setAssetCatalogOpen(true)}
           onOpenApprovals={() => setView("approvals")}

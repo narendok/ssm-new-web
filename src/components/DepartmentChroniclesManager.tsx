@@ -25,6 +25,9 @@ import {
   CANONICAL_STAGES,
   CANONICAL_DEPARTMENTS,
   deriveRaciMatrixFromChronicles,
+  DEPARTMENT_FULL_NAMES,
+  type ProjectTrack,
+  isDepartmentActiveForTrack,
 } from "@/lib/department-chronicles";
 
 export type DepartmentChroniclesManagerProps = {
@@ -75,10 +78,62 @@ export function DepartmentChroniclesManager({
 
   // Notification message
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
+  const [raciTrackFilter, setRaciTrackFilter] = useState<ProjectTrack | "all">("all");
 
   const showNotification = (msg: string) => {
     setFeedbackNotice(msg);
     setTimeout(() => setFeedbackNotice(null), 3500);
+  };
+
+  const handleCycleRaciRole = (stageIndex: number, stageKey: string, dept: string, currentRole: RaciRole) => {
+    const cycle: RaciRole[] = ["", "R", "A", "C", "I"];
+    const nextIdx = (cycle.indexOf(currentRole) + 1) % cycle.length;
+    const nextRole = cycle[nextIdx] ?? "";
+    handleSetRaciRole(stageIndex, stageKey, dept, nextRole);
+  };
+
+  const handleSetRaciRole = (stageIndex: number, stageKey: string, dept: string, newRole: RaciRole) => {
+    const matching = chronicles.filter(
+      (c) => c.stageIndex === stageIndex && c.departmentCode.trim().toUpperCase() === dept.trim().toUpperCase()
+    );
+    let updated: DepartmentChronicle[];
+    const deptInfo = DEPARTMENT_FULL_NAMES[dept] || { short: dept, full: dept, description: "" };
+    if (matching.length > 0) {
+      if (newRole === "") {
+        updated = chronicles.map((c) =>
+          c.stageIndex === stageIndex && c.departmentCode.trim().toUpperCase() === dept.trim().toUpperCase()
+            ? { ...c, raciRole: "I" as RaciRole }
+            : c
+        );
+      } else {
+        updated = chronicles.map((c) =>
+          c.stageIndex === stageIndex && c.departmentCode.trim().toUpperCase() === dept.trim().toUpperCase()
+            ? { ...c, raciRole: newRole as "R" | "A" | "C" | "I" }
+            : c
+        );
+      }
+    } else if (newRole) {
+      const newChronicle: DepartmentChronicle = {
+        id: `CHRON-S${stageIndex + 1}-${dept}-${Date.now().toString(36)}`,
+        stageIndex,
+        stageName: STAGE_LABELS[stageIndex] || `Stage ${stageIndex + 1}`,
+        departmentCode: dept,
+        title: `${deptInfo.full} Stage ${stageIndex + 1} Deliverable`,
+        deliverableCode: `${dept}-DOC-S${stageIndex + 1}-01`,
+        documentType: dept === "SAL" ? "QUO" : dept === "HR" ? "CRS" : dept === "QA" ? "DVP" : "PRS",
+        raciRole: newRole as "R" | "A" | "C" | "I",
+        mandatory: newRole === "R" || newRole === "A",
+        description: `${deptInfo.full} governed deliverable for ${STAGE_LABELS[stageIndex] || `Stage ${stageIndex + 1}`}.`,
+        status: "Approved",
+        updatedAt: new Date().toISOString(),
+      };
+      updated = [...chronicles, newChronicle];
+    } else {
+      return;
+    }
+    onUpdateChronicles(updated);
+    onLog?.("RACI Assignment Changed", `${dept} in ${stageKey} set to ${newRole || "None"}`);
+    showNotification(`Updated ${deptInfo.full} (${dept}) in ${stageKey} to [${newRole || "—"}]. Portal RACI synchronized!`);
   };
 
   const openCreateModal = () => {
@@ -292,35 +347,104 @@ export function DepartmentChroniclesManager({
       {viewMode === "raci" && (
         <div className="space-y-4 animate-in fade-in duration-200">
           <div className="rounded-xl border border-border bg-card overflow-hidden shadow-xs">
-            <div className="border-b border-border bg-muted/40 px-4 py-3 flex items-center justify-between">
+            <div className="border-b border-border bg-muted/40 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
-                  Automotive Lifecycle Responsibility Matrix (RACI)
+                <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+                  <ShieldCheck className="size-4 text-primary" />
+                  <span>Automotive Lifecycle Responsibility Matrix (RACI) · Live Editor</span>
                 </h4>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Governed Single Source of Truth · Mathematically derived from active Department Chronicles. Click any cell to jump to that deliverable.
+                  Governed Single Source of Truth · <strong>Click any cell to cycle assignment (— &rarr; R &rarr; A &rarr; C &rarr; I &rarr; —)</strong>. Hover headers or cells for full department descriptions.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={openCreateModal}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition"
-              >
-                <Plus className="size-3" />
-                <span>+ Add Deliverable</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateChronicles([...chronicles]);
+                    onLog?.("RACI Matrix Saved", "Manual RACI matrix confirmation by Administrator");
+                    showNotification("Responsibility Matrix (RACI) saved successfully! Active projects and portal synchronized.");
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs transition"
+                  title="Persist current RACI matrix assignments across the portal"
+                >
+                  <CheckCircle2 className="size-3.5" />
+                  <span>Save RACI Matrix</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
+                  title="Add a new deliverable chronicle"
+                >
+                  <Plus className="size-3" />
+                  <span>+ Add Deliverable</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Track Filter Bar */}
+            <div className="bg-muted/20 border-b border-border px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[10px] uppercase font-bold text-muted-foreground mr-1">Project Technical Scope:</span>
+                {(["all", "turnkey", "software", "firmware"] as const).map((track) => (
+                  <button
+                    key={track}
+                    type="button"
+                    onClick={() => setRaciTrackFilter(track)}
+                    className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                      raciTrackFilter === track
+                        ? "bg-primary text-primary-foreground shadow-xs"
+                        : "bg-secondary text-secondary-foreground hover:bg-muted"
+                    }`}
+                    title={
+                      track === "all"
+                        ? "Show all 12 company departments"
+                        : track === "turnkey"
+                        ? "Turnkey Hardware & Embedded Track (Hardware, Firmware, Mechanical & Manufacturing)"
+                        : track === "software"
+                        ? "Pure Software Track (Cloud, Web, APIs, Mobile Apps — Skips PCB & SMT)"
+                        : "Firmware / IoT Device Track (Firmware on Pre-Certified / Reused HW)"
+                    }
+                  >
+                    {track === "all"
+                      ? "All Departments (12)"
+                      : track === "turnkey"
+                      ? "Turnkey Hardware & Embedded"
+                      : track === "software"
+                      ? "Pure Software Track"
+                      : "Firmware / IoT Track"}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] text-muted-foreground font-mono">
+                Tip: Click cell to cycle role · Right-click to view deliverables
+              </span>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-xs text-left">
+              <table className="w-full min-w-[940px] text-xs text-left">
                 <thead className="bg-muted/50 border-b border-border text-muted-foreground font-semibold">
                   <tr>
                     <th className="py-2.5 px-3 min-w-44">Lifecycle Stage</th>
-                    {CANONICAL_DEPARTMENTS.map((dept) => (
-                      <th key={dept} className="py-2.5 px-2 text-center font-bold text-foreground">
-                        {dept}
-                      </th>
-                    ))}
+                    {CANONICAL_DEPARTMENTS.map((dept) => {
+                      const deptInfo = DEPARTMENT_FULL_NAMES[dept];
+                      const isDeptActive = raciTrackFilter === "all" || isDepartmentActiveForTrack(dept, raciTrackFilter);
+                      return (
+                        <th
+                          key={dept}
+                          className={`py-2.5 px-2 text-center font-bold transition ${
+                            isDeptActive ? "text-foreground" : "text-muted-foreground/40 bg-muted/20"
+                          }`}
+                          title={`${deptInfo?.full || dept} (${dept}): ${deptInfo?.description || ""}`}
+                        >
+                          <div className="font-mono text-xs">{dept}</div>
+                          <div className="text-[9px] font-normal truncate max-w-[65px] mx-auto opacity-75">
+                            {deptInfo?.full.split("&")[0]?.trim() || dept}
+                          </div>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -334,26 +458,35 @@ export function DepartmentChroniclesManager({
                         </td>
                         {CANONICAL_DEPARTMENTS.map((dept) => {
                           const role = row[dept] || "";
+                          const deptInfo = DEPARTMENT_FULL_NAMES[dept];
+                          const isDeptActive = raciTrackFilter === "all" || isDepartmentActiveForTrack(dept, raciTrackFilter);
                           const matchingChronicles = chronicles.filter(
                             (c) => c.stageIndex === sIdx && c.departmentCode.toUpperCase() === dept
                           );
                           const hasChronicles = matchingChronicles.length > 0;
 
                           return (
-                            <td key={dept} className="py-2 px-1 text-center">
+                            <td
+                              key={dept}
+                              className={`py-2 px-1 text-center transition ${
+                                !isDeptActive ? "bg-muted/20 opacity-40" : ""
+                              }`}
+                            >
                               <button
                                 type="button"
-                                onClick={() => {
+                                onClick={() => handleCycleRaciRole(sIdx, stageKey, dept, role)}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
                                   setSelectedStageFilter(sIdx);
                                   setSelectedDeptFilter(dept);
                                   setViewMode("chronicles");
                                 }}
-                                title={`${dept} in ${stageKey}: ${role || "None"}\n${
-                                  hasChronicles
-                                    ? matchingChronicles.map((c) => `• [${c.raciRole}] ${c.deliverableCode}: ${c.title}`).join("\n")
-                                    : "Click to filter chronicles"
-                                }`}
-                                className={`size-7 rounded font-mono font-bold text-xs inline-flex items-center justify-center transition-all ${
+                                title={`${deptInfo?.full || dept} (${dept}) — ${stageKey}
+Current Role: ${role || "None (—)"}
+${isDeptActive ? "• Click cell to cycle role: — → R → A → C → I → —" : `• Note: Not active in ${raciTrackFilter} track`}
+• Right-click cell to inspect deliverable documents
+${hasChronicles ? matchingChronicles.map((c) => `  - [${c.raciRole}] ${c.deliverableCode}: ${c.title}`).join("\n") : "  - No deliverable defined yet"}`}
+                                className={`size-7 rounded font-mono font-bold text-xs inline-flex items-center justify-center transition-all cursor-pointer select-none active:scale-95 ${
                                   role === "R"
                                     ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:scale-110 shadow-xs"
                                     : role === "A"
@@ -362,7 +495,7 @@ export function DepartmentChroniclesManager({
                                     ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 hover:scale-110 shadow-xs"
                                     : role === "I"
                                     ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 hover:scale-110"
-                                    : "text-muted-foreground/40 hover:bg-muted"
+                                    : "text-muted-foreground/40 hover:bg-muted border border-dashed border-border"
                                 }`}
                               >
                                 {role || "—"}
@@ -455,11 +588,13 @@ export function DepartmentChroniclesManager({
           {CANONICAL_DEPARTMENTS.map((dept) => {
             const count = chronicles.filter((c) => c.departmentCode === dept).length;
             const isSelected = selectedDeptFilter === dept;
+            const deptInfo = DEPARTMENT_FULL_NAMES[dept];
             return (
               <button
                 key={dept}
                 type="button"
                 onClick={() => setSelectedDeptFilter(dept)}
+                title={`${deptInfo?.full || dept} (${dept}): ${deptInfo?.description || ""}`}
                 className={`rounded-md px-2.5 py-1 font-mono text-[11px] font-bold transition-colors ${
                   isSelected
                     ? "bg-primary text-primary-foreground"
@@ -505,7 +640,10 @@ export function DepartmentChroniclesManager({
                       </span>
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="font-mono font-bold text-xs rounded border border-primary/20 bg-primary/10 px-2 py-0.5 text-primary">
+                      <span
+                        className="font-mono font-bold text-xs rounded border border-primary/20 bg-primary/10 px-2 py-0.5 text-primary"
+                        title={`${DEPARTMENT_FULL_NAMES[chronicle.departmentCode]?.full || chronicle.departmentCode} (${chronicle.departmentCode}): ${DEPARTMENT_FULL_NAMES[chronicle.departmentCode]?.description || ""}`}
+                      >
                         {chronicle.departmentCode}
                       </span>
                     </td>

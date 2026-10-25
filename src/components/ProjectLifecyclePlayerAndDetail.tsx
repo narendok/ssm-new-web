@@ -27,7 +27,13 @@ import {
   FileCheck2,
 } from "lucide-react";
 import type { Persona } from "@/components/RoleAwareSidebar";
-import { type DepartmentChronicle, deriveDeliverablesForStage } from "@/lib/department-chronicles";
+import {
+  type DepartmentChronicle,
+  deriveDeliverablesForStage,
+  DEPARTMENT_FULL_NAMES,
+  type ProjectTrack,
+  isDepartmentActiveForTrack,
+} from "@/lib/department-chronicles";
 
 export type StageComment = {
   id: string;
@@ -208,18 +214,18 @@ export const projectLifecycleData: Record<string, {
         stageCode: "Stage 3",
         title: "Requirement Freeze & Commercial Baseline Lock",
         apqpMilestone: "Phase 2: Product Design & Development Kickoff",
-        leadName: "Avery Vale & Riley Stone",
-        leadDept: "EHW/SAL",
-        leadRole: "System Architect & Commercial Lead",
-        alignedTeam: ["Mr. K. Ramanathan (Client SPOC)", "Priya Voss (Finance Lead)", "Taylor Quinn (HR/Operations Lead)"],
-        summary: "Auto-compiled Product Requirement Specification (PRS HLPL-BCU-EHW-PRS-01), Commercial Quotation HLPL-BCU-SAL-QUO-02, and HR-OPS Requirement Freeze frozen and signed by Ashok Leyland. 30% advance deposit confirmed.",
+        leadName: "Taylor Quinn & Riley Stone",
+        leadDept: "HR/SAL",
+        leadRole: "HR/Operations Governance & Commercial Lead",
+        alignedTeam: ["Taylor Quinn (HR/Operations Lead)", "Riley Stone (Sales Lead)", "Mr. K. Ramanathan (Client SPOC)", "Priya Voss (Finance Lead)"],
+        summary: "Governed by HR/Operations & Sales: HR-OPS Competency & Safety Freeze (HLPL-BCU-HROPS-CRS-01), Commercial Quotation (HLPL-BCU-SAL-QUO-02), and Product Requirement Specification (HLPL-BCU-EHW-PRS-01) frozen and signed by Ashok Leyland. 30% advance deposit confirmed.",
         hardwareNote: "Architecture baseline locked: Modified PCB HLPL-MOD-PCB-04-BLE, Molex MX150 harness, and SABIC Lexan enclosure with RF window.",
         batteryNote: "Battery specification locked: 3.7V 1000mAh Lithium-ion pouch cell with internal protection circuit module (PCM).",
         regulatoryNote: "Design targets locked against AIS-140 Amendment 2 and CMVR Rule 125H.",
         deliverables: [
-          { docId: "HLPL-BCU-EHW-PRS-01", title: "Product Requirement Specification (PRS - Frozen)", dept: "EHW", status: "Approved", description: "Comprehensive specification covering BLE 5.2, dual CAN, 3.7V Li-ion battery, and IP67." },
-          { docId: "HLPL-BCU-SAL-QUO-02", title: "Commercial Quotation & Volume Tiers", dept: "SAL", status: "Approved", description: "₹4,480 / unit across 15,000 units/year commitment with 50% NRE contribution." },
           { docId: "HLPL-BCU-HROPS-CRS-01", title: "Competency & Safety Requirement Freeze (HR-OPS)", dept: "HR", status: "Approved", description: "Resource planning, training certifications and plant staffing matrix frozen." },
+          { docId: "HLPL-BCU-SAL-QUO-02", title: "Commercial Quotation & Volume Tiers", dept: "SAL", status: "Approved", description: "₹4,480 / unit across 15,000 units/year commitment with 50% NRE contribution." },
+          { docId: "HLPL-BCU-EHW-PRS-01", title: "Product Requirement Specification (PRS - Consulted)", dept: "EHW", status: "Approved", description: "Comprehensive technical specification covering BLE 5.2, dual CAN, 3.7V Li-ion battery, and IP67." },
         ],
         defaultComments: [
           {
@@ -570,18 +576,18 @@ export const projectLifecycleData: Record<string, {
         stageCode: "Stage 3",
         title: "Requirement Freeze & Commercial Order Confirmation",
         apqpMilestone: "Phase 2: Baseline Lock",
-        leadName: "Riley Stone",
-        leadDept: "SAL",
-        leadRole: "Sales Lead",
-        alignedTeam: ["Mr. Vikram Singhania (Client SPOC)", "Taylor Quinn (HR/Operations Lead)"],
-        summary: "Commercial quotation HLPL-SLCT-SAL-QUO-01 accepted. Total contract value ₹3.45 Crores across 10,000 units.",
+        leadName: "Taylor Quinn & Riley Stone",
+        leadDept: "HR/SAL",
+        leadRole: "HR/Operations Governance & Commercial Lead",
+        alignedTeam: ["Taylor Quinn (HR/Operations Lead)", "Riley Stone (Sales Lead)", "Mr. Vikram Singhania (Client SPOC)"],
+        summary: "Governed by HR/Operations & Sales: HR-OPS Competency & Staffing Freeze (HLPL-SLCT-HROPS-CRS-01) and Commercial quotation (HLPL-SLCT-SAL-QUO-01) accepted. Total contract value ₹3.45 Crores across 10,000 units.",
         hardwareNote: "Architecture baseline locked to ready PCB-01 Rev 03 + HARN-LIB-002 OBD-II harness.",
         batteryNote: "Standard 3.7V 1000mAh battery allocated.",
         regulatoryNote: "AIS-140 compliance guaranteed by ready platform.",
         deliverables: [
-          { docId: "HLPL-SLCT-EHW-PRS-01", title: "Product Requirement Specification (PRS)", dept: "EHW", status: "Approved", description: "Standard AIS-140 4G Cat-1 specification." },
-          { docId: "HLPL-SLCT-SAL-QUO-01", title: "Commercial Quotation (₹3,450/unit)", dept: "SAL", status: "Approved", description: "Contract proposal signed by Select Motors." },
           { docId: "HLPL-SLCT-HROPS-CRS-01", title: "Competency & Safety Requirement Freeze (HR-OPS)", dept: "HR", status: "Approved", description: "Resource planning, training certifications and plant staffing matrix frozen." },
+          { docId: "HLPL-SLCT-SAL-QUO-01", title: "Commercial Quotation (₹3,450/unit)", dept: "SAL", status: "Approved", description: "Contract proposal signed by Select Motors." },
+          { docId: "HLPL-SLCT-EHW-PRS-01", title: "Product Requirement Specification (PRS - Consulted)", dept: "EHW", status: "Approved", description: "Standard AIS-140 4G Cat-1 specification." },
         ],
         defaultComments: [
           {
@@ -762,6 +768,401 @@ export const projectLifecycleData: Record<string, {
       },
     ],
   },
+  "HLPL-AI4T-01": {
+    projectCode: "HLPL-AI4T-01",
+    title: "Tata Ace EV 4G AIS-140 Intelligent Vehicle Gateway",
+    customer: "Tata Motors Limited · Commercial Vehicles EV Division, Pune",
+    architectureMode: "reusable_platform",
+    pcbInfo: "Motherboard PCB HLPL-MOD-PCB-01 (Rev 03): STM32F405VG MCU + Quectel EC200U 4G LTE Cat-1 eSIM.",
+    batteryInfo: "3.7V 1000mAh Lithium-ion Backup Battery (NABL Accredited Tested to IS 16046 Part 2 / UN 38.3).",
+    agencyInfo: "iCAT / ARAI AIS-140 Annexure 8 TAC Form 22 Full Homologation.",
+    stages: [
+      {
+        stageNumber: 1,
+        stageCode: "Stage 1",
+        title: "Client & Sales Intake (SOR & Bilateral NDA)",
+        apqpMilestone: "Phase 1: Concept & Voice of Customer",
+        leadName: "Riley Stone",
+        leadDept: "SAL",
+        leadRole: "Sales & Business Development Lead",
+        alignedTeam: ["Mr. Rajesh Sharma (Tata Motors Lead D&D EV)", "Riley Stone (Sales Lead)"],
+        summary: "Customer SOR HLPL-AI4T-SAL-SOR-01 logged for Tata Ace EV fleet. Requires 4G Cat-1 AIS-140 tracking + dual CAN J1939 battery telemetry.",
+        hardwareNote: "Ready PCB HLPL-MOD-PCB-01 allocated.",
+        batteryNote: "Internal 3.7V Lithium-ion battery required.",
+        regulatoryNote: "Mandatory AIS-140 compliance and ARAI certification.",
+        deliverables: [
+          { docId: "HLPL-AI4T-SAL-SOR-01", title: "Customer Statement of Requirements (SOR)", dept: "SAL", status: "Approved", description: "50,000 units/year telematics requirement." },
+          { docId: "HLPL-AI4T-SAL-mNDA-01", title: "Mutual Non-Disclosure Agreement (mNDA)", dept: "SAL", status: "Approved", description: "Bilateral IP protection executed." },
+        ],
+        defaultComments: [
+          { id: "ai1-1", author: "Riley Stone", departmentCode: "SAL", role: "Sales Lead", timestamp: "01 Oct 2026", content: "Tata Motors SOR logged.", badge: "Sales Intake" },
+        ],
+      },
+      {
+        stageNumber: 2,
+        stageCode: "Stage 2",
+        title: "Cross-Department Feasibility & Contract Review",
+        apqpMilestone: "Phase 1: Technical & Commercial Feasibility",
+        leadName: "Avery Vale & Jordan Blake",
+        leadDept: "EHW/QA",
+        leadRole: "Hardware & QA Leads",
+        alignedTeam: ["Avery Vale (EHW Lead)", "Jordan Blake (QA Lead)", "Priya Voss (Finance Lead)"],
+        summary: "All technical departments reviewed requirements. Contract Review Record HLPL/F/MKT/01 approved.",
+        hardwareNote: "Ready PCB-01 Rev 03 confirmed feasible.",
+        batteryNote: "3.7V 1000mAh battery allocated.",
+        regulatoryNote: "AIS-140 Annexure 8 test plan drafted.",
+        deliverables: [
+          { docId: "HLPL/F/MKT/01", title: "Contract Review Record", dept: "SAL", status: "Approved", description: "Approved feasibility across 6 departments." },
+        ],
+        defaultComments: [
+          { id: "ai2-1", author: "Avery Vale", departmentCode: "EHW", role: "Embedded Hardware Lead", timestamp: "05 Oct 2026", content: "Hardware feasibility approved.", badge: "HW Pass" },
+        ],
+      },
+      {
+        stageNumber: 3,
+        stageCode: "Stage 3",
+        title: "Requirement Freeze & Commercial Baseline Lock",
+        apqpMilestone: "Phase 2: Product Design & Development Kickoff",
+        leadName: "Taylor Quinn & Riley Stone",
+        leadDept: "HR/SAL",
+        leadRole: "HR/Operations Governance & Commercial Lead",
+        alignedTeam: ["Taylor Quinn (HR/Operations Lead)", "Riley Stone (Sales Lead)", "Mr. Rajesh Sharma (Client SPOC)", "Priya Voss (Finance Lead)"],
+        summary: "Governed by HR/Operations & Sales: HR-OPS Competency & Safety Freeze (HLPL-AI4T-HROPS-CRS-01), Commercial Quotation (HLPL-AI4T-SAL-QUO-01), and Product Requirement Specification (HLPL-AI4T-EHW-PRS-01) locked and signed.",
+        hardwareNote: "Architecture baseline locked: Ready PCB-01 Rev 03 + Molex harness.",
+        batteryNote: "Battery specification locked: 3.7V 1000mAh Li-ion pouch cell.",
+        regulatoryNote: "Design targets locked against AIS-140 Amendment 2.",
+        deliverables: [
+          { docId: "HLPL-AI4T-HROPS-CRS-01", title: "Competency & Safety Requirement Freeze (HR-OPS)", dept: "HR", status: "Approved", description: "Resource planning, operator IPC-A-610 competency baseline, and organizational readiness frozen." },
+          { docId: "HLPL-AI4T-SAL-QUO-01", title: "Commercial Quotation (QUO)", dept: "SAL", status: "Approved", description: "₹4,067 / unit across 50,000 units/year commitment." },
+          { docId: "HLPL-AI4T-EHW-PRS-01", title: "Product Requirement Specification (PRS - Consulted)", dept: "EHW", status: "Approved", description: "Comprehensive specification covering STM32, 4G Cat-1, dual CAN and IP67." },
+        ],
+        defaultComments: [
+          { id: "ai3-1", author: "Taylor Quinn", departmentCode: "HR", role: "HR & Operations Lead", timestamp: "10 Oct 2026", content: "HR-OPS: Staffing and competency freeze approved. Manufacturing line certified.", badge: "HR-OPS Sign-off" },
+        ],
+      },
+      {
+        stageNumber: 4,
+        stageCode: "Stage 4",
+        title: "Design & Development PoC",
+        apqpMilestone: "Phase 2: Product Design Verification",
+        leadName: "Avery Vale",
+        leadDept: "EHW",
+        leadRole: "Embedded Hardware Lead",
+        alignedTeam: ["Avery Vale (EHW Lead)", "Devon Lane (FW Lead)", "Samira Holt (MECH Lead)"],
+        summary: "Schematic package, preliminary BOM and FreeRTOS MCU bring-up verified on bench prototype.",
+        hardwareNote: "SCH-01 package approved with TVS diodes.",
+        batteryNote: "Battery charging CC/CV profile tested.",
+        regulatoryNote: "Pre-compliance emissions test clean.",
+        deliverables: [
+          { docId: "HLPL-AI4T-EHW-SCH-01", title: "Hardware Schematic & Netlist", dept: "EHW", status: "Approved", description: "Altium schematic with automotive power protection." },
+        ],
+        defaultComments: [
+          { id: "ai4-1", author: "Avery Vale", departmentCode: "EHW", role: "Embedded Hardware Lead", timestamp: "14 Oct 2026", content: "SCH-01 schematic signed.", badge: "Schematic Approved" },
+        ],
+      },
+      {
+        stageNumber: 5,
+        stageCode: "Stage 5",
+        title: "Pilot Build & Manufacturing Readiness",
+        apqpMilestone: "Phase 3: Process Design & Development",
+        leadName: "Casey Rowan",
+        leadDept: "EMF",
+        leadRole: "Electronics Manufacturing Lead",
+        alignedTeam: ["Casey Rowan (EMF Lead)", "Morgan Reed (PUR Lead)"],
+        summary: "Accepted outsourced PCBA lot traceability, Control Plan (EMF-CP-01) and SMT line functional fixtures verified.",
+        hardwareNote: "Batch 01 pilot build running on Line 2.",
+        batteryNote: "Battery assembly fixture ready.",
+        regulatoryNote: "Traceability QR code etched on PCB.",
+        deliverables: [
+          { docId: "HLPL-AI4T-EMF-CP-01", title: "Manufacturing Control Plan", dept: "EMF", status: "Approved", description: "SMT line inspection, reflow profile and testing." },
+        ],
+        defaultComments: [
+          { id: "ai5-1", author: "Casey Rowan", departmentCode: "EMF", role: "EMF Lead", timestamp: "18 Oct 2026", content: "Pilot build completed.", badge: "SMT Verified" },
+        ],
+      },
+      {
+        stageNumber: 6,
+        stageCode: "Stage 6",
+        title: "DVP&R Pre-Compliance Validation",
+        apqpMilestone: "Phase 4: Product & Process Validation",
+        leadName: "Jordan Blake",
+        leadDept: "QA",
+        leadRole: "QA & Testing Lead",
+        alignedTeam: ["Jordan Blake (QA & Testing Lead)", "Avery Vale (EHW Lead)"],
+        summary: "18-test DVP&R pre-compliance testing executed: thermal shock (-40°C to +85°C), vibration, and ISO 7637-2 transients.",
+        hardwareNote: "Zero electrical failures.",
+        batteryNote: "Battery PCM thermal cutoff verified at 45°C.",
+        regulatoryNote: "AIS-140 Annexure 8 pre-test passed.",
+        deliverables: [
+          { docId: "HLPL-AI4T-QA-DVP-01", title: "DVP&R Pre-Compliance Test Report", dept: "QA", status: "Approved", description: "18 test cases certified under ISO 17025." },
+        ],
+        defaultComments: [
+          { id: "ai6-1", author: "Jordan Blake", departmentCode: "QA", role: "QA & Testing Lead", timestamp: "21 Oct 2026", content: "DVP&R 100% tests PASSED.", badge: "DVP&R Clear" },
+        ],
+      },
+      {
+        stageNumber: 7,
+        stageCode: "Stage 7",
+        title: "Production Release, DFMEA & PPAP",
+        apqpMilestone: "Phase 5: Production Part Approval (PPAP)",
+        leadName: "Jordan Blake & Samira Holt",
+        leadDept: "QA/MECH",
+        leadRole: "QA Lead & Mechanical Lead",
+        alignedTeam: ["Jordan Blake (QA & Testing Lead)", "Samira Holt (MECH Lead)"],
+        summary: "DFMEA severity scores locked, Level 3 PPAP dossier assembled and PSW warrant executed.",
+        hardwareNote: "Full production tooling signed off.",
+        batteryNote: "UN 38.3 test report attached to PPAP.",
+        regulatoryNote: "Level 3 PPAP complete.",
+        deliverables: [
+          { docId: "HLPL-AI4T-QA-PPAP-01", title: "Production Part Approval Process (PPAP)", dept: "QA", status: "Approved", description: "AIAG Level 3 PPAP with PSW signed." },
+        ],
+        defaultComments: [
+          { id: "ai7-1", author: "Jordan Blake", departmentCode: "QA", role: "QA & Testing Lead", timestamp: "23 Oct 2026", content: "PPAP PSW signed.", badge: "PPAP Locked" },
+        ],
+      },
+      {
+        stageNumber: 8,
+        stageCode: "Stage 8",
+        title: "Type Approval & Regulatory Certification",
+        apqpMilestone: "Phase 5: Regulatory Homologation",
+        leadName: "Jordan Blake",
+        leadDept: "QA",
+        leadRole: "QA & Testing Lead",
+        alignedTeam: ["Jordan Blake (QA & Testing Lead)", "Mr. Rajesh Sharma (Tata Motors SPOC)"],
+        summary: "iCAT / ARAI AIS-140 Type Approval Certificate (TAC Form 22) and WPC ETA wireless license issued.",
+        hardwareNote: "Device certified for commercial vehicle mounting.",
+        batteryNote: "BIS IS 16046 battery registration linked.",
+        regulatoryNote: "ARAI TAC Certificate Form 22 issued.",
+        deliverables: [
+          { docId: "HLPL-AI4T-QA-TAC-01", title: "ARAI / iCAT Type Approval Certificate", dept: "QA", status: "Approved", description: "AIS-140 Annexure 8 Type Approval Form 22." },
+        ],
+        defaultComments: [
+          { id: "ai8-1", author: "Jordan Blake", departmentCode: "QA", role: "QA & Testing Lead", timestamp: "24 Oct 2026", content: "ARAI TAC Form 22 received.", badge: "TAC Received" },
+        ],
+      },
+      {
+        stageNumber: 9,
+        stageCode: "Stage 9",
+        title: "PDI, Field Mounting & Commercial Invoicing",
+        apqpMilestone: "Phase 5: Mass Production Dispatch",
+        leadName: "Jordan Blake & Priya Voss",
+        leadDept: "QA/FIN",
+        leadRole: "QA Lead & Finance Lead",
+        alignedTeam: ["Jordan Blake (QA & Testing Lead)", "Priya Voss (Finance Lead)", "Riley Stone (Sales Lead)"],
+        summary: "100% PDI batch testing cleared. Commercial tax invoice released against 50,000 units delivery contract.",
+        hardwareNote: "100% functional EOL test clearance.",
+        batteryNote: "Battery shelf-life charge verified.",
+        regulatoryNote: "Vahan portal IMEI/ICCID backend registration active.",
+        deliverables: [
+          { docId: "HLPL-AI4T-QA-PDI-01", title: "PDI Batch Release Certificate", dept: "QA", status: "Approved", description: "Pre-Delivery Inspection serial number registry." },
+          { docId: "HLPL-AI4T-FIN-INV-01", title: "Commercial Tax Invoice", dept: "FIN", status: "Approved", description: "Final shipment billing and payment clearance." },
+        ],
+        defaultComments: [
+          { id: "ai9-1", author: "Priya Voss", departmentCode: "FIN", role: "Finance Lead", timestamp: "25 Oct 2026", content: "Payment received and shipment dispatched.", badge: "Paid & Released" },
+        ],
+      },
+    ],
+  },
+  "HLPL-SW-01": {
+    projectCode: "HLPL-SW-01",
+    title: "Commercial Fleet Telematics & Driver Analytics Cloud Platform",
+    customer: "Commercial Fleet Solutions Ltd · Enterprise Cloud Services",
+    architectureMode: "hybrid_variant",
+    pcbInfo: "Pure Software Scope: No PCB or custom hardware design. Deployed on high-availability AWS/GCP cloud containers with MQTT telemetry ingest.",
+    batteryInfo: "Pure Software Scope: Cloud backend with 99.99% uptime SLA, multi-region redundancy and auto-scaling microservices.",
+    agencyInfo: "ISO 27001, SOC 2 Type II, GDPR & DPDP Act 2023 certified cloud security architecture.",
+    stages: [
+      {
+        stageNumber: 1,
+        stageCode: "Stage 1",
+        title: "Client & Software Intake (SRS & Bilateral NDA)",
+        apqpMilestone: "Phase 1: Concept & Voice of Customer",
+        leadName: "Riley Stone",
+        leadDept: "SAL",
+        leadRole: "Sales & Business Development Lead",
+        alignedTeam: ["Riley Stone (Sales Lead)", "Devon Lane (Software Lead)", "Mr. Ananya Rao (Client SPOC)"],
+        summary: "Cloud SaaS Statement of Requirements logged for 25,000 active connected vehicles. Telematics telemetry ingest, real-time geofencing, driver CAN analytics dashboard and REST/GraphQL APIs.",
+        hardwareNote: "Pure Software Scope: Hardware PCB and tooling are waived. Standard client Android/iOS tablets and existing AIS-140 OBD gateways used.",
+        batteryNote: "Pure Software Scope: Cloud hosting architecture with Redis cache and PostgreSQL timescale DB.",
+        regulatoryNote: "ISO 27001 Information Security, SOC 2 Type II data governance and DPDP Act 2023.",
+        deliverables: [
+          { docId: "HLPL-SW-SAL-SOR-01", title: "Customer Statement of Requirements (SaaS SOR)", dept: "SAL", status: "Approved", description: "25,000 vehicles telemetry SaaS platform with SLA commitments." },
+          { docId: "HLPL-SW-SAL-mNDA-01", title: "Mutual NDA & Data Processing Agreement (DPA)", dept: "SAL", status: "Approved", description: "Bilateral IP and cloud data confidentiality executed." },
+        ],
+        defaultComments: [
+          { id: "sw1-1", author: "Riley Stone", departmentCode: "SAL", role: "Sales Lead", timestamp: "01 Oct 2026", content: "SaaS enterprise inquiry accepted. 25,000 vehicles telemetry cloud license.", badge: "Sales Intake" },
+        ],
+      },
+      {
+        stageNumber: 2,
+        stageCode: "Stage 2",
+        title: "Technical Feasibility & Architecture Review",
+        apqpMilestone: "Phase 1: Technical & Commercial Feasibility",
+        leadName: "Devon Lane & Priya Voss",
+        leadDept: "SW/FIN",
+        leadRole: "Software Lead & Finance Lead",
+        alignedTeam: ["Devon Lane (Software Lead)", "Jordan Blake (QA Lead)", "Priya Voss (Finance Lead)"],
+        summary: "Software and cloud infrastructure feasibility completed. Hardware & Mechanical teams confirmed NO ROLE (Software-Only Scope). AWS Kubernetes infrastructure costed at ₹18/vehicle/month.",
+        hardwareNote: "Hardware (EHW) and Mechanical (MECH) confirmed: Waived (Software Scope).",
+        batteryNote: "Internal battery N/A: Server architecture.",
+        regulatoryNote: "Cloud security vulnerability and pen-test baseline established.",
+        deliverables: [
+          { docId: "HLPL-SW-SW-FEAS-01", title: "Software & Cloud Architecture Feasibility", dept: "SW", status: "Approved", description: "Containerized microservices, Kafka streaming pipeline & DB capacity model." },
+          { docId: "HLPL-SW-QA-FEAS-01", title: "Software QA & Test Automation Feasibility", dept: "QA", status: "Approved", description: "End-to-end API test automation framework and load test setup." },
+        ],
+        defaultComments: [
+          { id: "sw2-1", author: "Devon Lane", departmentCode: "SW", role: "Software Lead", timestamp: "05 Oct 2026", content: "Software feasibility APPROVED. 10k concurrent telemetry events/sec verified on staging cluster.", badge: "SW Sign-off" },
+        ],
+      },
+      {
+        stageNumber: 3,
+        stageCode: "Stage 3",
+        title: "Requirement Freeze & Commercial Baseline Lock",
+        apqpMilestone: "Phase 2: Baseline Lock",
+        leadName: "Taylor Quinn & Riley Stone",
+        leadDept: "HR/SAL",
+        leadRole: "HR/Operations Governance & Commercial Lead",
+        alignedTeam: ["Taylor Quinn (HR/Operations Lead)", "Riley Stone (Sales Lead)", "Devon Lane (Software Lead)"],
+        summary: "Governed by HR/Operations & Sales: Software engineering team allocation frozen (HROPS-CRS-01), Cloud SaaS subscription quotation (SAL-QUO-01) accepted, and Software Requirements Spec (SW-SRS-01) signed.",
+        hardwareNote: "Software-only scope: Hardware PRS waived.",
+        batteryNote: "Software-only scope: Server tier.",
+        regulatoryNote: "SLA 99.9% uptime commitment locked in commercial agreement.",
+        deliverables: [
+          { docId: "HLPL-SW-HROPS-CRS-01", title: "Competency & Engineering Staffing Freeze (HR-OPS)", dept: "HR", status: "Approved", description: "Cloud architects and senior backend/QA developers allocated." },
+          { docId: "HLPL-SW-SAL-QUO-01", title: "SaaS Commercial Quotation & License Agreement", dept: "SAL", status: "Approved", description: "₹85/vehicle/month enterprise license agreement signed." },
+          { docId: "HLPL-SW-SW-SRS-01", title: "Software Requirements Specification (SW-SRS)", dept: "SW", status: "Approved", description: "Complete OpenAPI 3.0 specification and database schemas." },
+        ],
+        defaultComments: [
+          { id: "sw3-1", author: "Taylor Quinn", departmentCode: "HR", role: "HR & Operations Lead", timestamp: "08 Oct 2026", content: "Engineering staffing matrix locked. Full squad deployed for sprint kick-off.", badge: "HR-OPS Freeze" },
+        ],
+      },
+      {
+        stageNumber: 4,
+        stageCode: "Stage 4",
+        title: "Core Sprint Development & PoC API Bring-up",
+        apqpMilestone: "Phase 2: Agile Sprint Execution",
+        leadName: "Devon Lane",
+        leadDept: "SW",
+        leadRole: "Software Lead",
+        alignedTeam: ["Devon Lane (Software Lead)", "Alex Rivera (Cloud Architect)"],
+        summary: "Sprint 1-4 completed. Core MQTT telemetry broker, REST APIs, and JWT authentication service verified in staging environment.",
+        hardwareNote: "Software-only scope: PCB Schematics waived.",
+        batteryNote: "Cloud hosted infrastructure.",
+        regulatoryNote: "OWASP Top 10 security guidelines enforced.",
+        deliverables: [
+          { docId: "HLPL-SW-SW-ARCH-01", title: "Cloud Architecture & Microservices Design", dept: "SW", status: "Approved", description: "Kubernetes topology, Kafka brokers and Redis cache layer." },
+          { docId: "HLPL-SW-SW-API-01", title: "API Gateway & Endpoint Documentation", dept: "SW", status: "Approved", description: "OpenAPI 3.0 endpoints with JWT bearer authentication." },
+        ],
+        defaultComments: [
+          { id: "sw4-1", author: "Devon Lane", departmentCode: "SW", role: "Software Lead", timestamp: "14 Oct 2026", content: "Sprint 4 complete. Telemetry ingestion microservice benchmarked at 25,000 msgs/sec.", badge: "SW PoC" },
+        ],
+      },
+      {
+        stageNumber: 5,
+        stageCode: "Stage 5",
+        title: "Sandbox Staging & CI/CD Pipeline Verification",
+        apqpMilestone: "Phase 3: Integration & Sandbox Readiness",
+        leadName: "Devon Lane & Jordan Blake",
+        leadDept: "SW/QA",
+        leadRole: "Software & QA Leads",
+        alignedTeam: ["Devon Lane (Software Lead)", "Jordan Blake (QA & Testing Lead)"],
+        summary: "Automated CI/CD GitHub Actions pipeline established with sonar analysis. Sandbox environment open to client for beta API integration.",
+        hardwareNote: "Software-only scope: SMT Pilot Build waived.",
+        batteryNote: "Cloud hosted infrastructure.",
+        regulatoryNote: "Automated code vulnerability scan clean with 0 CVEs.",
+        deliverables: [
+          { docId: "HLPL-SW-SW-CICD-01", title: "CI/CD Pipeline & Automated Staging Report", dept: "SW", status: "Approved", description: "GitHub Actions automated build, lint and container scanning." },
+          { docId: "HLPL-SW-QA-SVT-01", title: "Software Verification Test (SVT) Suite", dept: "QA", status: "Approved", description: "94% automated test coverage across all REST endpoints." },
+        ],
+        defaultComments: [
+          { id: "sw5-1", author: "Jordan Blake", departmentCode: "QA", role: "QA & Testing Lead", timestamp: "18 Oct 2026", content: "QA & Testing sign-off on API sandbox. Automated tests 100% passed.", badge: "QA & Testing" },
+        ],
+      },
+      {
+        stageNumber: 6,
+        stageCode: "Stage 6",
+        title: "Security Penetration Testing & Load Validation",
+        apqpMilestone: "Phase 4: Pre-Compliance Validation",
+        leadName: "Jordan Blake",
+        leadDept: "QA",
+        leadRole: "QA & Testing Lead",
+        alignedTeam: ["Jordan Blake (QA & Testing Lead)", "Devon Lane (Software Lead)"],
+        summary: "Third-party CERT-In and SOC 2 security audit conducted. Stress test passed at 50,000 simulated vehicle connections with sub-80ms p95 latency.",
+        hardwareNote: "Software-only scope: Automotive DVP&R physical tests waived.",
+        batteryNote: "Cloud hosted infrastructure.",
+        regulatoryNote: "CERT-In Safe to Host certificate received.",
+        deliverables: [
+          { docId: "HLPL-SW-QA-PEN-01", title: "Security Pen-Test & Vulnerability Audit", dept: "QA", status: "Approved", description: "Zero high/critical severity findings under OWASP Top 10." },
+          { docId: "HLPL-SW-SW-LOAD-01", title: "High-Concurrency Load Testing Report", dept: "SW", status: "Approved", description: "50,000 concurrent sockets verified under 85ms latency." },
+        ],
+        defaultComments: [
+          { id: "sw6-1", author: "Jordan Blake", departmentCode: "QA", role: "QA & Testing Lead", timestamp: "21 Oct 2026", content: "QA & Testing: CERT-In audit PASSED without exceptions.", badge: "QA Pass" },
+        ],
+      },
+      {
+        stageNumber: 7,
+        stageCode: "Stage 7",
+        title: "Production Release Candidate & Manifest Lock",
+        apqpMilestone: "Phase 5: Release Candidate",
+        leadName: "Devon Lane & Taylor Quinn",
+        leadDept: "SW/HR",
+        leadRole: "Software & Operations Leads",
+        alignedTeam: ["Devon Lane (Software Lead)", "Taylor Quinn (HR/Operations Lead)"],
+        summary: "Production release v1.0.0 tagged and locked. Ops monitoring and PagerDuty alert escalation matrix configured.",
+        hardwareNote: "Software-only scope: Manufacturing PPAP waived.",
+        batteryNote: "Cloud infrastructure.",
+        regulatoryNote: "Release candidate sign-off by all stakeholders.",
+        deliverables: [
+          { docId: "HLPL-SW-SW-REL-01", title: "Production Release Manifest & Tag v1.0.0", dept: "SW", status: "Approved", description: "Immutable container image digests locked in registry." },
+          { docId: "HLPL-SW-HR-OPS-01", title: "DevOps Escalation & 24/7 Runbook (HR-OPS)", dept: "HR", status: "Approved", description: "On-call engineering support schedule and escalation policy." },
+        ],
+        defaultComments: [
+          { id: "sw7-1", author: "Taylor Quinn", departmentCode: "HR", role: "HR & Operations Lead", timestamp: "23 Oct 2026", content: "24/7 SRE runbook verified and on-call roster published.", badge: "Ops Ready" },
+        ],
+      },
+      {
+        stageNumber: 8,
+        stageCode: "Stage 8",
+        title: "Cloud Compliance Certification & TAC Sign-off",
+        apqpMilestone: "Phase 5: Statutory Certification",
+        leadName: "Jordan Blake & Devon Lane",
+        leadDept: "QA/SW",
+        leadRole: "QA & Software Leads",
+        alignedTeam: ["Jordan Blake (QA & Testing Lead)", "Devon Lane (Software Lead)"],
+        summary: "ISO 27001 and SOC 2 Type II formal compliance attestations issued. Client tenant accounts provisioned.",
+        hardwareNote: "Software-only scope: ARAI vehicle homologation waived.",
+        batteryNote: "Cloud infrastructure.",
+        regulatoryNote: "SOC 2 Type II and ISO 27001 formal attestation.",
+        deliverables: [
+          { docId: "HLPL-SW-QA-SOC2-01", title: "SOC 2 Type II & ISO 27001 Compliance Attestation", dept: "QA", status: "Approved", description: "Independent auditor clean opinion report." },
+        ],
+        defaultComments: [
+          { id: "sw8-1", author: "Jordan Blake", departmentCode: "QA", role: "QA & Testing Lead", timestamp: "24 Oct 2026", content: "QA & Testing: Cloud compliance audit formally closed.", badge: "Audit Clean" },
+        ],
+      },
+      {
+        stageNumber: 9,
+        stageCode: "Stage 9",
+        title: "Go-Live, Client UAT & Commercial Invoicing",
+        apqpMilestone: "Phase 5: Commercial Deployment",
+        leadName: "Riley Stone & Priya Voss",
+        leadDept: "SAL/FIN",
+        leadRole: "Sales & Finance Leads",
+        alignedTeam: ["Riley Stone (Sales Lead)", "Priya Voss (Finance Lead)", "Mr. Ananya Rao (Client SPOC)"],
+        summary: "Client accepted UAT. Production traffic switched over with 25,000 active devices reporting. First monthly recurring SaaS invoice released.",
+        hardwareNote: "Platform fully operational in production.",
+        batteryNote: "Cloud operational.",
+        regulatoryNote: "Statutory GST invoice issued.",
+        deliverables: [
+          { docId: "HLPL-SW-SAL-UAT-01", title: "Client User Acceptance Sign-off (UAT)", dept: "SAL", status: "Approved", description: "Formal acceptance signed by client VP Engineering." },
+          { docId: "HLPL-SW-FIN-INV-01", title: "SaaS Subscription Tax Invoice", dept: "FIN", status: "Approved", description: "First monthly recurring billing clearance." },
+        ],
+        defaultComments: [
+          { id: "sw9-1", author: "Riley Stone", departmentCode: "SAL", role: "Sales Lead", timestamp: "25 Oct 2026", content: "Production Go-Live SUCCESS! Customer delighted with cloud performance.", badge: "Production Live" },
+        ],
+      },
+    ],
+  },
 };
 
 export function ProjectLifecyclePlayerAndDetail({
@@ -797,6 +1198,49 @@ export function ProjectLifecyclePlayerAndDetail({
     chronicles !== undefined
       ? deriveDeliverablesForStage(chronicles, stageIndex)
       : activeStage.deliverables;
+
+  // Dynamic derivation of Stage Lead from active chronicles if R role matches
+  let effectiveLeadName = activeStage.leadName;
+  let effectiveLeadDept = activeStage.leadDept;
+  let effectiveLeadRole = activeStage.leadRole;
+
+  if (chronicles && chronicles.length > 0) {
+    const stageResponsible = chronicles.filter(
+      (c) => c.stageIndex === stageIndex && c.raciRole === "R"
+    );
+    if (stageResponsible.length > 0) {
+      const respDepts = Array.from(new Set(stageResponsible.map((c) => c.departmentCode.trim().toUpperCase())));
+      if (respDepts.includes("HR") && respDepts.includes("SAL")) {
+        effectiveLeadName = "Taylor Quinn & Riley Stone";
+        effectiveLeadDept = "HR/SAL";
+        effectiveLeadRole = "HR/Operations Governance & Commercial Lead";
+      } else if (respDepts.includes("HR")) {
+        effectiveLeadName = "Taylor Quinn";
+        effectiveLeadDept = "HR";
+        effectiveLeadRole = "HR & Operations Governance Lead";
+      } else if (respDepts.includes("SAL")) {
+        effectiveLeadName = "Riley Stone";
+        effectiveLeadDept = "SAL";
+        effectiveLeadRole = "Sales & Commercial Lead";
+      } else if (respDepts.includes("QA")) {
+        effectiveLeadName = "Jordan Blake";
+        effectiveLeadDept = "QA";
+        effectiveLeadRole = "QA & Testing Lead";
+      } else if (respDepts.includes("SW")) {
+        effectiveLeadName = "Devon Lane";
+        effectiveLeadDept = "SW";
+        effectiveLeadRole = "Software & Cloud Lead";
+      } else if (respDepts.includes("EHW")) {
+        effectiveLeadName = "Avery Vale";
+        effectiveLeadDept = "EHW";
+        effectiveLeadRole = "Embedded Hardware Lead";
+      } else if (respDepts.includes("EMF")) {
+        effectiveLeadName = "Casey Rowan";
+        effectiveLeadDept = "EMF";
+        effectiveLeadRole = "Electronics Manufacturing Lead";
+      }
+    }
+  }
 
   // Auto-play animation timer
   useEffect(() => {
@@ -863,7 +1307,7 @@ export function ProjectLifecyclePlayerAndDetail({
         </div>
 
         {/* Project Switcher Tabs */}
-        <div className="flex items-center gap-1.5 rounded-lg border border-border bg-secondary/50 p-1">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-secondary/50 p-1">
           <button
             type="button"
             onClick={() => onSelectProject("HLPL-BCU-02")}
@@ -872,6 +1316,7 @@ export function ProjectLifecyclePlayerAndDetail({
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted-foreground hover:bg-background hover:text-foreground"
             }`}
+            title="Ashok Leyland Telematics & BLE Sensor Gateway (OEM Hardware Modification)"
           >
             Ashok Leyland (BLE Mod)
           </button>
@@ -883,6 +1328,7 @@ export function ProjectLifecyclePlayerAndDetail({
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted-foreground hover:bg-background hover:text-foreground"
             }`}
+            title="Select Motors AIS-140 GPS Telematics Tracker (100% Platform Reused PCB)"
           >
             Select Motors (Reusable PCB)
           </button>
@@ -894,8 +1340,24 @@ export function ProjectLifecyclePlayerAndDetail({
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted-foreground hover:bg-background hover:text-foreground"
             }`}
+            title="Tata Ace EV 4G AIS-140 Intelligent Vehicle Gateway (Baseline Full Hardware Track)"
           >
             Tata Ace EV (Baseline)
+          </button>
+          <button
+            type="button"
+            onClick={() => onSelectProject("HLPL-SW-01")}
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition flex items-center gap-1.5 ${
+              activeProjectId === "HLPL-SW-01"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted-foreground hover:bg-background hover:text-foreground"
+            }`}
+            title="Commercial Fleet Telematics & Driver Analytics Cloud Platform (Pure Software Project · Skips PCB, SMT & Mold Tooling)"
+          >
+            <span>Fleet Cloud</span>
+            <span className="rounded bg-sky-500/20 px-1 py-0.2 font-mono text-[9px] font-bold text-sky-600 dark:text-sky-300">
+              Pure SW
+            </span>
           </button>
         </div>
       </div>
@@ -1009,44 +1471,70 @@ export function ProjectLifecyclePlayerAndDetail({
           </div>
 
           <div className="flex flex-col items-end gap-1">
-            <span className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-foreground">
-              Lead: {activeStage.leadName} ({activeStage.leadDept})
+            <span
+              className="rounded-full bg-secondary px-3 py-1 text-xs font-semibold text-foreground cursor-help transition hover:bg-secondary/80"
+              title={`Stage Lead: ${effectiveLeadName} · Department: ${effectiveLeadDept} (${effectiveLeadDept.split("/").map(d => DEPARTMENT_FULL_NAMES[d]?.full || d).join(" & ")}) · Role: ${effectiveLeadRole}`}
+            >
+              Lead: {effectiveLeadName} ({effectiveLeadDept})
             </span>
-            <span className="text-[10px] text-muted-foreground">
-              {activeStage.leadRole}
+            <span
+              className="text-[10px] text-muted-foreground"
+              title={effectiveLeadRole}
+            >
+              {effectiveLeadRole}
             </span>
           </div>
         </div>
 
-        {/* Technical Callout Strip: Hardware, Battery & Regulatory */}
+        {/* Technical Callout Strip: Hardware, Battery & Regulatory (Adapts to Software vs Hardware) */}
         <div className="grid gap-3 sm:grid-cols-3">
-          {/* Hardware & PCB Architecture */}
+          {/* Card 1: Hardware / PCB or Cloud Microservices Stack */}
           <div className="rounded-lg border border-primary/20 bg-primary/[0.02] p-3 text-xs space-y-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
-              <Cpu className="size-3.5 text-primary" />
-              <span>Hardware & PCB Status</span>
+              {activeProjectId === "HLPL-SW-01" ? (
+                <>
+                  <Layers className="size-3.5 text-primary" />
+                  <span title="Cloud Microservices, Kubernetes & MQTT Ingestion Architecture">Cloud & SaaS Stack</span>
+                </>
+              ) : (
+                <>
+                  <Cpu className="size-3.5 text-primary" />
+                  <span title="Hardware Architecture, Microcontroller & PCB Spin Status">Hardware & PCB Status</span>
+                </>
+              )}
             </div>
             <p className="text-[11px] text-muted-foreground leading-snug">
               {activeStage.hardwareNote || projectData.pcbInfo}
             </p>
           </div>
 
-          {/* 3.7V Lithium Battery */}
+          {/* Card 2: 3.7V Battery or Cloud SLA / Redundancy */}
           <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.02] p-3 text-xs space-y-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
-              <Battery className="size-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>3.7V Battery (NABL Certified)</span>
+              {activeProjectId === "HLPL-SW-01" ? (
+                <>
+                  <Shield className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span title="High-Availability Multi-Region Cloud Redundancy & 99.9% SLA">Cloud Uptime & SLA</span>
+                </>
+              ) : (
+                <>
+                  <Battery className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span title="Internal 3.7V NABL Accredited Lithium-ion Battery">3.7V Battery (NABL Certified)</span>
+                </>
+              )}
             </div>
             <p className="text-[11px] text-muted-foreground leading-snug">
               {activeStage.batteryNote || projectData.batteryInfo}
             </p>
           </div>
 
-          {/* iCAT Agency Certification */}
+          {/* Card 3: Agency Certification / Cloud Security SOC 2 */}
           <div className="rounded-lg border border-blue-500/20 bg-blue-500/[0.02] p-3 text-xs space-y-1">
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
               <Award className="size-3.5 text-blue-600 dark:text-blue-400" />
-              <span>Regulatory & iCAT TAC</span>
+              <span title={activeProjectId === "HLPL-SW-01" ? "ISO 27001, SOC 2 Type II and GDPR/DPDP Act Security Compliance" : "Automotive Type Approval & Homologation Certificate (TAC)"}>
+                {activeProjectId === "HLPL-SW-01" ? "ISO 27001 & SOC 2" : "Regulatory & iCAT TAC"}
+              </span>
             </div>
             <p className="text-[11px] text-muted-foreground leading-snug">
               {activeStage.regulatoryNote || projectData.agencyInfo}
@@ -1081,21 +1569,26 @@ export function ProjectLifecyclePlayerAndDetail({
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
-            {stageDeliverables.map((deliv) => (
-              <div
-                key={deliv.docId}
-                className="flex items-start justify-between gap-2 rounded-lg border border-border bg-muted/20 p-3 hover:bg-secondary/40 transition"
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-[10px] font-bold text-primary">{deliv.docId}</span>
-                    <span className="rounded bg-secondary px-1.5 py-0.2 font-mono text-[9px] text-muted-foreground">
-                      {deliv.dept}
-                    </span>
-                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.2 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">
-                      ✓ {deliv.status}
-                    </span>
-                  </div>
+            {stageDeliverables.map((deliv) => {
+              const deptInfo = DEPARTMENT_FULL_NAMES[deliv.dept];
+              return (
+                <div
+                  key={deliv.docId}
+                  className="flex items-start justify-between gap-2 rounded-lg border border-border bg-muted/20 p-3 hover:bg-secondary/40 transition"
+                >
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[10px] font-bold text-primary">{deliv.docId}</span>
+                      <span
+                        className="rounded bg-secondary px-1.5 py-0.2 font-mono text-[9px] text-muted-foreground cursor-help"
+                        title={`${deptInfo?.full || deliv.dept} (${deliv.dept}): ${deptInfo?.description || ""}`}
+                      >
+                        {deliv.dept}
+                      </span>
+                      <span className="rounded bg-emerald-500/10 px-1.5 py-0.2 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400">
+                        ✓ {deliv.status}
+                      </span>
+                    </div>
                   <p className="text-xs font-bold text-foreground">{deliv.title}</p>
                   <p className="text-[10px] text-muted-foreground">{deliv.description}</p>
                 </div>
@@ -1120,7 +1613,8 @@ export function ProjectLifecyclePlayerAndDetail({
                   </button>
                 )}
               </div>
-            ))}
+            );
+          })}
           </div>
         </div>
 

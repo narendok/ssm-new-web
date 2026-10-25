@@ -55,10 +55,10 @@ test('deriveRaciMatrixFromChronicles accurately maps responsible and accountable
   assert.equal(matrix["Stage 2"]["EMF"], "R");
   assert.equal(matrix["Stage 2"]["SAL"], "A");
 
-  // Stage 3: HR/OPS is Responsible for Requirement Freeze
+  // Stage 3: HR/OPS and SAL are Responsible for Requirement Freeze; EHW is Consulted
   assert.equal(matrix["Stage 3"]["HR"], "R");
-  assert.equal(matrix["Stage 3"]["EHW"], "R");
   assert.equal(matrix["Stage 3"]["SAL"], "R");
+  assert.equal(matrix["Stage 3"]["EHW"], "C");
   
   // Stage 6: QA is Responsible
   assert.equal(matrix["Stage 6"]["QA"], "R");

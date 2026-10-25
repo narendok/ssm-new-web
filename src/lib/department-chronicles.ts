@@ -259,7 +259,7 @@ export const DEFAULT_DEPARTMENT_CHRONICLES: DepartmentChronicle[] = [
     title: "Frozen Product Requirement Specification",
     deliverableCode: "EHW-PRS-02",
     documentType: "PRS",
-    raciRole: "R",
+    raciRole: "C",
     mandatory: true,
     description: "Baseline requirements frozen for engineering development. ECN control enforced.",
     status: "Approved",
@@ -602,3 +602,115 @@ export function deriveDeliverablesForStage(
       description: c.description,
     }));
 }
+
+export type ProjectTrack = "turnkey" | "software" | "firmware";
+
+export const DEPARTMENT_FULL_NAMES: Record<
+  string,
+  { short: string; full: string; roleName: string; description: string; isCommon: boolean }
+> = {
+  SAL: {
+    short: "SAL",
+    full: "Sales & BD",
+    roleName: "Sales & Business Development Lead",
+    description: "Business Development, Customer SOR, Contract Review & Commercial Lock",
+    isCommon: true,
+  },
+  EHW: {
+    short: "EHW",
+    full: "Embedded Hardware",
+    roleName: "Embedded Hardware Engineering Lead",
+    description: "Schematics, PCB Layout, ECAD Netlists, TVS & Power Electronics",
+    isCommon: false,
+  },
+  FW: {
+    short: "FW",
+    full: "Embedded Firmware",
+    roleName: "Firmware & Embedded Systems Lead",
+    description: "FreeRTOS/Bare-Metal Kernel, CAN J1939 Telemetry & Device Drivers",
+    isCommon: false,
+  },
+  SW: {
+    short: "SW",
+    full: "Software & Cloud",
+    roleName: "Software & Cloud Engineering Lead",
+    description: "Cloud Microservices, Telematics Web/Mobile Apps & API Gateways",
+    isCommon: false,
+  },
+  MECH: {
+    short: "MECH",
+    full: "Mechanical Engineering",
+    roleName: "Mechanical & Thermal Engineering Lead",
+    description: "IP67 Enclosures, 3D CAD, Mold Tooling, Thermal Simulation & Fitment",
+    isCommon: false,
+  },
+  PUR: {
+    short: "PUR",
+    full: "Purchasing & SCM",
+    roleName: "Supply Chain & Procurement Lead",
+    description: "Production BOM Sourcing, ASL Suppliers, Soft-Tooling & Component SCM",
+    isCommon: false,
+  },
+  QA: {
+    short: "QA",
+    full: "QA & Testing",
+    roleName: "Quality Assurance & Testing Lead",
+    description: "Quality Assurance, Pre-Compliance, DVP&R, Environmental & Automotive Testing",
+    isCommon: true,
+  },
+  EMF: {
+    short: "EMF",
+    full: "Electronics Manufacturing",
+    roleName: "Electronics Manufacturing Lead",
+    description: "SMT Assembly Line, Stencil Printing, Reflow, Lot Traceability & Inspection",
+    isCommon: false,
+  },
+  MMF: {
+    short: "MMF",
+    full: "Mechanical Manufacturing",
+    roleName: "Mechanical Tooling & Manufacturing Lead",
+    description: "Injection Mold Hard-Tooling, Metal Stamping & Mechanical Fabrication",
+    isCommon: false,
+  },
+  FIN: {
+    short: "FIN",
+    full: "Finance & Accounts",
+    roleName: "Finance & Commercial Accounts Lead",
+    description: "Project Budgets, Expense Claims, Cost Accounting & Commercial Invoicing",
+    isCommon: true,
+  },
+  SIT: {
+    short: "SIT",
+    full: "IT & System Integration",
+    roleName: "System Integration & IT Service Lead",
+    description: "Cloud Deployment, IT Infrastructure, Diagnostic & Customer Support",
+    isCommon: true,
+  },
+  HR: {
+    short: "HR",
+    full: "HR & Operations",
+    roleName: "HR & Operations Governance Lead",
+    description: "Competency Roster, Staffing, Operator IPC-A-610 Safety & Plant Operations",
+    isCommon: true,
+  },
+};
+
+export function getTechnicalDepartmentsForTrack(track: ProjectTrack): string[] {
+  switch (track) {
+    case "software":
+      return ["SW"];
+    case "firmware":
+      return ["FW", "EHW"];
+    case "turnkey":
+    default:
+      return ["EHW", "FW", "SW", "MECH", "PUR", "EMF", "MMF"];
+  }
+}
+
+export function isDepartmentActiveForTrack(dept: string, track: ProjectTrack): boolean {
+  const norm = dept.trim().toUpperCase();
+  const info = DEPARTMENT_FULL_NAMES[norm];
+  if (info?.isCommon) return true;
+  return getTechnicalDepartmentsForTrack(track).includes(norm);
+}
+

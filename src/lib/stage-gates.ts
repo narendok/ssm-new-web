@@ -146,13 +146,20 @@ export function verifyStageTransition(context: GateVerificationContext): StageGa
 
   // GATE 3 FREEZE: Moving to Stage 4+ requires Multi-Department Requirements Package
   if (targetStageIndex >= 3) {
-    const requiredReqDocs = [
-      { key: "EHW-PRS", name: "Product Requirement Spec (PRS)", candidates: ["PRS", "EHW-PRS", "HLPL-SLCT-EHW-PRS"] },
-      { key: "FW-FRS", name: "Firmware Functional Spec (FW-FRS)", candidates: ["FRS", "FW-FRS", "HLPL-SLCT-FW-FRS"] },
-      { key: "SW-SRS", name: "Software Requirement Spec (SW-SRS)", candidates: ["SRS", "SW-SRS", "HLPL-SLCT-SW-SRS"] },
-      { key: "MECH-MRS", name: "Mechanical Requirement Spec (MECH-MRS)", candidates: ["MRS", "MECH-MRS", "HLPL-SLCT-MECH-MRS"] },
-      { key: "SAL-QUO", name: "Commercial Quotation (QUO)", candidates: ["QUO", "Commercial Quotation", "SAL-QUO", "HLPL-SLCT-SAL-QUO"] },
-    ];
+    const isSoftwareTrack = Boolean(projectId && (projectId === "HLPL-SW-01" || projectId.toLowerCase().includes("-sw-")));
+    const requiredReqDocs = isSoftwareTrack
+      ? [
+          { key: "SW-SRS", name: "Software Requirement Spec (SW-SRS)", candidates: ["SRS", "SW-SRS", "HLPL-SW-SW-SRS"] },
+          { key: "SAL-QUO", name: "Commercial Quotation (QUO)", candidates: ["QUO", "Commercial Quotation", "SAL-QUO", "HLPL-SW-SAL-QUO"] },
+          { key: "HROPS-CRS", name: "Competency & Safety Freeze (HR-OPS)", candidates: ["CRS", "HROPS-CRS", "HR-OPS"] },
+        ]
+      : [
+          { key: "EHW-PRS", name: "Product Requirement Spec (PRS)", candidates: ["PRS", "EHW-PRS", "HLPL-SLCT-EHW-PRS"] },
+          { key: "FW-FRS", name: "Firmware Functional Spec (FW-FRS)", candidates: ["FRS", "FW-FRS", "HLPL-SLCT-FW-FRS"] },
+          { key: "SW-SRS", name: "Software Requirement Spec (SW-SRS)", candidates: ["SRS", "SW-SRS", "HLPL-SLCT-SW-SRS"] },
+          { key: "MECH-MRS", name: "Mechanical Requirement Spec (MECH-MRS)", candidates: ["MRS", "MECH-MRS", "HLPL-SLCT-MECH-MRS"] },
+          { key: "SAL-QUO", name: "Commercial Quotation (QUO)", candidates: ["QUO", "Commercial Quotation", "SAL-QUO", "HLPL-SLCT-SAL-QUO"] },
+        ];
 
     const missingReqs: string[] = [];
     for (const req of requiredReqDocs) {
@@ -176,9 +183,10 @@ export function verifyStageTransition(context: GateVerificationContext): StageGa
     }
   }
 
-  // GATE 4 PREREQUISITE: Moving to Stage 5, 7, 8, 9 requires Hardware Schematics
+  // GATE 4 PREREQUISITE: Moving to Stage 5, 7, 8, 9 requires Hardware Schematics (Waived for Pure Software)
   if (targetStageIndex >= 4) {
-    const schematicApproved = isDocumentApproved(["EHW-SCH", "Schematic", "SCH-01", "SCH-02"], documents, records, projectId);
+    const isSoftwareTrack = Boolean(projectId && (projectId === "HLPL-SW-01" || projectId.toLowerCase().includes("-sw-")));
+    const schematicApproved = isSoftwareTrack || isDocumentApproved(["EHW-SCH", "Schematic", "SCH-01", "SCH-02"], documents, records, projectId);
     const hasNa = Boolean(naRationale["EHW-SCH-01"]?.trim() || naRationale["EHW-SCH"]?.trim());
     if (!schematicApproved && !hasNa) {
       return {
