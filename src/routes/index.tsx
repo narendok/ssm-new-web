@@ -3483,7 +3483,7 @@ function Portal() {
           {persona.kind === "client" ? (
             <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
           ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","vault","index"].includes(view) ? (
- <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} darkMode={darkMode} onLogout={handleLogout}/>
+ <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} initialProjectScope={view === "project" ? selectedProjectId : undefined} darkMode={darkMode} onLogout={handleLogout}/>
           ) : view === "departments" ? (
             <CommonDepartmentSearchView
               currentDepartment={adminDepartment}
@@ -3529,7 +3529,7 @@ function Portal() {
               team={allTeamMembers.filter(member => member.area === activeDepartmentScope)}
               projectScope={projectScopes[active.id] ?? "all"}
               onProjectChange={scope => setProjectScopes(current => ({ ...current, [active.id]: scope as ProjectScope }))}
-              onCreateProject={(activeDepartmentScope === "sales" || (persona.kind === "admin" && activeDepartmentScope === "sales")) ? () => handleOpenCreate("Project") : undefined}
+              onCreateProject={(activeDepartmentScope === "sales") ? () => handleOpenCreate("Project") : undefined}
               onCreateRecord={() => handleOpenCreate(active.recordType, (projectScopes[active.id] ?? "all") === "all" ? undefined : { projectCode: projectScopes[active.id] as string, projectId: projectScopes[active.id] as string })}
               onCreateDeliverable={() => setDraftHubOpen(true)}
               onOpenRecord={id => { const record = leadRecords.find(item => item.id === id); if (record) openRecord(record); }}

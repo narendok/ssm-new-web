@@ -20,21 +20,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
-export type AreaId =
-  | "home"
-  | "rnd"
-  | "sales"
-  | "ehw"
-  | "fw"
-  | "sw"
-  | "mech"
-  | "pur"
-  | "qa"
-  | "emf"
-  | "mmf"
-  | "fin"
-  | "sit"
-  | "hrops";
+import type { AreaId } from "./RoleAwareSidebar";
+export type { AreaId } from "./RoleAwareSidebar";
 
 export interface DepartmentMeta {
   id: AreaId;

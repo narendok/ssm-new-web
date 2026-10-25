@@ -59,6 +59,7 @@ export function SharedProjectAnalysis({
         </div>
       )}
       <ProjectAnalysisOverview
+        showReferenceScenarios={false}
         projects={serverRecords.filter((r) => r.type === "Project")}
         records={serverRecords}
         documents={serverDocuments}

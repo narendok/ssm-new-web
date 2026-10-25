@@ -32,12 +32,14 @@ export function SharedOperationalWorkspace({
   darkMode,
   onLogout,
   adminDepartment,
+  initialProjectScope,
 }: {
   membership: TestMembership;
   view: string;
   darkMode: boolean;
   onLogout: () => Promise<void>;
   adminDepartment?: string;
+  initialProjectScope?: string | undefined;
 }) {
   const load = useServerFn(getSharedTestWorkspace),
     coordination = useServerFn(getCoordination),
@@ -54,7 +56,7 @@ export function SharedOperationalWorkspace({
     refetchInterval: 15000,
     retry: 1,
   });
-  const [scope, setScope] = useState("all"),
+  const [scope, setScope] = useState(initialProjectScope || "all"),
     [department, setDepartment] = useState(""),
     [advanced, setAdvanced] = useState<Register | null>(view === "vault" ? "Documents" : null);
   const [form, setForm] = useState<"create_project" | "create_record" | "update_record" | null>(

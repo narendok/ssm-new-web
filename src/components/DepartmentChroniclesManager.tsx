@@ -102,7 +102,7 @@ export function DepartmentChroniclesManager({
       if (newRole === "") {
         updated = chronicles.map((c) =>
           c.stageIndex === stageIndex && c.departmentCode.trim().toUpperCase() === dept.trim().toUpperCase()
-            ? { ...c, raciRole: "I" as RaciRole }
+            ? { ...c, raciRole: "I" as const }
             : c
         );
       } else {

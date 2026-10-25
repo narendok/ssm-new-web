@@ -36,11 +36,13 @@ export function ProjectAnalysisOverview({
   records,
   documents,
   onOpenProject,
+  showReferenceScenarios = true,
 }: {
   projects: AnalysisRecord[];
   records: AnalysisRecord[];
   documents: AnalysisDocument[];
   onOpenProject?: ((project: AnalysisRecord) => void) | undefined;
+  showReferenceScenarios?: boolean;
 }) {
   const [projectId, setProjectId] = useState("all");
   const [query, setQuery] = useState("");
@@ -110,13 +112,13 @@ export function ProjectAnalysisOverview({
           >
             Enquiry inputs
           </button>
-          <button
+          {showReferenceScenarios && <button
             className={`rounded px-3 py-1.5 font-medium flex items-center gap-1.5 transition-colors ${tab === "scenarios" ? "bg-background shadow-xs text-primary font-semibold" : "text-muted-foreground hover:text-foreground"}`}
             onClick={() => setTab("scenarios")}
           >
             <Layers className="size-3.5" />
             Lifecycle Scenarios (§14.14)
-          </button>
+          </button>}
         </div>
       </header>
 

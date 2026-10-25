@@ -101,6 +101,7 @@ export type SidebarWorkGroup = {
 };
 
 export type RoleAwareSidebarProps = {
+  adminDepartment?: AreaId | undefined;
   persona: Persona;
   activeArea: AreaId;
   view: string;
