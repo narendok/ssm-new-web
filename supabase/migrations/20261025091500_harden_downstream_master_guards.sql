@@ -439,14 +439,16 @@ CREATE TABLE IF NOT EXISTS public.scenario_fixture_manifests (
 );
 
 ALTER TABLE public.scenario_fixture_manifests ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS scenario_fixture_manifests_read ON public.scenario_fixture_manifests;
-CREATE POLICY scenario_fixture_manifests_read ON public.scenario_fixture_manifests
-  FOR SELECT TO authenticated
-  USING (EXISTS (
-    SELECT 1 FROM organization_members m
-    WHERE m.organization_id = scenario_fixture_manifests.organization_id
-      AND m.user_id = auth.uid() AND m.active AND m.role = 'admin'
-  ));
+DO $manifest_policy$
+BEGIN
+ IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='scenario_fixture_manifests' AND policyname='scenario_fixture_manifests_read') THEN
+  ALTER POLICY scenario_fixture_manifests_read ON public.scenario_fixture_manifests TO authenticated
+  USING (EXISTS (SELECT 1 FROM organization_members m WHERE m.organization_id=scenario_fixture_manifests.organization_id AND m.user_id=auth.uid() AND m.active AND m.role='admin'));
+ ELSE
+  CREATE POLICY scenario_fixture_manifests_read ON public.scenario_fixture_manifests FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM organization_members m WHERE m.organization_id=scenario_fixture_manifests.organization_id AND m.user_id=auth.uid() AND m.active AND m.role='admin'));
+ END IF;
+END $manifest_policy$;
 
 REVOKE ALL ON public.scenario_fixture_manifests FROM PUBLIC,anon;
 GRANT SELECT ON public.scenario_fixture_manifests TO authenticated;
