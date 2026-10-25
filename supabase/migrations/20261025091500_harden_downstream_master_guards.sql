@@ -450,7 +450,7 @@ BEGIN
  END IF;
 END $manifest_policy$;
 
-REVOKE ALL ON public.scenario_fixture_manifests FROM PUBLIC,anon;
+REVOKE ALL ON public.scenario_fixture_manifests FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON public.scenario_fixture_manifests TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.sync_scenario_test_fixtures(p_run_id text DEFAULT 'TEST-SCENARIO-RUN-001')
