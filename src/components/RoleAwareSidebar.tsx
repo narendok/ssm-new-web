@@ -232,6 +232,7 @@ export function RoleAwareSidebar({
   approvalCounts = {},
   isMobile = false,
   onCloseMobile,
+  adminDepartment,
 }: RoleAwareSidebarProps) {
   const isAdmin = persona.kind === "admin";
   const userRoleKey = (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
@@ -261,6 +262,12 @@ export function RoleAwareSidebar({
       // ignore
     }
   }, [favoriteIds, persona.id]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      setFavoriteIds(DEFAULT_FAVORITES_BY_ROLE[userRoleKey] ?? DEFAULT_FAVORITES_BY_ROLE["admin"] ?? []);
+    }
+  }, [isAdmin, userRoleKey]);
 
   const toggleFavorite = (itemId: string, event?: React.MouseEvent) => {
     if (event) event.stopPropagation();

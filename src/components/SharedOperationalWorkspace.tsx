@@ -31,11 +31,13 @@ export function SharedOperationalWorkspace({
   view,
   darkMode,
   onLogout,
+  adminDepartment,
 }: {
   membership: TestMembership;
   view: string;
   darkMode: boolean;
   onLogout: () => Promise<void>;
+  adminDepartment?: string;
 }) {
   const load = useServerFn(getSharedTestWorkspace),
     coordination = useServerFn(getCoordination),
@@ -197,8 +199,21 @@ export function SharedOperationalWorkspace({
     setNotice(`Component ${part.mpn} saved to Part Master.`);
     setInlinePartOpen(false);
   }
+  const targetDeptCode = adminDepartment
+    ? (adminDepartment === "sales" ? "SAL" : adminDepartment === "hrops" ? "HR" : adminDepartment.toUpperCase())
+    : "";
+  const resolvedAdminDept = adminDepartment
+    ? data.departments.find(
+        (d) =>
+          d.id === adminDepartment ||
+          d.code.toUpperCase() === targetDeptCode ||
+          d.code.toLowerCase() === adminDepartment.toLowerCase()
+      )
+    : null;
   const selectedDepartment =
-    department || data.departments.find((d) => d.code === actor.department_code)?.id || "";
+    actor.role === "admin"
+      ? (resolvedAdminDept?.id || department || data.departments.find((d) => d.code === "EHW")?.id || data.departments[0]?.id || "")
+      : (department || data.departments.find((d) => d.code === actor.department_code)?.id || "");
   const dept = data.departments.find((d) => d.id === selectedDepartment);
   const spec = recordFormSpec(dept?.code || actor.department_code || "");
   const supplierOptions = sharedSupplierOptions(data.records);
@@ -542,21 +557,6 @@ export function SharedOperationalWorkspace({
           TEST · {actor.display_name}
         </span>
         <div className="flex gap-2">
-          {actor.role === "admin" && (
-            <select
-              aria-label="Workspace department"
-              className={fieldClass}
-              value={selectedDepartment}
-              onChange={(e) => setDepartment(e.target.value)}
-            >
-              <option value="">All departments</option>
-              {data.departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-          )}
           <Button variant="outline" size="sm" onClick={() => setAdvanced("Documents")}>
             Document files
           </Button>

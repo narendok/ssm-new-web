@@ -2521,6 +2521,13 @@ function Portal() {
         return;
       }
     }
+    if (persona.kind === "admin" && area !== "home" && area !== "rnd") {
+      setAdminDepartment(area);
+      try {
+        window.sessionStorage.setItem("scms_admin_department", area);
+        window.localStorage.setItem("scms_admin_department", area);
+      } catch {}
+    }
     setActiveArea(area);
     setView(targetView);
     setSelectedId(null);
@@ -3267,7 +3274,7 @@ function Portal() {
       : (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
       ? persona.departmentId
       : persona.kind === "admin"
-      ? (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : adminDepartment)
+      ? (adminDepartment || (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw"))
       : activeArea;
   const active = areaById(effectiveArea);
   const activeDepartmentScope = (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
@@ -3323,7 +3330,7 @@ function Portal() {
     <div className="border-b border-border bg-card px-4 py-2 text-foreground">
       <button type="button" onClick={() => setShowSharedTestWorkspace(false)} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-secondary">Back to portal</button>
     </div>
-    <SharedTestWorkspace initialTab={sharedTestInitialTab} membership={testMembership} onLogout={handleLogout} darkMode={darkMode} />
+    <SharedTestWorkspace initialTab={sharedTestInitialTab} membership={testMembership} adminDepartment={effectiveArea} onLogout={handleLogout} darkMode={darkMode} />
   </div>;
   if(testAuthError)return <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground"><section className="max-w-lg rounded-xl border border-border bg-card p-6"><h1 className="text-lg font-semibold">Session verification unavailable</h1><p role="alert" className="my-3 text-sm">{testAuthError}</p><p className="text-xs text-muted-foreground">No local examples are used for this authenticated account.</p><button className="mt-4 rounded border border-border px-3 py-2 text-sm" onClick={()=>window.location.reload()}>Retry</button></section></main>;
   if (signedOut) return <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground"><section className="max-w-lg rounded-xl border border-border bg-card p-6"><p className="text-[11px] font-bold uppercase text-primary">TEST ONLY</p><h1 className="mt-1 text-xl font-semibold">Signed out</h1><p className="mt-3 text-sm text-muted-foreground">Sign in with a provisioned TEST account. Browser-local demo records remain separate.</p><button type="button" disabled={!testAuthReady} onClick={() => setLoginModalOpen(true)} className="mt-5 rounded border border-border px-4 py-2 text-sm disabled:opacity-50">Sign in to TEST workspace</button></section><DepartmentLeadLoginModal isOpen={loginModalOpen} demoMode={false} testMode currentPersonaId="" onClose={() => setLoginModalOpen(false)} onLoginSuccess={handleDemoLogin} onTestLogin={handleTestLogin} onLogout={handleLogout} /></main>;
@@ -3332,7 +3339,8 @@ function Portal() {
       <aside className={`fixed inset-y-0 left-0 z-30 hidden border-r border-sidebar-border bg-sidebar p-3 transition-[width] duration-200 motion-reduce:transition-none lg:flex lg:flex-col ${sidebarExpanded ? "w-64" : "w-16"}`}>
         <RoleAwareSidebar
           persona={persona}
-          activeArea={activeArea as any}
+          adminDepartment={effectiveArea}
+          activeArea={effectiveArea as any}
           view={view}
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
@@ -3475,7 +3483,7 @@ function Portal() {
           {persona.kind === "client" ? (
             <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
           ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","vault","index"].includes(view) ? (
- <SharedOperationalWorkspace key={`${testMembership.membershipId}:${view}`} membership={testMembership} view={view} darkMode={darkMode} onLogout={handleLogout}/>
+ <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} darkMode={darkMode} onLogout={handleLogout}/>
           ) : view === "departments" ? (
             <CommonDepartmentSearchView
               currentDepartment={adminDepartment}
@@ -4054,7 +4062,7 @@ function Portal() {
       )} 
       {modal === "create" && (
         <RecordForm
-          area={activeArea}
+          area={effectiveArea}
           portal={portal}
           persona={persona}
           initialType={createType}

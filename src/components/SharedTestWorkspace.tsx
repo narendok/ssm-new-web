@@ -30,7 +30,9 @@ export function SharedTestWorkspace({
   onLogout,
   darkMode,
   initialTab = "Tasks",
+  adminDepartment,
 }: {
+  adminDepartment?: string;
   membership: TestMembership;
   onLogout: () => Promise<void>;
   darkMode: boolean;
@@ -122,7 +124,9 @@ export function SharedTestWorkspace({
     admin = actor.role === "admin",
     lead = actor.role === "department_lead",
     viewer = actor.role === "viewer";
-  const ownDepartment = data.departments.find((d) => d.code === actor.department_code)?.id;
+  const targetDeptCode = adminDepartment ? (adminDepartment === "sales" ? "SAL" : adminDepartment === "hrops" ? "HR" : adminDepartment.toUpperCase()) : "";
+  const resolvedAdminDept = adminDepartment ? data.departments.find(d => d.id === adminDepartment || d.code.toUpperCase() === targetDeptCode || d.code.toLowerCase() === adminDepartment.toLowerCase()) : null;
+  const ownDepartment = admin ? (resolvedAdminDept?.id || data.departments.find(d => d.code === "EHW")?.id || data.departments[0]?.id) : data.departments.find((d) => d.code === actor.department_code)?.id;
   const selectedDepartment = values["department_id"] || ownDepartment || "";
   const spec = recordFormSpec(data.departments.find(d => d.id === selectedDepartment)?.code || "");
   const supplierOptions = sharedSupplierOptions(data.records);
