@@ -578,6 +578,8 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   );
 
   // 18. Finding 4: Connected TEST Fixture Synchronization (§14.13 & §14.14)
+  await assert.rejects(asUser(purLead, () => db.query("SELECT sync_scenario_test_fixtures($1)", ["TEST-DENIED"])), /FIXTURE_ADMIN_REQUIRED/);
+  await assert.rejects(call(admin, "sync_scenario_test_fixtures", {p_run_id:"production"}), /INVALID_TEST_RUN_ID/);
   const syncResult = await call(admin, "sync_scenario_test_fixtures", {
     p_run_id: "TEST-RUN-20261025-001",
   });

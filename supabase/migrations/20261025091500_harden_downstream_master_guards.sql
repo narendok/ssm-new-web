@@ -445,7 +445,7 @@ CREATE POLICY scenario_fixture_manifests_read ON public.scenario_fixture_manifes
   USING (EXISTS (
     SELECT 1 FROM organization_members m
     WHERE m.organization_id = scenario_fixture_manifests.organization_id
-      AND m.user_id = auth.uid() AND m.active
+      AND m.user_id = auth.uid() AND m.active AND m.role = 'admin'
   ));
 
 REVOKE ALL ON public.scenario_fixture_manifests FROM PUBLIC,anon;
@@ -481,6 +481,8 @@ BEGIN
   IF auth.uid() IS NULL OR a.membership_id IS NULL OR a.role = 'viewer' THEN
     RAISE EXCEPTION 'TEST_WRITE_DENIED';
   END IF;
+  IF a.role <> 'admin' THEN RAISE EXCEPTION 'FIXTURE_ADMIN_REQUIRED'; END IF;
+  IF p_run_id IS NULL OR p_run_id !~ '^TEST-[A-Za-z0-9_-]{1,80}$' THEN RAISE EXCEPTION 'INVALID_TEST_RUN_ID'; END IF;
   org := a.organization_id;
   PERFORM pg_advisory_xact_lock(hashtextextended(org::text, 42));
 
