@@ -115,7 +115,8 @@ export function SharedOperationalWorkspace({
   const canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "");
 
   async function handleSharedSupplierCreated(supplier: SupplierRecordItem) {
-    const controlledRef = `HLPL-SUP-${Math.floor(100000 + Math.random() * 900000)}`;
+    const requestId = supplier.operationId || crypto.randomUUID();
+    const controlledRef = `HLPL-SUP-${requestId.slice(0, 8).toUpperCase()}`;
     const res = (await write({
       data: {
         action: "create_record",
@@ -135,7 +136,7 @@ export function SharedOperationalWorkspace({
           },
           notes: "Inline registered supplier · Pending Verification",
         },
-        requestId: crypto.randomUUID(),
+        requestId,
       },
     })) as { id?: string } | null;
 
@@ -156,7 +157,8 @@ export function SharedOperationalWorkspace({
   }
 
   async function handleSharedPartCreated(part: PartRecordItem) {
-    const controlledRef = `HLPL-PRT-${Math.floor(100000 + Math.random() * 900000)}`;
+    const requestId = part.operationId || crypto.randomUUID();
+    const controlledRef = `HLPL-PRT-${requestId.slice(0, 8).toUpperCase()}`;
     const res = (await write({
       data: {
         action: "create_record",
@@ -176,7 +178,7 @@ export function SharedOperationalWorkspace({
           },
           notes: "Inline registered component · Engineering Only",
         },
-        requestId: crypto.randomUUID(),
+        requestId,
       },
     })) as { id?: string } | null;
 

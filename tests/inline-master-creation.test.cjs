@@ -16,6 +16,7 @@ test("§14.12: Inline master modal exports and canonical draft safeguards", () =
   assert.ok(content.includes("export function InlinePartModal"), "InlinePartModal must be exported");
   assert.ok(content.includes("Pending_Verification"), "Inline supplier master produces draft / pending verification status");
   assert.ok(content.includes("Engineering_Only"), "Inline component master produces engineering-only draft status");
+  assert.ok(content.includes("operationId"), "Inline modals produce stable operationId for idempotent retries");
 
   // Rule: Verified source facts rather than invented master data (§14.12 & Review Finding 22)
   // Must NOT invent synthetic emails, fake phone numbers, "Generic", or "Surface Mount"
@@ -38,9 +39,11 @@ test("§14.12: Capability gating and canonical ID bindings in RecordForm and Sha
   assert.ok(sharedContent.includes('canAddSupplier = actor.role === "admin" || actor.department_code === "PUR"'), "Shared workspace restricts supplier creation to PUR & Admin");
   assert.ok(sharedContent.includes('canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "")'), "Shared workspace restricts part creation to Engineering/PUR & Admin");
 
-  // Shared workspace renders modals and binds canonical IDs
+  // Shared workspace renders modals and binds canonical IDs with stable request identity
   assert.ok(sharedContent.includes("<InlineSupplierModal"), "SharedOperationalWorkspace renders InlineSupplierModal");
   assert.ok(sharedContent.includes("<InlinePartModal"), "SharedOperationalWorkspace renders InlinePartModal");
+  assert.ok(sharedContent.includes("supplier.operationId"), "Shared workspace preserves stable supplier operationId on retry");
+  assert.ok(sharedContent.includes("part.operationId"), "Shared workspace preserves stable part operationId on retry");
   assert.ok(sharedContent.includes("supplierId: createdId"), "SharedOperationalWorkspace binds canonical supplierId");
   assert.ok(sharedContent.includes("partId: createdId"), "SharedOperationalWorkspace binds canonical partId");
   assert.ok(sharedContent.includes("No canonical UUID was returned by the database"), "Shared workspace rejects missing returned ID");
@@ -173,8 +176,9 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   ).id;
   assert.ok(project, "Project must be created");
 
-  // 2. Behavioral verification: Authenticated Supplier creation by PUR
-  const supplierResult = await call(purLead, "create_record", {
+  // 2. Behavioral verification: Authenticated Supplier creation by PUR with stable request ID
+  const stableSupplierRequestId = uuid(101);
+  const supplierPayload = {
     title: "Mouser Electronics India",
     reference: "HLPL-SUP-0001",
     record_type: "Supplier",
@@ -188,11 +192,29 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
       revision: "01",
     },
     notes: "Inline registered vendor · Pending Verification",
-  });
+  };
+
+  const supplierResult = await call(purLead, "create_record", supplierPayload, stableSupplierRequestId);
 
   assert.ok(supplierResult.id, "Canonical UUID must be returned for created supplier");
   assert.equal(supplierResult.record_type, "Supplier");
   assert.equal(supplierResult.reference, "HLPL-SUP-0001");
+
+  // 2b. Retry identity & idempotency test: Resending with the same request ID returns cached response
+  const retrySupplierResult = await call(purLead, "create_record", supplierPayload, stableSupplierRequestId);
+  assert.equal(retrySupplierResult.id, supplierResult.id, "Retry with same requestId must return identical canonical ID");
+
+  // Verify that duplicate record was NOT created in operational_records
+  const supCount = (
+    await db.query("SELECT COUNT(*) FROM operational_records WHERE reference = 'HLPL-SUP-0001'")
+  ).rows[0].count;
+  assert.equal(Number(supCount), 1, "Idempotent retry must not duplicate supplier record");
+
+  // 2c. Request ID reuse with changed payload must be rejected
+  await assert.rejects(
+    call(purLead, "create_record", { ...supplierPayload, title: "Tampered Title" }, stableSupplierRequestId),
+    /REQUEST_ID_REUSED/
+  );
 
   // Verify persistence in operational_records without fabricated data
   const persistedSup = (
@@ -223,6 +245,23 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     }),
     /SUPPLIER_CREATE_DENIED/
   );
+
+  // 3b. Anti-tampering check: non-admin attempting to self-approve supplier on creation is forced to Pending_Verification
+  const selfApproveAttempt = await call(purLead, "create_record", {
+    title: "Self-Approve Attempt Vendor",
+    reference: "HLPL-SUP-0004",
+    record_type: "Supplier",
+    fields: {
+      name: "Self-Approve Attempt Vendor",
+      category: "Semiconductors & ICs",
+      verification_status: "Approved", // Tampering attempt on creation
+      revision: "01",
+    },
+  });
+  const tamperedPersisted = (
+    await db.query("SELECT fields FROM operational_records WHERE id=$1", [selfApproveAttempt.id])
+  ).rows[0];
+  assert.equal(tamperedPersisted.fields.verification_status, "Pending_Verification", "Backend anti-tampering forces Pending_Verification");
 
   // 4. Behavioral verification: Authenticated Part creation by Engineering (EHW)
   const partResult = await call(hwLead, "create_record", {
@@ -265,7 +304,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     /PART_CREATE_DENIED/
   );
 
-  // 6. Fail-closed Downstream Gate 1: Missing supplier blocks PO
+  // 6. Fail-closed Downstream Gate 1a: Missing supplier blocks PO
   await assert.rejects(
     call(purLead, "create_record", {
       project_id: project,
@@ -280,7 +319,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     /SUPPLIER_REQUIRED/
   );
 
-  // 7. Fail-closed Downstream Gate 1: Non-existent supplier blocks PO
+  // 7. Fail-closed Downstream Gate 1b: Non-existent supplier blocks PO
   await assert.rejects(
     call(purLead, "create_record", {
       project_id: project,
@@ -296,7 +335,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     /SUPPLIER_NOT_FOUND/
   );
 
-  // 8. Fail-closed Downstream Gate 1: Pending_Verification supplier blocks production PO
+  // 8. Fail-closed Downstream Gate 1c: Pending_Verification supplier blocks production PO
   await assert.rejects(
     call(purLead, "create_record", {
       project_id: project,
@@ -312,7 +351,28 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     /SUPPLIER_VERIFICATION_REQUIRED/
   );
 
-  // 9. Fail-closed Downstream Gate 2: Missing component part blocks released BOM
+  // 8b. Finding 2 Review Probe: Open unapproved supplier with absent verification_status MUST be rejected!
+  await db.query(
+    "UPDATE operational_records SET status = 'open', fields = fields - 'verification_status' WHERE id = $1",
+    [supplierResult.id]
+  );
+  await assert.rejects(
+    call(purLead, "create_record", {
+      project_id: project,
+      title: "PO with unapproved open supplier",
+      reference: "HLPL-RFT-PUR-PO-PROBE-FAIL",
+      record_type: "Purchase order",
+      fields: {
+        revision: "01",
+        supplier: supplierResult.id,
+        quantity: "100",
+      },
+    }),
+    /SUPPLIER_VERIFICATION_REQUIRED/,
+    "Positive approval check must reject open unapproved supplier with absent verification_status"
+  );
+
+  // 9. Fail-closed Downstream Gate 2a: Missing component part blocks released BOM
   await assert.rejects(
     call(hwLead, "create_record", {
       project_id: project,
@@ -328,7 +388,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     /PART_REQUIRED/
   );
 
-  // 10. Fail-closed Downstream Gate 2: Non-existent component part blocks released BOM
+  // 10. Fail-closed Downstream Gate 2b: Non-existent component part blocks released BOM
   await assert.rejects(
     call(hwLead, "create_record", {
       project_id: project,
@@ -345,7 +405,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     /PART_NOT_FOUND/
   );
 
-  // 11. Fail-closed Downstream Gate 2: Engineering_Only part blocks mass production release / BOM
+  // 11. Fail-closed Downstream Gate 2c: Engineering_Only part blocks mass production release / BOM
   await assert.rejects(
     call(hwLead, "create_record", {
       project_id: project,
@@ -360,6 +420,28 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
       },
     }),
     /PART_RELEASE_REQUIRED/
+  );
+
+  // 11b. Positive check: Open unreleased part with absent release_status MUST be rejected!
+  await db.query(
+    "UPDATE operational_records SET status = 'open', fields = fields - 'release_status' WHERE id = $1",
+    [partResult.id]
+  );
+  await assert.rejects(
+    call(hwLead, "create_record", {
+      project_id: project,
+      title: "BOM with unreleased open part",
+      reference: "HLPL-RFT-EHW-BOM-PROBE-FAIL",
+      record_type: "BOM",
+      stage: "released",
+      fields: {
+        revision: "01",
+        stage: "released",
+        part: partResult.id,
+      },
+    }),
+    /PART_RELEASE_REQUIRED/,
+    "Positive release check must reject open unreleased part with absent release_status"
   );
 
   // 12. Downstream Gate Unlocked: Once supplier is Approved, production PO succeeds
@@ -429,4 +511,113 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     }),
     /PART_NOT_FOUND/
   );
+
+  // 16. Finding 5: Anti-tampering on update_record (Non-admin cannot self-approve or release)
+  await db.query(
+    "UPDATE operational_records SET status = 'draft', fields = jsonb_set(fields, '{verification_status}', '\"Pending_Verification\"') WHERE id = $1",
+    [supplierResult.id]
+  );
+  await assert.rejects(
+    call(purLead, "update_record", {
+      record_id: supplierResult.id,
+      expected_updated_at: (await db.query("SELECT updated_at FROM operational_records WHERE id=$1", [supplierResult.id])).rows[0].updated_at.toISOString(),
+      fields: {
+        revision: "02",
+        name: "Tampering Update Vendor",
+        verification_status: "Approved",
+      },
+    }),
+    /SUPPLIER_APPROVAL_DENIED/,
+    "Non-admin cannot update supplier verification_status to Approved"
+  );
+
+  await db.query(
+    "UPDATE operational_records SET status = 'draft', fields = jsonb_set(fields, '{release_status}', '\"Engineering_Only\"') WHERE id = $1",
+    [partResult.id]
+  );
+  await assert.rejects(
+    call(hwLead, "update_record", {
+      record_id: partResult.id,
+      expected_updated_at: (await db.query("SELECT updated_at FROM operational_records WHERE id=$1", [partResult.id])).rows[0].updated_at.toISOString(),
+      fields: {
+        revision: "02",
+        mpn: "STM32F405RGT6",
+        release_status: "Released",
+      },
+    }),
+    /PART_RELEASE_DENIED/,
+    "Non-admin cannot update part release_status to Released"
+  );
+
+  // 17. Finding 2: Part release gate check on request_approval for released BOM
+  const unreleasedBom = await call(hwLead, "create_record", {
+    project_id: project,
+    title: "Draft BOM with unreleased part",
+    reference: "HLPL-RFT-EHW-BOM-DRAFT",
+    record_type: "BOM",
+    stage: "draft",
+    fields: {
+      revision: "01",
+      stage: "draft",
+      part: partResult.id,
+    },
+  });
+  // Update BOM stage to released
+  await db.query(
+    "UPDATE operational_records SET stage = 'released', fields = jsonb_set(fields, '{stage}', '\"released\"') WHERE id = $1",
+    [unreleasedBom.id]
+  );
+  // Attempt to request approval on released BOM referencing unreleased part
+  await assert.rejects(
+    call(hwLead, "request_approval", {
+      record_id: unreleasedBom.id,
+      reviewer_department_id: dQa,
+    }),
+    /PART_RELEASE_REQUIRED/,
+    "request_approval on released BOM fails closed if component part is not released"
+  );
+
+  // 18. Finding 4: Connected TEST Fixture Synchronization (§14.13 & §14.14)
+  const syncResult = await call(admin, "sync_scenario_test_fixtures", {
+    p_run_id: "TEST-RUN-20261025-001",
+  });
+  assert.equal(syncResult.status, "created", "First fixture sync creates genuine records");
+  assert.ok(syncResult.persisted_count >= 18, `Persisted count ${syncResult.persisted_count} >= 18`);
+
+  // Verify S01-S06 in scenario_fixture_manifests
+  const manifestRows = (
+    await db.query("SELECT scenario_id, entity_type, record_type, reference, stage FROM scenario_fixture_manifests WHERE organization_id = $1 AND run_id = $2", [org, "TEST-RUN-20261025-001"])
+  ).rows;
+  assert.ok(manifestRows.some(r => r.scenario_id === "S01" && r.reference === "TEST-JIG-01"), "S01 Project TEST-JIG-01 persisted");
+  assert.ok(manifestRows.some(r => r.scenario_id === "S01" && r.reference === "HLPL-JIG-EHW-SCH-01"), "S01 Schematic persisted");
+  
+  // Verify §14.14 S02 Invariant: Strictly NO project created for S02
+  const s02Projects = manifestRows.filter(r => r.scenario_id === "S02" && r.entity_type === "project");
+  assert.equal(s02Projects.length, 0, "§14.14 Invariant: Strictly NO project created for S02 DECLINED-ENQUIRY");
+  assert.ok(manifestRows.some(r => r.scenario_id === "S02" && r.reference === "ENQ-2026-EXT-01"), "S02 Enquiry ENQ-2026-EXT-01 persisted");
+  assert.ok(manifestRows.some(r => r.scenario_id === "S02" && r.reference === "HLPL-EXT-PUR-FEAS-01"), "S02 Feasibility HLPL-EXT-PUR-FEAS-01 persisted");
+
+  // Verify S06 Bulk Production and arithmetic reconciliation
+  assert.ok(manifestRows.some(r => r.scenario_id === "S06" && r.reference === "TEST-RFT-01"), "S06 Project TEST-RFT-01 persisted");
+  const s06Inspection = (
+    await db.query("SELECT fields FROM operational_records WHERE organization_id = $1 AND reference = 'HLPL-RFT-QA-IQC-01'", [org])
+  ).rows[0];
+  assert.ok(s06Inspection, "S06 Inspection record persisted in operational_records");
+  const f = s06Inspection.fields;
+  assert.equal(f.acceptedUnits, 150, "S06: 150 accepted units");
+  assert.equal(f.heldUnits, 5, "S06: 5 held units");
+  assert.equal(f.pendingInspectionUnits, 45, "S06: 45 pending inspection units");
+  assert.equal(f.acceptedUnits + f.heldUnits + f.pendingInspectionUnits, f.lotQuantity, "150 + 5 + 45 === 200 lot 1 units");
+  assert.equal(f.totalPlannedUnits - f.lotQuantity, f.remainingPlannedUnits, "500 - 200 === 300 remaining planned units");
+  assert.equal(f.reconciliationCheckPassed, true, "Arithmetic reconciliation verified");
+
+  // 19. Finding 4 Idempotency: Second call reuses existing fixtures without duplication
+  const recordCountBefore = Number((await db.query("SELECT count(*) as c FROM operational_records WHERE organization_id = $1", [org])).rows[0].c);
+  const syncReplay = await call(admin, "sync_scenario_test_fixtures", {
+    p_run_id: "TEST-RUN-20261025-001",
+  });
+  assert.equal(syncReplay.status, "already_synced", "Second call reports already_synced");
+  assert.equal(syncReplay.persisted_count, syncResult.persisted_count, "Persisted count matches");
+  const recordCountAfter = Number((await db.query("SELECT count(*) as c FROM operational_records WHERE organization_id = $1", [org])).rows[0].c);
+  assert.equal(recordCountBefore, recordCountAfter, "Zero duplicate records inserted on replay");
 });

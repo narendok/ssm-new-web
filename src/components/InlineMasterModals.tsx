@@ -10,6 +10,7 @@ export interface SupplierRecordItem {
   spocPhone: string;
   status: "Draft" | "Pending_Verification" | "Approved";
   createdAt: string;
+  operationId?: string;
 }
 
 export interface PartRecordItem {
@@ -21,6 +22,7 @@ export interface PartRecordItem {
   category: string;
   status: "Draft" | "Engineering_Only" | "Released";
   createdAt: string;
+  operationId?: string;
 }
 
 /**
@@ -35,6 +37,7 @@ export function InlineSupplierModal({
   onClose: () => void;
   onSupplierCreated: (supplier: SupplierRecordItem) => Promise<void> | void;
 }) {
+  const [operationId] = useState(() => crypto.randomUUID());
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Active & Passive Components");
   const [spocName, setSpocName] = useState("");
@@ -69,6 +72,7 @@ export function InlineSupplierModal({
       spocPhone: spocPhone.trim(),
       status: "Pending_Verification",
       createdAt: new Date().toISOString().slice(0, 10),
+      operationId,
     };
 
     try {
@@ -227,6 +231,7 @@ export function InlinePartModal({
   onClose: () => void;
   onPartCreated: (part: PartRecordItem) => Promise<void> | void;
 }) {
+  const [operationId] = useState(() => crypto.randomUUID());
   const [mpn, setMpn] = useState("");
   const [description, setDescription] = useState("");
   const [manufacturer, setManufacturer] = useState("");
@@ -262,6 +267,7 @@ export function InlinePartModal({
       category,
       status: "Engineering_Only",
       createdAt: new Date().toISOString().slice(0, 10),
+      operationId,
     };
 
     try {

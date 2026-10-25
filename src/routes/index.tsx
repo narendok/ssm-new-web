@@ -2613,7 +2613,7 @@ function Portal() {
       const nextSuppliers = Array.from(new Set([...existing, supplier.name]));
       const newSupplierRecord: RecordItem = {
         id: supplier.id || createId(),
-        reference: `HLPL-SUP-${Date.now().toString().slice(-4)}`,
+        reference: supplier.operationId ? `HLPL-SUP-${supplier.operationId.slice(0, 8).toUpperCase()}` : `HLPL-SUP-${(supplier.id || createId()).slice(0, 8).toUpperCase()}`,
         title: supplier.name,
         type: "Supplier",
         area: "pur",
@@ -2664,7 +2664,7 @@ function Portal() {
       const nextParts = Array.from(new Set([...existing, part.mpn]));
       const newPartRecord: RecordItem = {
         id: part.id || createId(),
-        reference: `HLPL-PRT-${Date.now().toString().slice(-4)}`,
+        reference: part.operationId ? `HLPL-PRT-${part.operationId.slice(0, 8).toUpperCase()}` : `HLPL-PRT-${(part.id || createId()).slice(0, 8).toUpperCase()}`,
         title: `${part.mpn} · ${part.description}`,
         type: "Part",
         area: "rnd",
