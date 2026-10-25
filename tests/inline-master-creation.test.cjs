@@ -231,6 +231,15 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   assert.equal(persistedSup.fields.spocEmail, "");
   assert.equal(persistedSup.fields.spocPhone, "");
 
+  // Customer inline creation uses the same durable, capability-gated contract.
+  const customerPayload={title:"Test customer",reference:"HLPL-CUS-INLINE-01",record_type:"Customer",fields:{name:"Test customer",spocEmail:"",revision:"01"}};
+  const customerRequest=crypto.randomUUID();
+  const customer=await call(salLead,"create_record",customerPayload,customerRequest);
+  assert.ok(customer.id);
+  assert.equal((await call(salLead,"create_record",customerPayload,customerRequest)).id,customer.id);
+  assert.equal((await db.query("SELECT fields FROM operational_records WHERE id=$1",[customer.id])).rows[0].fields.spocEmail,"");
+  await assert.rejects(call(purLead,"create_record",{...customerPayload,reference:"HLPL-CUS-DENIED"}),/CUSTOMER_CREATE_DENIED/);
+
   // 3. Behavioral verification: Unauthorized supplier creation by non-PUR fails closed
   await assert.rejects(
     call(hwLead, "create_record", {
@@ -644,5 +653,33 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   assert.equal((await db.query("SELECT stage FROM operational_records WHERE reference=$1",["TEST-RFT-01"])).rows[0].stage,"Stage 8");
   assert.ok((await db.query("SELECT fields FROM operational_records WHERE reference=$1",["HLPL-EXT-PUR-FEAS-01"])).rows[0].fields.enquiryId);
 
+
+  // Walk every current catalogue entry against the real migration contract in an isolated database.
+  const ts=require("typescript"); const catalogue={exports:{}};
+  new Function("module","exports",ts.transpileModule(fs.readFileSync(path.join(root,"src/lib/record-form-catalogue.ts"),"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText)(catalogue,catalogue.exports);
+  const {formSpecs,recordFields,recordFieldValues}=catalogue.exports;
+  const verifiedSupplier=await call(admin,"create_record",{record_type:"Supplier",title:"Catalogue verified supplier",reference:"HLPL-CAT-SUP-01",fields:{revision:"01",verification_status:"Approved"}});
+  let coverage=0;
+  for(const [area,spec] of Object.entries(formSpecs)) {
+    for(const type of spec.types) {
+      const label=`${area}/${type}`; const ref=`HLPL-CAT-REC-${++coverage}`;
+      if(type==="Project") {
+        const created=await call(admin,"create_project",{title:label,reference:ref,department_id:dEhw});assert.ok(created.id,label);continue;
+      }
+      if(type==="Task") {
+        const created=await call(admin,"create_task",{project_id:project,title:label,department_id:dEhw,assignee_id:mids[hwLead],priority:"Normal"});assert.ok(created.id,label);continue;
+      }
+      const input={revision:"01",supplier:verifiedSupplier.id,supplierId:verifiedSupplier.id};
+      for(const field of recordFields(spec,type))if(field.required)input[field.key]=field.options?.[0] || (field.kind==="date"?"2026-10-25":"TEST");
+      const fields=recordFieldValues(spec,type,input);
+      const created=await call(admin,"create_record",{project_id:project,title:label,reference:ref,record_type:type,department_id:dEhw,fields,notes:"Isolated catalogue creation probe"});
+      const saved=(await db.query("SELECT * FROM operational_records WHERE id=$1",[created.id])).rows[0];
+      assert.equal(saved.record_type,type,label);assert.equal(saved.reference,ref,label);
+      for(const [key,value] of Object.entries(fields))assert.equal(saved.fields[key],value,`${label}/${key}`);
+      await call(admin,"update_record",{record_id:created.id,expected_updated_at:new Date(saved.updated_at).toISOString(),fields:saved.fields,notes:"Verified edit roundtrip"});
+      assert.equal((await db.query("SELECT notes FROM operational_records WHERE id=$1",[created.id])).rows[0].notes,"Verified edit roundtrip",label);
+    }
+  }
+  assert.equal(coverage,88,"All current catalogue entries exercised; changing catalogue requires deliberate coverage update");
 
 });

@@ -34,3 +34,18 @@ test('Purchasing selects prototype or mass production once, through record type 
  assert.equal(recordFieldValues(spec,'Mass production request',{}).procurementTrack,'Mass production');
  assert.equal(recordFieldValues(spec,'F-PUR-10',{}).procurementTrack,undefined);
 });
+
+test('all catalogue entries inherit company location instead of requiring repeated entry',()=>{
+ for(const spec of Object.values(m.exports.formSpecs))for(const type of spec.types){
+  assert.equal(recordFields(spec,type).some(f=>f.master==='locations'),false, type);
+  const values={};for(const field of recordFields(spec,type))if(field.required)values[field.key]=field.options?.[0] || 'TEST';
+  assert.doesNotThrow(()=>recordFieldValues(spec,type,values),type);
+ }
+});
+test('shared master choices preserve distinct canonical identities even with duplicate MPNs',()=>{
+ const code=ts.transpileModule(fs.readFileSync('src/lib/shared-master-options.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
+ const mod={exports:{}};new Function('module','exports',code)(mod,mod.exports);
+ const records=[{id:'part-a',reference:'PART-A',record_type:'Part',title:'Resistor A',status:'Draft',fields:{mpn:'SAME'}},{id:'part-b',reference:'PART-B',record_type:'Part',title:'Resistor B',status:'Released',fields:{mpn:'SAME'}},{id:'old',reference:'OLD',record_type:'Part',title:'Old',status:'Archived',fields:{}},{id:'customer',reference:'CUS',record_type:'Customer',title:'Client',status:'Open',fields:{}}];
+ const options=mod.exports.sharedMasterOptions(records,['Part']);assert.deepEqual(options.map(o=>o.value),['part-a','part-b']);assert.equal(new Set(options.map(o=>o.label)).size,2);
+ assert.deepEqual(mod.exports.sharedMasterOptions([],['Customer']),[]);
+});

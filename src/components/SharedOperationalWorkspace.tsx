@@ -1,3 +1,6 @@
+import { InlineCustomerModal } from "./InlineCustomerModal";
+import { SharedMasterSelect } from "./SharedMasterSelect";
+import { sharedMasterOptions } from "@/lib/shared-master-options";
 import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
 import { SharedSupplierSelect } from "./SharedSupplierSelect";
 import { InlineSupplierModal, InlinePartModal, type SupplierRecordItem, type PartRecordItem } from "./InlineMasterModals";
@@ -68,7 +71,8 @@ export function SharedOperationalWorkspace({
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [inlineSupplierOpen, setInlineSupplierOpen] = useState(false),
-    [inlinePartOpen, setInlinePartOpen] = useState(false);
+    [inlinePartOpen, setInlinePartOpen] = useState(false),
+    [inlineCustomerOpen, setInlineCustomerOpen] = useState(false);
 
 
   const lock = useRef(false),
@@ -115,6 +119,7 @@ export function SharedOperationalWorkspace({
   const actorDeptId = data.departments.find((d) => d.code === actor.department_code)?.id || "";
   const purDeptId = data.departments.find((d) => d.code === "PUR")?.id || actorDeptId || "";
 
+  const canAddCustomer = actor.role === "admin" || actor.department_code === "SAL";
   const canAddSupplier = actor.role === "admin" || actor.department_code === "PUR";
   const canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "");
 
@@ -250,55 +255,13 @@ export function SharedOperationalWorkspace({
       );
     }
     if (field.master === "parts") {
-      const partOptions = Array.from(
-        new Set(
-          data.records
-            .filter((r) => r.record_type.toLowerCase() === "part" && !["archived", "obsolete"].includes(r.status.toLowerCase()))
-            .map((r) => String(r.fields["mpn"] || r.reference || r.title))
-            .filter(Boolean),
-        ),
-      );
+      const partOptions = sharedMasterOptions(data.records, ["Part"]);
       return (
         <div className="flex items-center gap-2">
           <div className="flex-1">
-            {partOptions.length > 0 ? (
-              <select
-                className={fieldClass}
-                required={field.required}
-                value={values[field.key] || ""}
-                onChange={(e) => {
-                  const selectedPart = data.records.find(
-                    (r) =>
-                      r.record_type.toLowerCase() === "part" &&
-                      (r.id === e.target.value ||
-                        String(r.fields["mpn"] || "") === e.target.value ||
-                        r.reference === e.target.value),
-                  );
-                  setValues({
-                    ...values,
-                    [field.key]: e.target.value,
-                    partId: selectedPart?.id || e.target.value,
-                    mpn: (selectedPart?.fields["mpn"] as string) || e.target.value,
-                  });
-                }}
-              >
-                <option value="">Choose part / MPN…</option>
-                {partOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                className={fieldClass}
-                type="text"
-                required={field.required}
-                placeholder="Enter MPN or click + Add Part"
-                value={values[field.key] || ""}
-                onChange={(e) => setValues({ ...values, [field.key]: e.target.value, mpn: e.target.value })}
-              />
-            )}
+            <SharedMasterSelect label={field.label} options={partOptions} required={!!field.required}
+              value={data.records.find(r => r.record_type === "Part" && [r.id, r.reference].includes(values[field.key] || ""))?.id || values[field.key] || ""}
+              onChange={id => { const part = data.records.find(r=>r.id===id); setValues(previous=>({...previous,[field.key]:id,partId:id,mpn:String(part?.fields["mpn"] || "")})); }}/>
           </div>
           {canAddPart && (
             <Button
@@ -313,6 +276,13 @@ export function SharedOperationalWorkspace({
           )}
         </div>
       );
+    }
+    if (field.master) {
+      const options = field.master === "people"
+        ? data.members.filter(m=>m.department_id===selectedDepartment).map(m=>({value:m.id,label:m.display_name || m.id}))
+        : sharedMasterOptions(data.records, field.master === "customers" ? ["Customer"] : field.master === "products" ? ["Product", "Project"] : field.master === "routes" ? ["Production route", "Route"] : ["Controlled document"]);
+      return <div className="flex items-center gap-2"><div className="min-w-0 flex-1"><SharedMasterSelect label={field.label} options={options} required={!!field.required} value={values[field.key] || ""}
+        onChange={id=>setValues(previous=>({...previous,[field.key]:id,...(field.master==="customers" ? {customerId:id} : {})}))}/></div>{field.master === "customers" && canAddCustomer && <Button type="button" variant="outline" size="sm" onClick={()=>setInlineCustomerOpen(true)}>+ Add Customer</Button>}</div>;
     }
     if (field.options) {
       return (
@@ -727,19 +697,8 @@ export function SharedOperationalWorkspace({
                   <>
                     <label className="grid gap-1 text-xs">
                       Project ({projectRows.length} available)
-                      <select
-                        className={fieldClass}
-                        required
-                        value={values["projectId"] || ""}
-                        onChange={(e) => setValues({ ...values, projectId: e.target.value })}
-                      >
-                        <option value="">Choose…</option>
-                        {projectRows.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.reference} · {p.title}
-                          </option>
-                        ))}
-                      </select>
+                      <SharedMasterSelect label="Project" required options={projectRows.map(p=>({value:p.id,label:`${p.reference} · ${p.title}`}))} value={values["projectId"] || ""} onChange={id=>setValues(previous=>({...previous,projectId:id}))}/>
+
                     </label>
                     <label className="grid gap-1 text-xs">
                       Record type
@@ -794,6 +753,13 @@ export function SharedOperationalWorkspace({
           </form>
         </DialogContent>
       </Dialog>
+      {inlineCustomerOpen && <InlineCustomerModal onClose={()=>setInlineCustomerOpen(false)} onSave={async customer=>{
+        const result = await write({data:{action:"create_record",requestId:customer.operationId,payload:{record_type:"Customer",reference:`HLPL-CUS-${customer.operationId.slice(0,8).toUpperCase()}`,title:customer.name,fields:{name:customer.name,spocName:customer.contact,spocEmail:customer.email,revision:"01"}}}}) as {id?:string};
+        if(!result?.id) throw new Error("Customer save did not return a persisted ID.");
+        await query.refetch();
+        setValues(previous=>({...previous,customer:result.id!,customerId:result.id!,customerName:customer.name}));
+        setInlineCustomerOpen(false);
+      }}/>}
       {inlineSupplierOpen && (
         <InlineSupplierModal
           onClose={() => setInlineSupplierOpen(false)}

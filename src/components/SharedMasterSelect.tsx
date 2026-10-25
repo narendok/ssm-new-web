@@ -1,0 +1,8 @@
+import { useState } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandItem } from "@/components/ui/command";
+import { Button } from "@/components/ui/button";
+export function SharedMasterSelect({label,options,value,onChange,required=false}:{label:string;options:{value:string;label:string}[];value:string;onChange:(value:string)=>void;required?:boolean}) {
+ const [open,setOpen]=useState(false);
+ return <div className="relative"><Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><Button type="button" variant="outline" role="combobox" aria-label={label} aria-expanded={open} className="w-full justify-between font-normal"><span className="truncate">{options.find(o=>o.value===value)?.label || (value ? `Existing value: ${value}` : `Search ${label.toLowerCase()}…`)}</span><span aria-hidden="true">⌄</span></Button></PopoverTrigger><PopoverContent className="w-80 p-0" align="start"><Command><CommandInput placeholder={`Search ${label.toLowerCase()}…`}/><CommandList><CommandEmpty>No matching entries available within your access.</CommandEmpty><CommandItem value="Clear selection" onSelect={()=>{onChange("");setOpen(false);}}>Clear selection</CommandItem>{options.map(o=><CommandItem key={o.value} value={`${o.label} ${o.value}`} onSelect={()=>{onChange(o.value);setOpen(false);}}>{o.label}</CommandItem>)}</CommandList></Command></PopoverContent></Popover><input aria-label={`${label} selection`} className="absolute h-px w-px opacity-0" tabIndex={-1} required={required} value={value} onChange={()=>{}}/></div>;
+}

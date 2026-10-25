@@ -1,4 +1,4 @@
-import { formSpecs } from "@/lib/record-form-catalogue";
+import { formSpecs, recordFormSpec } from "@/lib/record-form-catalogue";
 import { SharedBusinessWorkspace } from "@/components/SharedBusinessWorkspace";
 import { SharedProjectAnalysis } from "@/components/SharedProjectAnalysis";
 import { scopeRecordDefaults } from "@/lib/record-form-defaults";
@@ -2603,7 +2603,9 @@ function Portal() {
   };
   const handleOpenCreate = (typeOrEvent?: unknown, initialValues?: Record<string, string>) => {
     const type = typeof typeOrEvent === "string" ? typeOrEvent : null;
-    setCreateType(type);
+    const catalogue = recordFormSpec(effectiveArea);
+    const genericEntry = type === areaById(effectiveArea).recordType && !catalogue?.types.includes(type || "");
+    setCreateType(genericEntry ? catalogue?.types[0] || type : type);
     setCreateInitialValues(initialValues ? { ...initialValues, ...(initialValues["projectCode"] ? { projectId: initialValues["projectCode"] } : {}) } : null);
     setModal("create");
   };
@@ -7674,7 +7676,7 @@ function RecordForm({
   const [type, setType] = useState(initialType ?? spec.types[0] ?? "Record");
   const [values, setValues] = useState<Record<string, string>>(() => ({
     assignee: defaultAssignee,
-    location: portal.masters.locations?.[0] || "XYZ Pvt Ltd — Noida Tech Center",
+    location: portal.masters.locations?.[0] || "",
     projectId: initialType === "Project" ? suggestProjectCode(portal.records, portal.templateSettings?.prefix) : "",
     hwStage: "HW_01",
     gate: "G0",
@@ -7696,7 +7698,7 @@ function RecordForm({
     if (initialType) setType(initialType);
     if (initialValues) {
       setValues((prev) => ({
-        location: portal.masters.locations?.[0] || "XYZ Pvt Ltd — Noida Tech Center",
+        location: portal.masters.locations?.[0] || "",
         projectId: "",
         hwStage: "HW_01",
         gate: "G0",
@@ -7747,7 +7749,7 @@ function RecordForm({
   ];
   const visibleFields = type === "Project" ? projectFields : type === "Task" ? taskFields : [
     { key: "projectId", label: isPreProjectIntake(type) ? "Existing project (optional)" : "Project", required: !isPreProjectIntake(type), kind: "select" as const, options: projectOptions },
-    ...spec.fields.filter(item => item.key !== "controlledNumber" && item.key !== "projectId" && (type !== "PRS" || item.key !== "hwStage")),
+    ...spec.fields.filter(item => item.key !== "controlledNumber" && item.key !== "projectId" && item.master !== "locations" && (type !== "PRS" || item.key !== "hwStage")),
   ];
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -7828,7 +7830,7 @@ function RecordForm({
           {type === "Task"
             ? `Create a tracked operational task assigned within ${areaById(area).name}. Tasks are automatically integrated into Today Checklist, Priority metrics, and department queues.`
             : isPreProjectIntake(type) ? "Capture the customer requirement first. A new inquiry can be saved without a project; link an existing project only when relevant." : type === "Project" ? "Create a project with a unique code and a separate descriptive title. The suggested code can be changed before saving; existing projects are not renamed."
-            : `This ${areaById(area).name} record is linked to a managed project, people, suppliers, customers, and locations where applicable. The portal generates an HLPL document number when you leave the controlled number blank.`}
+            : `This ${areaById(area).name} record is linked to a managed project, people, suppliers and customers where applicable. The portal generates an HLPL document number when you leave the controlled number blank.`}
         </p>
         <SelectField label="Record type" value={type} options={availableTypes} onChange={next => { setType(next); setValues(previous => ({ ...previous, controlledNumber: "", projectId: next === "Project" ? suggestProjectCode(portal.records, portal.templateSettings?.prefix) : type === "Project" ? "" : previous["projectId"] ?? "" })); }} />
         <section className="rounded-lg border border-steel/35 bg-panel p-3">

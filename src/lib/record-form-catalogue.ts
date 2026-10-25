@@ -269,7 +269,7 @@ export function recordFormSpec(department: string): RecordFormSpec | undefined {
   return formSpecs[aliases[department.toUpperCase()] || department.toLowerCase()];
 }
 export function recordFields(spec: RecordFormSpec, type: string): RecordField[] {
-  return spec.fields.filter(field => !["title", "controlledNumber", "projectId"].includes(field.key) && !(type === "PRS" && field.key === "hwStage"));
+  return spec.fields.filter(field => !["title", "controlledNumber", "projectId"].includes(field.key) && field.master !== "locations" && !(type === "PRS" && field.key === "hwStage"));
 }
 export function recordFieldValues(spec: RecordFormSpec, type: string, values: Record<string,string>): Record<string,string> {
   if (!spec.types.includes(type)) throw new Error("Choose a record type for this department.");
