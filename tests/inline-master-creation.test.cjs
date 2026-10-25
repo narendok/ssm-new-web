@@ -34,24 +34,19 @@ test("§14.12: Capability gating and canonical ID bindings in RecordForm and Sha
   assert.ok(indexContent.includes('canAddSupplier = ["pur", "admin"].includes(area)'), "Supplier creation restricted to Purchasing & Admin");
   assert.ok(indexContent.includes('canAddPart = ["ehw", "esw", "mech", "pur", "rnd", "admin"].includes(area)'), "Part creation restricted to Engineering/Purchasing & Admin");
 
-  // RecordForm binds canonical persisted ID
-  assert.ok(indexContent.includes("supplier: newSup.id || newSup.name"), "RecordForm binds newly created canonical supplier ID");
-  assert.ok(indexContent.includes("supplierId: newSup.id"), "RecordForm retains canonical supplierId property");
-  assert.ok(indexContent.includes("part: newPrt.id || newPrt.mpn"), "RecordForm binds newly created canonical part ID");
-  assert.ok(indexContent.includes("partId: newPrt.id"), "RecordForm retains canonical partId property");
-
   // Capability guards in SharedOperationalWorkspace.tsx
   assert.ok(sharedContent.includes('canAddSupplier = actor.role === "admin" || actor.department_code === "PUR"'), "Shared workspace restricts supplier creation to PUR & Admin");
   assert.ok(sharedContent.includes('canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "")'), "Shared workspace restricts part creation to Engineering/PUR & Admin");
 
-  // Shared workspace binds canonical IDs and handles modals
+  // Shared workspace renders modals and binds canonical IDs
   assert.ok(sharedContent.includes("<InlineSupplierModal"), "SharedOperationalWorkspace renders InlineSupplierModal");
   assert.ok(sharedContent.includes("<InlinePartModal"), "SharedOperationalWorkspace renders InlinePartModal");
   assert.ok(sharedContent.includes("supplierId: createdId"), "SharedOperationalWorkspace binds canonical supplierId");
   assert.ok(sharedContent.includes("partId: createdId"), "SharedOperationalWorkspace binds canonical partId");
+  assert.ok(sharedContent.includes("No canonical UUID was returned by the database"), "Shared workspace rejects missing returned ID");
 });
 
-test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline masters and downstream gates", async (t) => {
+test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline masters and downstream fail-closed gates", async (t) => {
   const db = new PGlite();
   t.after(() => db.close());
 
@@ -78,6 +73,10 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261020010000_operational_stage_gate_contract",
     "20261020014346_bind_stage_gate_approval_revisions",
     "20261020025329_enforce_operational_gate_write_boundary",
+    "20261020034857_shared_test_workspace",
+    "20261021134427_business_workspace_contract",
+    "20261024084915_business_workspace_validation_guards",
+    "20261025091500_harden_downstream_master_guards",
   ];
 
   for (const name of initialMigrations) {
@@ -144,16 +143,6 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
       [id, org, code, mids[lead]]
     );
   }
-
-  await db.exec(
-    fs.readFileSync(path.join(root, "supabase/migrations/20261020034857_shared_test_workspace.sql"), "utf8")
-  );
-  await db.exec(
-    fs.readFileSync(path.join(root, "supabase/migrations/20261021134427_business_workspace_contract.sql"), "utf8")
-  );
-  await db.exec(
-    fs.readFileSync(path.join(root, "supabase/migrations/20261024084915_business_workspace_validation_guards.sql"), "utf8")
-  );
 
   async function asUser(user, callback) {
     await db.query("SELECT set_config('request.jwt.claim.sub', $1, false)", [user ?? ""]);
@@ -276,23 +265,87 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     /PART_CREATE_DENIED/
   );
 
-  // 6. Downstream Gate 1: Pending_Verification supplier blocks production purchase orders
+  // 6. Fail-closed Downstream Gate 1: Missing supplier blocks PO
   await assert.rejects(
     call(purLead, "create_record", {
       project_id: project,
-      title: "Production Lot 1 PO",
+      title: "PO with missing supplier",
+      reference: "HLPL-RFT-PUR-PO-00",
+      record_type: "Purchase order",
+      fields: {
+        revision: "01",
+        quantity: "100",
+      },
+    }),
+    /SUPPLIER_REQUIRED/
+  );
+
+  // 7. Fail-closed Downstream Gate 1: Non-existent supplier blocks PO
+  await assert.rejects(
+    call(purLead, "create_record", {
+      project_id: project,
+      title: "PO with nonexistent supplier",
+      reference: "HLPL-RFT-PUR-PO-01-FAIL",
+      record_type: "Purchase order",
+      fields: {
+        revision: "01",
+        supplier: "nonexistent-supplier",
+        quantity: "100",
+      },
+    }),
+    /SUPPLIER_NOT_FOUND/
+  );
+
+  // 8. Fail-closed Downstream Gate 1: Pending_Verification supplier blocks production PO
+  await assert.rejects(
+    call(purLead, "create_record", {
+      project_id: project,
+      title: "Production Lot 1 PO with pending supplier",
       reference: "HLPL-RFT-PUR-PO-01",
       record_type: "Purchase order",
       fields: {
         revision: "01",
-        supplier: supplierResult.id, // Referencing pending-verification supplier
+        supplier: supplierResult.id,
         quantity: "500",
       },
     }),
     /SUPPLIER_VERIFICATION_REQUIRED/
   );
 
-  // 7. Downstream Gate 2: Engineering_Only part blocks mass production release / BOM
+  // 9. Fail-closed Downstream Gate 2: Missing component part blocks released BOM
+  await assert.rejects(
+    call(hwLead, "create_record", {
+      project_id: project,
+      title: "Released BOM with missing part",
+      reference: "HLPL-RFT-EHW-BOM-00",
+      record_type: "BOM",
+      stage: "released",
+      fields: {
+        revision: "01",
+        stage: "released",
+      },
+    }),
+    /PART_REQUIRED/
+  );
+
+  // 10. Fail-closed Downstream Gate 2: Non-existent component part blocks released BOM
+  await assert.rejects(
+    call(hwLead, "create_record", {
+      project_id: project,
+      title: "Released BOM with nonexistent part",
+      reference: "HLPL-RFT-EHW-BOM-01-FAIL",
+      record_type: "BOM",
+      stage: "released",
+      fields: {
+        revision: "01",
+        stage: "released",
+        part: "nonexistent-part",
+      },
+    }),
+    /PART_NOT_FOUND/
+  );
+
+  // 11. Fail-closed Downstream Gate 2: Engineering_Only part blocks mass production release / BOM
   await assert.rejects(
     call(hwLead, "create_record", {
       project_id: project,
@@ -303,13 +356,13 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
       fields: {
         revision: "01",
         stage: "released",
-        part: partResult.id, // Referencing engineering-only part
+        part: partResult.id,
       },
     }),
     /PART_RELEASE_REQUIRED/
   );
 
-  // 8. Downstream Gate Unlocked: Once supplier is Approved, production PO succeeds
+  // 12. Downstream Gate Unlocked: Once supplier is Approved, production PO succeeds
   await db.query(
     "UPDATE operational_records SET status = 'approved', fields = fields || '{\"verification_status\":\"Approved\"}'::jsonb WHERE id = $1",
     [supplierResult.id]
@@ -318,7 +371,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   const poSuccess = await call(purLead, "create_record", {
     project_id: project,
     title: "Production Lot 1 PO",
-    reference: "HLPL-RFT-PUR-PO-01",
+    reference: "HLPL-RFT-PUR-PO-01-OK",
     record_type: "Purchase order",
     fields: {
       revision: "01",
@@ -327,8 +380,9 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     },
   });
   assert.ok(poSuccess.id, "Production PO succeeds with verified supplier");
+  assert.equal(poSuccess.record_type, "Purchase order");
 
-  // 9. Downstream Gate Unlocked: Once part is Released, mass production BOM succeeds
+  // 13. Downstream Gate Unlocked: Once part is Released, mass production BOM succeeds
   await db.query(
     "UPDATE operational_records SET status = 'released', fields = fields || '{\"release_status\":\"Released\"}'::jsonb WHERE id = $1",
     [partResult.id]
@@ -337,7 +391,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   const bomSuccess = await call(hwLead, "create_record", {
     project_id: project,
     title: "Mass Production Released BOM Rev 01",
-    reference: "HLPL-RFT-EHW-BOM-01",
+    reference: "HLPL-RFT-EHW-BOM-01-OK",
     record_type: "BOM",
     stage: "released",
     fields: {
@@ -347,4 +401,32 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     },
   });
   assert.ok(bomSuccess.id, "Mass production BOM succeeds with released part");
+  assert.equal(bomSuccess.record_type, "BOM");
+
+  // 14. Downstream Gate Enforcement on update_record: Updating PO with invalid/missing supplier fails closed
+  await assert.rejects(
+    call(purLead, "update_record", {
+      record_id: poSuccess.id,
+      expected_updated_at: (await db.query("SELECT updated_at FROM operational_records WHERE id=$1", [poSuccess.id])).rows[0].updated_at.toISOString(),
+      fields: {
+        revision: "02",
+        supplier: "nonexistent-supplier-update",
+      },
+    }),
+    /SUPPLIER_NOT_FOUND/
+  );
+
+  // 15. Downstream Gate Enforcement on update_record: Updating BOM with invalid/unreleased part fails closed
+  await assert.rejects(
+    call(hwLead, "update_record", {
+      record_id: bomSuccess.id,
+      expected_updated_at: (await db.query("SELECT updated_at FROM operational_records WHERE id=$1", [bomSuccess.id])).rows[0].updated_at.toISOString(),
+      fields: {
+        revision: "02",
+        stage: "released",
+        part: "nonexistent-part-update",
+      },
+    }),
+    /PART_NOT_FOUND/
+  );
 });

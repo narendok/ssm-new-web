@@ -281,5 +281,34 @@ export function recordFieldValues(spec: RecordFormSpec, type: string, values: Re
     if (value) result[field.key] = value;
   }
   if (spec === formSpecs["pur"]) { if (type === "Rapid prototype request") result["procurementTrack"] = "Rapid prototype"; else if (type === "Mass production request") result["procurementTrack"] = "Mass production"; }
+
+  // Section 14.15 Domain property persistence: preserve relational linkages and master bindings
+  const domainLinkageKeys = [
+    "supplierId",
+    "supplier",
+    "supplierName",
+    "partId",
+    "part",
+    "mpn",
+    "verification_status",
+    "release_status",
+    "spocName",
+    "spocEmail",
+    "spocPhone",
+    "manufacturer",
+    "packageFootprint",
+    "category",
+    "stage",
+    "quantity",
+    "uom",
+    "procurementTrack",
+  ];
+  for (const k of domainLinkageKeys) {
+    const v = values[k];
+    if (typeof v === "string" && v.trim() && result[k] === undefined) {
+      result[k] = v.trim();
+    }
+  }
+
   return result;
 }

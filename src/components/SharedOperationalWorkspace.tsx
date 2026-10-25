@@ -115,12 +115,13 @@ export function SharedOperationalWorkspace({
   const canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "");
 
   async function handleSharedSupplierCreated(supplier: SupplierRecordItem) {
+    const controlledRef = `HLPL-SUP-${Math.floor(100000 + Math.random() * 900000)}`;
     const res = (await write({
       data: {
         action: "create_record",
         payload: {
           title: supplier.name,
-          reference: `HLPL-SUP-${Date.now().toString().slice(-4)}`,
+          reference: controlledRef,
           record_type: "Supplier",
           department_id: purDeptId,
           fields: {
@@ -137,8 +138,13 @@ export function SharedOperationalWorkspace({
         requestId: crypto.randomUUID(),
       },
     })) as { id?: string } | null;
+
+    if (!res?.id) {
+      throw new Error("Supplier registration failed: No canonical UUID was returned by the database.");
+    }
+
     await Promise.all([query.refetch(), common.refetch()]);
-    const createdId = res?.id || supplier.id;
+    const createdId = res.id;
     setValues((prev) => ({
       ...prev,
       supplier: createdId,
@@ -150,12 +156,13 @@ export function SharedOperationalWorkspace({
   }
 
   async function handleSharedPartCreated(part: PartRecordItem) {
+    const controlledRef = `HLPL-PRT-${Math.floor(100000 + Math.random() * 900000)}`;
     const res = (await write({
       data: {
         action: "create_record",
         payload: {
           title: `${part.mpn} · ${part.description}`,
-          reference: `HLPL-PRT-${Date.now().toString().slice(-4)}`,
+          reference: controlledRef,
           record_type: "Part",
           department_id: actorDeptId,
           fields: {
@@ -172,8 +179,13 @@ export function SharedOperationalWorkspace({
         requestId: crypto.randomUUID(),
       },
     })) as { id?: string } | null;
+
+    if (!res?.id) {
+      throw new Error("Component part registration failed: No canonical UUID was returned by the database.");
+    }
+
     await Promise.all([query.refetch(), common.refetch()]);
-    const createdId = res?.id || part.id;
+    const createdId = res.id;
     setValues((prev) => ({
       ...prev,
       part: createdId,

@@ -148,7 +148,7 @@ export function ProjectAnalysisOverview({
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-primary uppercase tracking-wide">
-                Six Realistic Automotive Lifecycle Scenarios (§14.14)
+                Six Realistic Automotive Lifecycle Scenarios (§14.14 · Reference &amp; Training)
               </span>
               <span className="text-[11px] text-muted-foreground">
                 Synthetic connected verification pack · No real production side effects
@@ -224,6 +224,19 @@ export function ProjectAnalysisOverview({
                       Fixture Status
                     </span>
                     <p className="font-semibold text-primary">{scenario.fixtureKey}</p>
+                    {scenario.projectCode && onOpenProject && projects.find((p) => p.reference === scenario.projectCode) && (
+                      <button
+                        type="button"
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                        onClick={() => {
+                          const match = projects.find((p) => p.reference === scenario.projectCode);
+                          if (match) onOpenProject(match);
+                        }}
+                      >
+                        Open Live Project
+                        <ArrowRight className="size-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
