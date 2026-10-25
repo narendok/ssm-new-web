@@ -80,6 +80,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261021134427_business_workspace_contract",
     "20261024084915_business_workspace_validation_guards",
     "20261025091500_harden_downstream_master_guards",
+    "20261025103000_saved_lifecycle_coordination",
   ];
 
   for (const name of initialMigrations) {
@@ -99,6 +100,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     dQa = uuid(13),
     dSal = uuid(14);
 
+  const mechLead=uuid(20), fwLead=uuid(21), swLead=uuid(22), finLead=uuid(23), sitLead=uuid(24), emfLead=uuid(25);
   for (const [id, email] of [
     [admin, "admin@example.com"],
     [purLead, "pur@example.com"],
@@ -106,6 +108,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     [qaLead, "qa@example.com"],
     [salLead, "sal@example.com"],
     [emp, "emp@example.com"],
+    [mechLead,"mech.fixture@example.test"],[fwLead,"fw.fixture@example.test"],[swLead,"sw.fixture@example.test"],[finLead,"fin.fixture@example.test"],[sitLead,"sit.fixture@example.test"],[emfLead,"emf.fixture@example.test"],
   ]) {
     await db.query("INSERT INTO auth.users VALUES($1, $2)", [id, email]);
   }
@@ -126,6 +129,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     [qaLead, "department_lead"],
     [salLead, "department_lead"],
     [emp, "member"],
+    [mechLead,"department_lead"],[fwLead,"department_lead"],[swLead,"department_lead"],[finLead,"department_lead"],[sitLead,"department_lead"],[emfLead,"department_lead"],
   ]) {
     mids[id] = (
       await db.query(
@@ -140,6 +144,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     [dEhw, "EHW", hwLead],
     [dQa, "QA", qaLead],
     [dSal, "SAL", salLead],
+    [uuid(30),"MECH",mechLead],[uuid(31),"FW",fwLead],[uuid(32),"SW",swLead],[uuid(33),"FIN",finLead],[uuid(34),"SIT",sitLead],[uuid(35),"EMF",emfLead],
   ]) {
     await db.query(
       "INSERT INTO departments(id, organization_id, name, department_type, code, lead_member_id) VALUES($1, $2, $3,$3,$3, $4)",
@@ -622,4 +627,15 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   assert.equal(syncReplay.persisted_count, syncResult.persisted_count, "Persisted count matches");
   const recordCountAfter = Number((await db.query("SELECT count(*) as c FROM operational_records WHERE organization_id = $1", [org])).rows[0].c);
   assert.equal(recordCountBefore, recordCountAfter, "Zero duplicate records inserted on replay");
+  const connectedSQL = fs.readFileSync(path.join(root,"supabase/fixtures/connected_lifecycle_examples.sql"),"utf8").replaceAll("TEST-LIFECYCLE-20261025-001","TEST-RUN-20261025-001");
+  await db.exec(connectedSQL);
+  const taskCount=await db.query("SELECT count(*)::int AS n FROM scenario_fixture_manifests WHERE run_id=$1 AND entity_type='task'",["TEST-RUN-20261025-001"]);
+  assert.equal(taskCount.rows[0].n,17);
+  await db.exec(connectedSQL);
+  assert.equal((await db.query("SELECT count(*)::int AS n FROM scenario_fixture_manifests WHERE run_id=$1 AND entity_type='task'",["TEST-RUN-20261025-001"])).rows[0].n,17,"Connected setup replay does not duplicate tasks");
+  const coordination=await asUser(admin,async()=> (await db.query("SELECT get_project_coordination() AS result")).rows[0].result);
+  const jig=coordination.records.find(record=>record.reference==="TEST-JIG-01");
+  assert.ok(jig.fields.stageHistory.includes("Requirements & Feasibility"));
+  assert.ok(jig.fields.nextAction.includes("clearance"));
+
 });

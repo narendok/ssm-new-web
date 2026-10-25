@@ -77,3 +77,12 @@ test("enquiry feasibility can exist before a project without inventing project r
     false,
   );
 });
+
+test('saved lifecycle history uses persisted data only and rejects malformed values',()=>{
+ const {savedLifecycleHistory}=load('project-analysis-data');
+ assert.equal(savedLifecycleHistory(undefined).length,0);
+ assert.equal(savedLifecycleHistory('invalid').length,0);
+ assert.equal(savedLifecycleHistory('{}').length,0);
+ const rows=savedLifecycleHistory(JSON.stringify([null,12,{stageId:'A',stageName:'Review',status:'Under_Review',stageRemark:'Awaiting evidence',nextAction:'Complete test'}]));
+ assert.equal(rows.length,1);assert.equal(rows[0].name,'Review');assert.equal(rows[0].remark,'Awaiting evidence');assert.equal(rows[0].nextAction,'Complete test');
+});

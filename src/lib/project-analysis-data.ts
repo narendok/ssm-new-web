@@ -114,3 +114,16 @@ export function enquiryAnalysis(records: AnalysisRecord[]) {
       ),
     }));
 }
+
+/** Read saved history only; malformed/unavailable data never falls back to sample constants. */
+export function savedLifecycleHistory(value: string | undefined): {id:string;name:string;status:string;remark:string;nextAction:string;startDate:string;endDate:string}[] {
+  if (!value) return [];
+  try {
+    const rows: unknown = JSON.parse(value);
+    if (!Array.isArray(rows)) return [];
+    return rows.filter((row): row is Record<string,unknown> => row !== null && typeof row === "object" && !Array.isArray(row)).map((row,index) => {
+      const text = (key:string) => typeof row[key] === "string" ? row[key] as string : "";
+      return {id:text("stageId") || String(index),name:text("stageName"),status:text("status"),remark:text("stageRemark"),nextAction:text("nextAction"),startDate:text("startDate"),endDate:text("endDate")};
+    }).filter(row => Boolean(row.name));
+  } catch { return []; }
+}

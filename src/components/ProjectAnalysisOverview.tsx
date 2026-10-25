@@ -17,6 +17,7 @@ import {
 import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/ResponsiveFilterBar";
 import {
   projectAnalysis,
+  savedLifecycleHistory,
   enquiryAnalysis,
   analysisComplete,
   approvedInput,
@@ -417,46 +418,9 @@ export function ProjectAnalysisOverview({
         </div>
       ) : tab === "intake" ? (
         <div className="grid gap-3 lg:grid-cols-2">
-          {/* Always display S02 Declined Enquiry in Enquiry Intake */}
-          <article className="rounded-xl border border-destructive/40 bg-card p-4 text-xs space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="font-mono text-destructive font-semibold">ENQ-2026-EXT-01</p>
-                <h2 className="text-sm font-semibold">TEST Extended-Temperature Tracker Enquiry</h2>
-              </div>
-              <span className="rounded bg-destructive/10 border border-destructive/30 px-2 py-0.5 font-bold text-destructive">
-                Declined (Terminal Outcome)
-              </span>
-            </div>
-            <dl className="grid grid-cols-2 gap-3">
-              <div>
-                <dt className="text-muted-foreground">Client</dt>
-                <dd>Nordic Fleet Logistics AB</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Owner</dt>
-                <dd>Riley Stone · Sales Lead</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Project Code</dt>
-                <dd className="font-semibold text-destructive">None (No project created)</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Target Window</dt>
-                <dd>6 Weeks (Customer Constraint)</dd>
-              </div>
-            </dl>
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-2.5 text-destructive leading-relaxed">
-              <strong>Terminal Reason:</strong> Arrow 14-week lead-time for automotive cold-temp component exceeds customer 6-week window. Feasibility rejected; Sales lead closed as declined. No project created per §14.14 S02.
-            </div>
-            <p className="text-muted-foreground">
-              Formal declination letter dispatched to customer. Archived in Sales Enquiry Register.
-            </p>
-          </article>
-
           {!enquiries.length && (
             <p className="text-sm text-muted-foreground">
-              No other permitted enquiry inputs in this context.
+              No permitted enquiry inputs in this context.
             </p>
           )}
           {enquiries.map(({ enquiry: e, responses }) => (
@@ -630,6 +594,14 @@ export function ProjectAnalysisOverview({
                     </div>
                   ))}
                 </dl>
+                {a.project.fields["stageRemark"] && <p className="text-muted-foreground">{a.project.fields["stageRemark"]}</p>}
+                {a.project.fields["nextAction"] && <p><strong>Next action:</strong> {a.project.fields["nextAction"]}</p>}
+                {savedLifecycleHistory(a.project.fields["stageHistory"]).length > 0 && <details>
+                  <summary className="cursor-pointer font-medium">Saved stage history {a.project.fields["fixtureRunId"] ? "· TEST sample" : ""}</summary>
+                  <div className="mt-2 space-y-2">{savedLifecycleHistory(a.project.fields["stageHistory"]).map(step => <div key={step.id} className="rounded border border-border/60 p-2 space-y-1">
+                    <p className="font-medium">{step.name} · {step.status.replaceAll("_"," ")}</p><p className="text-muted-foreground">{step.startDate}{step.endDate ? ` → ${step.endDate}` : ""}</p><p>{step.remark}</p>{step.nextAction && <p>Next: {step.nextAction}</p>}
+                  </div>)}</div>
+                </details>}
                 <details>
                   <summary className="cursor-pointer font-medium">
                     Inputs & reviews ({a.inputs.length})
