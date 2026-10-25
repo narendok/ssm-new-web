@@ -39,6 +39,7 @@ import type { Persona } from "@/components/RoleAwareSidebar";
 
 interface DepartmentBudgetsWorkspaceProps {
   persona: Persona;
+  departmentScope?: string | undefined;
   selectedProjectId?: string | null;
   onOpenProjectDetail?: (projectId: string) => void;
   allocations?: DepartmentAllocation[];
@@ -59,6 +60,7 @@ interface DepartmentBudgetsWorkspaceProps {
 
 export function DepartmentBudgetsWorkspace({
   persona,
+  departmentScope,
   selectedProjectId,
   onOpenProjectDetail,
   allocations: propsAllocations,
@@ -96,7 +98,6 @@ export function DepartmentBudgetsWorkspace({
   }, [propsExpenseRequests]);
 
   const [activeTab, setActiveTab] = useState<"allocations" | "requests">("requests");
-  const [deptFilter, setDeptFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
@@ -121,14 +122,12 @@ export function DepartmentBudgetsWorkspace({
 
   const isFinanceLead = persona.departmentId?.toLowerCase() === "fin";
   const isAdmin = persona.kind === "admin";
-  const userDeptCode = persona.departmentId?.toUpperCase();
+  const activeDeptCode = (departmentScope || persona.departmentId)?.toUpperCase();
 
-  // Filtered Allocations (scoped by persona authority and filters)
+  // Filtered Allocations (scoped to the active department workspace)
   const filteredAllocations = allocations.filter((alloc) => {
-    if (!isAdmin && !isFinanceLead) {
-      if (userDeptCode && alloc.departmentCode !== userDeptCode) return false;
-    } else {
-      if (deptFilter !== "ALL" && alloc.departmentCode !== deptFilter) return false;
+    if (activeDeptCode && activeDeptCode !== "ALL" && activeDeptCode !== "HOME") {
+      if (alloc.departmentCode !== activeDeptCode) return false;
     }
     if (selectedProjectId && alloc.projectId && alloc.projectId !== selectedProjectId) return false;
     return true;
@@ -140,17 +139,15 @@ export function DepartmentBudgetsWorkspace({
   const totalSpent = filteredAllocations.reduce((sum, a) => sum + a.spentAmount, 0);
   const totalAvailable = totalAllocated - totalCommitted - totalSpent;
 
-  // Filtered Requests (scoped by persona authority)
+  // Filtered Requests (scoped by persona authority and active department workspace)
   const filteredRequests = expenseRequests.filter((req) => {
     if (persona.kind === "member") {
       const isSelf =
         (persona.id && req.requesterId === persona.id) ||
         (persona.person && req.requesterName.toLowerCase().includes(persona.person.toLowerCase()));
       if (!isSelf) return false;
-    } else if (!isAdmin && !isFinanceLead) {
-      if (userDeptCode && req.requesterDept !== userDeptCode) return false;
-    } else {
-      if (deptFilter !== "ALL" && req.requesterDept !== deptFilter) return false;
+    } else if (activeDeptCode && activeDeptCode !== "ALL" && activeDeptCode !== "HOME") {
+      if (req.requesterDept !== activeDeptCode) return false;
     }
 
     if (selectedProjectId && req.projectId && req.projectId !== selectedProjectId) return false;
@@ -168,13 +165,11 @@ export function DepartmentBudgetsWorkspace({
   });
 
   // Scope label for KPI display
-  const scopeLabel = !isAdmin && !isFinanceLead && userDeptCode
-    ? `${userDeptCode} Department Scope`
-    : deptFilter !== "ALL"
-    ? `${deptFilter} Department`
+  const scopeLabel = activeDeptCode && activeDeptCode !== "ALL" && activeDeptCode !== "HOME"
+    ? `${activeDeptCode} Department Scope`
     : selectedProjectId
     ? `Project ${selectedProjectId}`
-    : "Across 11 Departments";
+    : "Active Department Scope";
 
   // Handle Approve with Staged Transition & Commitment Reservation
   const handleApprove = (reqId: string) => {
@@ -469,22 +464,6 @@ export function DepartmentBudgetsWorkspace({
               className="h-8 pl-8 pr-3 text-xs rounded-lg border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring w-48 md:w-64"
             />
           </div>
-
-          {(isAdmin || isFinanceLead) && (
-            <select
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-              className="h-8 px-2 text-xs rounded-lg border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              <option value="ALL">All Departments</option>
-              <option value="EHW">EHW · Hardware</option>
-              <option value="SAL">SAL · Sales & BD</option>
-              <option value="PUR">PUR · Purchasing</option>
-              <option value="QA">QA · Quality</option>
-              <option value="FIN">FIN · Finance</option>
-              <option value="HROPS">HR · Operations</option>
-            </select>
-          )}
 
           {activeTab === "requests" && (
             <select

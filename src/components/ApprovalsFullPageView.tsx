@@ -54,6 +54,7 @@ interface ApprovalsFullPageViewProps {
   currentUser?: string | undefined;
   userRole?: string | undefined;
   persona?: Persona | undefined;
+  departmentScope?: string | undefined;
   onRequestApproval?: ((newApproval: Omit<ApprovalRecord, "id" | "outcome" | "updatedAt">) => boolean | void | Promise<boolean | void>) | undefined;
 }
 
@@ -68,10 +69,10 @@ export function ApprovalsFullPageView({
   currentUser = "Executive Admin / MD",
   userRole = "Admin",
   persona,
+  departmentScope,
   onRequestApproval,
 }: ApprovalsFullPageViewProps) {
   const [statusFilter, setStatusFilter] = useState<"ALL" | "Pending" | "Approved" | "Rejected" | "Returned">("ALL");
-  const [deptFilter, setDeptFilter] = useState<string>("ALL");
   const [filterScope, setFilterScope] = useState<"ALL" | "PENDING_ME" | "MY_REQUESTS">("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedApproval, setSelectedApproval] = useState<ApprovalRecord | null>(null);
@@ -154,8 +155,13 @@ export function ApprovalsFullPageView({
     };
   });
 
-  const myDept = departmentCode(persona?.departmentId);
-  const scopedApprovals = enrichedApprovals.filter((approval) => persona?.kind === "admin" || (persona?.kind === "lead" && approvalInDepartment(approval, persona.departmentId)));
+  const myDept = departmentCode(persona?.departmentId || departmentScope);
+  const scopedApprovals = enrichedApprovals.filter((approval) => {
+    if (departmentScope) {
+      return approvalInDepartment(approval, departmentScope);
+    }
+    return persona?.kind === "admin" || (persona?.kind === "lead" && approvalInDepartment(approval, persona.departmentId));
+  });
   const myActionCount = scopedApprovals.filter((a) => a.outcome === "Pending" && canUserActOnApproval(a)).length;
   const myDeptCount = scopedApprovals.filter((a) => departmentCode(a.department) === myDept).length;
   const pendingCount = scopedApprovals.filter((a) => a.outcome === "Pending").length;
@@ -164,7 +170,6 @@ export function ApprovalsFullPageView({
 
   const filtered = scopedApprovals.filter((appr) => {
     if (statusFilter !== "ALL" && appr.outcome !== statusFilter) return false;
-    if (deptFilter !== "ALL" && appr.department !== deptFilter) return false;
     if (filterScope === "PENDING_ME" && !(appr.outcome === "Pending" && canUserActOnApproval(appr))) return false;
     if (filterScope === "MY_REQUESTS" && departmentCode(appr.department) !== myDept) return false;
     if (searchQuery.trim()) {
@@ -337,7 +342,7 @@ export function ApprovalsFullPageView({
         </div>
       </div>
 
-      <ResponsiveFilterBar label="Approval filters" className="rounded-xl border border-border/60 bg-card p-2" activeCount={Number(deptFilter !== "ALL")} secondary={<CompactFilterSelect label="Department" shortLabel="Dept" icon={Building2} value={deptFilter} onChange={setDeptFilter} options={[{value:"ALL",label:"All authorized requests"}, ...Array.from(new Set(scopedApprovals.map(a => a.department).filter((value):value is string => Boolean(value)))).map(value => ({value,label:value}))]} />}>
+      <ResponsiveFilterBar label="Approval filters" className="rounded-xl border border-border/60 bg-card p-2" activeCount={Number(statusFilter !== "ALL" || filterScope !== "ALL")}>
         <div className="filter-search"><Search /><input aria-label="Search approvals" placeholder="Search title, reference or requester…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
         <CompactFilterSelect label="Approval scope" shortLabel="Scope" icon={UserCheck} value={filterScope} onChange={value => setFilterScope(value as typeof filterScope)} options={[{value:"ALL",label:"All authorized"},{value:"PENDING_ME",label:`Awaiting my sign-off (${myActionCount})`},{value:"MY_REQUESTS",label:`My department requests (${myDeptCount})`}]} />
         <CompactFilterSelect label="Approval status" shortLabel="Status" icon={Filter} value={statusFilter} onChange={value => setStatusFilter(value as typeof statusFilter)} options={["ALL","Pending","Approved","Rejected","Returned"].map(value => ({value,label:value === "ALL" ? "All statuses" : value}))} />
@@ -356,7 +361,6 @@ export function ApprovalsFullPageView({
               size="sm"
               onClick={() => {
                 setStatusFilter("ALL");
-                setDeptFilter("ALL");
                 setSearchQuery("");
               }}
               className="mt-4 text-xs"

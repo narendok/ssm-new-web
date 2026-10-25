@@ -122,6 +122,7 @@ import { getLocalAttachment, migrateLegacyAttachment, removeLocalAttachment, sav
 import { migratePortalState, repairDemoState } from "@/lib/portal-hydration";
 import { approvalInDepartment, approvalScope, canDepartmentSign, departmentCode, projectReferences } from "@/lib/department-scope";
 import { ApprovalsFullPageView, type ApprovalRecord } from "@/components/ApprovalsFullPageView";
+import { CommonDepartmentSearchView } from "@/components/CommonDepartmentSearchView";
 import { DepartmentLeadCoordinationCenter } from "@/components/DepartmentLeadCoordinationCenter";
 import {
   LiveInventoryWorkspace,
@@ -2333,6 +2334,7 @@ function Portal() {
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<
+    | "departments"
     | "queue"
     | "detail"
     | "summary"
@@ -2462,6 +2464,7 @@ function Portal() {
   const navigate = (
     area: AreaId,
     targetView:
+      | "departments"
       | "queue"
       | "detail"
       | "summary"
@@ -2583,14 +2586,16 @@ function Portal() {
     setCreateInitialValues(initialValues ? { ...initialValues, ...(initialValues["projectCode"] ? { projectId: initialValues["projectCode"] } : {}) } : null);
     setModal("create");
   };
-  const handleAdminDepartmentChange = (deptId: AreaId) => {
+  const handleAdminDepartmentChange = (deptId: AreaId, nextView?: typeof view) => {
     setAdminDepartment(deptId);
     setActiveArea(deptId);
     setDepartmentContext(findAreaDepartment(portal.departments, deptId)?.id ?? `demo-dept-${deptId}`);
     try {
       window.sessionStorage.setItem("scms_admin_department", deptId);
     } catch {}
-    if (!["project", "queue", "records", "deliverables", "assignee", "approvals", "vault", "analysis"].includes(view)) {
+    if (nextView) {
+      setView(nextView);
+    } else if (!["project", "queue", "records", "deliverables", "assignee", "approvals", "vault", "analysis"].includes(view)) {
       setView("project");
     }
     announce(`${areaById(deptId).name} department workspace active.`);
@@ -3408,6 +3413,7 @@ function Portal() {
               onLogout={handleLogout}
               adminDepartment={effectiveArea}
               onAdminDepartmentChange={handleAdminDepartmentChange}
+              onOpenDepartmentsDirectory={() => setView("departments")}
             />
             {persona.kind !== "client" && <>
               <div className="relative hidden w-44 shrink xl:block 2xl:w-56"><Search className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" /><input aria-label="Search portal" placeholder="Search…" value={globalSearchQuery} onFocus={() => setSearchOpen(true)} onChange={event => { setGlobalSearchQuery(event.target.value); setSearchOpen(true); }} className="h-9 w-full rounded-lg border border-border bg-card pl-8 pr-2 text-xs" /></div>
@@ -3453,6 +3459,22 @@ function Portal() {
             <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
           ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","vault","index"].includes(view) ? (
  <SharedOperationalWorkspace key={`${testMembership.membershipId}:${view}`} membership={testMembership} view={view} darkMode={darkMode} onLogout={handleLogout}/>
+          ) : view === "departments" ? (
+            <CommonDepartmentSearchView
+              currentDepartment={adminDepartment}
+              onSelectDepartment={(deptId, viewTab) => {
+                handleAdminDepartmentChange(deptId, (viewTab as typeof view) || "project");
+              }}
+              openTaskCounts={Object.fromEntries(
+                areas.map((area) => [
+                  area.id,
+                  portal.records.filter(
+                    (r) => r.area === area.id && r.type === "Task" && !r.archived && !["Approved", "Released", "Archived"].includes(r.status)
+                  ).length,
+                ])
+              )}
+              approvalCounts={scopedApprovalCounts}
+            />
           ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") && view === "assignee" ? (
             <section className="space-y-4">
               <h1 className="text-xl font-semibold">{active.name} — My Tasks & Action Queue</h1>
@@ -3629,6 +3651,7 @@ function Portal() {
           ) : view === "approvals" ? (
             <ApprovalsFullPageView key={persona.id}
               approvals={portal.approvals}
+              departmentScope={activeDepartmentScope}
               projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(record => record.type === "Project")}
               records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords}
               onApprove={handleApproveGate}
@@ -3645,6 +3668,7 @@ function Portal() {
           ) : view === "budgets" ? (
             <DepartmentBudgetsWorkspace
               persona={persona}
+              departmentScope={activeDepartmentScope}
               selectedProjectId={selectedProjectId}
               allocations={portal.departmentAllocations ?? DEFAULT_DEPARTMENT_ALLOCATIONS}
               expenseRequests={portal.expenseRequests ?? DEFAULT_EXPENSE_REQUESTS}
@@ -9339,7 +9363,7 @@ function SharedIndex({
   const scopedDocuments = compact ? found.documents.slice(0, 30) : found.documents;
   return (
     <div className="space-y-4">
-      <ResponsiveFilterBar label="Search filters" secondary={!departmentContext ? <CompactFilterSelect label="Department" shortLabel="Dept" icon={Users} value={department} onChange={setDepartment} options={[{value:"All departments",label:"All departments"}, ...allowedDepartments.map(d => ({value:d.id,label:d.name}))]} /> : undefined} activeCount={department !== (departmentContext ?? "All departments") ? 1 : 0}>
+      <ResponsiveFilterBar label="Search filters" activeCount={kind !== "All" ? 1 : 0}>
         <div className="filter-search"><Search /><input autoFocus={compact} aria-label="Search records and documents" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search documents, tasks, projects…" /></div>
         <CompactFilterSelect label="Record type" shortLabel="Type" icon={Layers} value={kind} onChange={setKind} options={["All","Documents","Projects","Tasks","Processes","Clients","Audits"].map(value => ({value,label:value}))} />
       </ResponsiveFilterBar>
@@ -10924,6 +10948,7 @@ function PersonaSwitcher({
   onLogout,
   adminDepartment,
   onAdminDepartmentChange,
+  onOpenDepartmentsDirectory,
 }: {
   persona: Persona;
   onSelect: (persona: Persona) => void;
@@ -10931,6 +10956,7 @@ function PersonaSwitcher({
   onLogout?: () => void;
   adminDepartment?: AreaId;
   onAdminDepartmentChange?: (deptId: AreaId) => void;
+  onOpenDepartmentsDirectory?: () => void;
 }) {
   if (persona.kind === "client") {
     return (
@@ -11016,8 +11042,8 @@ function PersonaSwitcher({
         )}
       </div>
 
-      {/* 2. The simple Department Selection Dropdown Box */}
-      <label className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground shadow-xs transition-colors hover:border-primary">
+      {/* 2. The simple Department Selection Dropdown Box & Directory Link */}
+      <div className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground shadow-xs transition-colors hover:border-primary">
         <Building className="size-3.5 text-primary shrink-0" />
         <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
           Department:
@@ -11041,7 +11067,18 @@ function PersonaSwitcher({
           <option value="sit">SIT · Service & IT</option>
           <option value="hrops">HR · HR & Operations</option>
         </select>
-      </label>
+        {onOpenDepartmentsDirectory && (
+          <button
+            type="button"
+            onClick={onOpenDepartmentsDirectory}
+            title="Open All Departments Directory & Common Search View"
+            className="ml-1 inline-flex items-center gap-1 rounded bg-primary/10 hover:bg-primary/20 text-primary px-1.5 py-0.5 text-[10px] font-bold transition-colors border border-primary/30 shadow-2xs cursor-pointer"
+          >
+            <Search className="size-2.5" />
+            <span>Search All</span>
+          </button>
+        )}
+      </div>
       <button
         type="button"
         title={`Open ${persona.label} in a new browser tab`}

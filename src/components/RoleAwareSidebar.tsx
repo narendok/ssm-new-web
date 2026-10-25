@@ -113,6 +113,7 @@ export type RoleAwareSidebarProps = {
   onNavigate: (
     area: AreaId,
     view?:
+      | "departments"
       | "queue"
       | "detail"
       | "summary"
@@ -304,6 +305,7 @@ export function RoleAwareSidebar({
     if (isAdmin) {
       setExpandedGroups({
         favorites: true,
+        executive_oversight: true,
         dept_mywork: true,
         dept_projects: true,
         dept_workspace: true,
@@ -1352,9 +1354,25 @@ export function RoleAwareSidebar({
     ],
   }), [setupStep, totalSetupSteps, onOpenAdminSettings, onOpenWizard]);
 
+  const executiveGroup: SidebarWorkGroup = useMemo(() => ({
+    id: "executive_oversight",
+    title: "Executive Command",
+    icon: Building2,
+    items: [
+      {
+        id: "adm-departments",
+        label: "All Departments Directory",
+        shortLabel: "Departments",
+        icon: Building2,
+        isActive: view === "departments",
+        onClick: () => handleItemClick(() => onNavigate("home", "departments")),
+      },
+    ],
+  }), [view, onNavigate]);
+
   const activeWorkGroups = useMemo(
-    () => singleActiveDestination(isAdmin ? [...deptWorkGroups, adminSettingsGroup] : deptWorkGroups),
-    [isAdmin, deptWorkGroups, adminSettingsGroup]
+    () => singleActiveDestination(isAdmin ? [executiveGroup, ...deptWorkGroups, adminSettingsGroup] : deptWorkGroups),
+    [isAdmin, executiveGroup, deptWorkGroups, adminSettingsGroup]
   );
 
   // Auto-expand group containing active item
