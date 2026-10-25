@@ -7133,6 +7133,8 @@ function DepartmentWorkspace({
                     targetVolume: data.targetVolume,
                     targetDate: data.targetClosureDate,
                     projectTrack: data.track,
+                    feasibilityDepartments: (data.feasibilityDepts || []).join(", "),
+                    ...(data.parameterValues ? { smartParameters: JSON.stringify(data.parameterValues) } : {}),
                   },
                 });
               }

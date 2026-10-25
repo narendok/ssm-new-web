@@ -1,5 +1,7 @@
 import { businessDate } from "@/lib/business-date";
 import { useState, useId } from "react";
+import { SmartSorImporterModal } from "./SmartSorImporterModal";
+import type { ParsedSorResult } from "@/lib/sor-parser";
 import {
   Users,
   Building2,
@@ -1751,6 +1753,8 @@ export function SalesEnquiriesAndOpportunities({
   onAddCustomer?: (customer: CustomerRecord) => void;
 }) {
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
+  const [sorImporterOpen, setSorImporterOpen] = useState(false);
+  const [sorEnquiryTarget, setSorEnquiryTarget] = useState<CustomerEnquiry | undefined>(undefined);
   const [intakeModalMode, setIntakeModalMode] = useState<"enquiry" | "opportunity" | "convert">("opportunity");
   const [intakeEnquiryId, setIntakeEnquiryId] = useState<string | undefined>(undefined);
   const [filterTab, setFilterTab] = useState<
@@ -1919,6 +1923,18 @@ export function SalesEnquiriesAndOpportunities({
             >
               <Sparkles className="size-3.5" />
               Add Opportunity
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSorEnquiryTarget(undefined);
+                setSorImporterOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-xs transition hover:bg-primary/20"
+              title="Smart SOR Importer: Import customer Statement of Requirements to pre-fill Opportunity"
+            >
+              <FileSpreadsheet className="size-3.5 text-primary" />
+              Smart SOR Importer
             </button>
           </div>
         </div>

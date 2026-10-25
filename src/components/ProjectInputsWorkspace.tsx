@@ -15,6 +15,7 @@ import {
 import type { TestMembership } from "@/lib/test-auth.functions";
 import type { AnalysisRecord } from "@/lib/project-analysis-data";
 import { SharedMasterSelect } from "./SharedMasterSelect";
+import { SmartParameterField } from "./SmartParameterField";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 const field = "w-full rounded border border-input bg-background p-2 text-xs";
@@ -592,20 +593,27 @@ export function ProjectInputsWorkspace({
                       <span className="rounded border px-2 py-0.5 text-[10px]">{row.required === false ? "Not required" : row.finalValue ? "Value agreed" : row.input?.trim() ? "Input received · awaiting agreement" : "Input pending"}</span>
                     </div>
                   </div>
-                  <div className="grid gap-2 md:grid-cols-3">
-                    <label className="grid gap-1 text-[10px] text-muted-foreground">Project / client input
-                      <textarea rows={2} className={field} placeholder="Value or information supplied / requested" disabled={!editable || !inputOwner} value={inputDraft.input}
-                        onChange={(event) => { inputEditGeneration.current++; setInputDraftDirty(true); setQuickInputsDraft((prev) => ({ ...prev, [p.id]: { ...inputDraft, input: event.target.value } })); }} />
-                    </label>
-                    <label className="grid gap-1 text-[10px] text-muted-foreground">Source / client comment
-                      <textarea rows={2} className={field} placeholder="Form, email, meeting note or context" disabled={!editable || !inputOwner} value={inputDraft.source}
-                        onChange={(event) => { inputEditGeneration.current++; setInputDraftDirty(true); setQuickInputsDraft((prev) => ({ ...prev, [p.id]: { ...inputDraft, source: event.target.value } })); }} />
-                    </label>
-                    <label className="grid gap-1 text-[10px] text-muted-foreground">Agreed value
-                      <textarea rows={2} className={field} placeholder="Final agreed value, when known" disabled={!editable || !inputOwner} value={inputDraft.finalValue}
-                        onChange={(event) => { inputEditGeneration.current++; setInputDraftDirty(true); setQuickInputsDraft((prev) => ({ ...prev, [p.id]: { ...inputDraft, finalValue: event.target.value } })); }} />
-                    </label>
-                  </div>
+                  <SmartParameterField
+                    parameterId={p.id}
+                    label={p.label}
+                    section={p.section}
+                    hint={p.hint}
+                    inputDraft={inputDraft}
+                    disabled={!editable || !inputOwner}
+                    onChange={(patch) => {
+                      inputEditGeneration.current++;
+                      setInputDraftDirty(true);
+                      setQuickInputsDraft((prev) => ({
+                        ...prev,
+                        [p.id]: {
+                          ...inputDraft,
+                          ...(patch.input !== undefined ? { input: patch.input } : {}),
+                          ...(patch.source !== undefined ? { source: patch.source } : {}),
+                          ...(patch.finalValue !== undefined ? { finalValue: patch.finalValue } : {}),
+                        },
+                      }));
+                    }}
+                  />
                   {row.required === false && <p className="mt-1 text-[10px] text-muted-foreground">Excluded: {(row as ParameterValue & { exclusionReason?: string }).exclusionReason}</p>}
                   <details className="mt-2 rounded border border-border/50 px-2.5 py-2">
                     <summary className="cursor-pointer text-[11px] font-medium">Department inputs & comments · {assigned.length} responsible / review teams</summary>
