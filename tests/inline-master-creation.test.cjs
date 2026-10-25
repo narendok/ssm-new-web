@@ -81,6 +81,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261024084915_business_workspace_validation_guards",
     "20261025091500_harden_downstream_master_guards",
     "20261025103000_saved_lifecycle_coordination",
+    "20261025110000_saved_lifecycle_disposition",
   ];
 
   for (const name of initialMigrations) {
@@ -637,5 +638,11 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   const jig=coordination.records.find(record=>record.reference==="TEST-JIG-01");
   assert.ok(jig.fields.stageHistory.includes("Requirements & Feasibility"));
   assert.ok(jig.fields.nextAction.includes("clearance"));
+  const linksSQL=fs.readFileSync(path.join(root,"supabase/fixtures/connected_lifecycle_links.sql"),"utf8").replaceAll("TEST-LIFECYCLE-20261025-001","TEST-RUN-20261025-001");
+  await db.exec(linksSQL);
+  await db.exec(linksSQL);
+  assert.equal((await db.query("SELECT stage FROM operational_records WHERE reference=$1",["TEST-RFT-01"])).rows[0].stage,"Stage 8");
+  assert.ok((await db.query("SELECT fields FROM operational_records WHERE reference=$1",["HLPL-EXT-PUR-FEAS-01"])).rows[0].fields.enquiryId);
+
 
 });

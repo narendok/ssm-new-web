@@ -436,7 +436,7 @@ export function ProjectAnalysisOverview({
                 {[
                   ["Client", e.fields["customer"]],
                   ["Owner", e.fields["owner"]],
-                  ["Project", e.fields["projectId"] || e.fields["projectCode"] || "Not linked yet"],
+                  ["Project", e.fields["projectId"] || e.fields["projectCode"] || (e.fields["outcome"] === "Declined" ? "Not applicable — declined before project" : "Not linked yet")],
                   ["Target", e.fields["targetDate"]],
                 ].map(([k, v]) => (
                   <div key={k}>
@@ -449,7 +449,8 @@ export function ProjectAnalysisOverview({
                 {e.fields["scope"] || e.notes || "Client requirements not recorded."}
               </p>
               <p>
-                Status: <strong>{e.status}</strong>
+                Status: <strong>{e.fields["outcome"] || e.status}</strong>
+                {e.fields["terminalReason"] && <span className="block mt-1">Reason: {e.fields["terminalReason"]}</span>}
               </p>
               <div className="border-t border-border/50 pt-2 space-y-2">
                 <h3 className="font-medium">Department responses ({responses.length})</h3>
@@ -594,6 +595,12 @@ export function ProjectAnalysisOverview({
                     </div>
                   ))}
                 </dl>
+                {a.inputs.filter(record => ["totalPlannedUnits","lotQuantity","acceptedUnits","heldUnits","pendingInspectionUnits","remainingPlannedUnits"].every(key => /^\d+$/.test(record.fields[key] || ""))).map(record => <div key={record.id} className="rounded border border-border p-2 space-y-1">
+                  <p className="font-medium">Saved production disposition · {record.reference}</p>
+                  <p>{record.fields["acceptedUnits"]} accepted + {record.fields["heldUnits"]} held + {record.fields["pendingInspectionUnits"]} pending inspection = {record.fields["lotQuantity"]} lot units</p>
+                  <p>{record.fields["totalPlannedUnits"]} planned · {record.fields["remainingPlannedUnits"]} remaining</p>
+                  {(Number(record.fields["acceptedUnits"])+Number(record.fields["heldUnits"])+Number(record.fields["pendingInspectionUnits"]) !== Number(record.fields["lotQuantity"]) || Number(record.fields["totalPlannedUnits"])-Number(record.fields["lotQuantity"]) !== Number(record.fields["remainingPlannedUnits"])) && <p role="alert" className="text-destructive">Source quantities do not reconcile.</p>}
+                </div>)}
                 {a.project.fields["stageRemark"] && <p className="text-muted-foreground">{a.project.fields["stageRemark"]}</p>}
                 {a.project.fields["nextAction"] && <p><strong>Next action:</strong> {a.project.fields["nextAction"]}</p>}
                 {savedLifecycleHistory(a.project.fields["stageHistory"]).length > 0 && <details>
