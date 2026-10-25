@@ -2607,6 +2607,107 @@ function Portal() {
     });
     announce(`Customer ${customer.name} saved to Customer Master.`);
   };
+  const handleSupplierCreated = (supplier: SupplierRecordItem) => {
+    update((state) => {
+      const existing = state.masters.suppliers ?? [];
+      const nextSuppliers = Array.from(new Set([...existing, supplier.name]));
+      const newSupplierRecord: RecordItem = {
+        id: supplier.id || createId(),
+        reference: `HLPL-SUP-${Date.now().toString().slice(-4)}`,
+        title: supplier.name,
+        type: "Supplier",
+        area: "pur",
+        status: "Draft",
+        priority: "Normal",
+        notes: `Category: ${supplier.category} · SPOC: ${supplier.spocName}`,
+        fields: {
+          name: supplier.name,
+          category: supplier.category,
+          spocName: supplier.spocName,
+          spocEmail: supplier.spocEmail || "",
+          spocPhone: supplier.spocPhone || "",
+          verification_status: "Pending_Verification",
+          revision: "01",
+          assignee: persona.person.split(" · ")[0] ?? "Purchasing Lead",
+        },
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      return {
+        ...state,
+        records: [newSupplierRecord, ...state.records],
+        masters: {
+          ...state.masters,
+          suppliers: nextSuppliers,
+        },
+        audit: [
+          {
+            id: createId(),
+            at: now(),
+            action: "Supplier registered (Pending Verification)",
+            detail: `Added ${supplier.name} (${supplier.category}) to Supplier Master · Verification Pending`,
+          },
+          ...state.audit,
+        ],
+        notifications: [
+          `Supplier ${supplier.name} registered as Pending Verification`,
+          ...state.notifications,
+        ],
+      };
+    });
+    announce(`Supplier ${supplier.name} saved to Supplier Master.`);
+  };
+
+  const handlePartCreated = (part: PartRecordItem) => {
+    update((state) => {
+      const existing = state.masters.parts ?? [];
+      const nextParts = Array.from(new Set([...existing, part.mpn]));
+      const newPartRecord: RecordItem = {
+        id: part.id || createId(),
+        reference: `HLPL-PRT-${Date.now().toString().slice(-4)}`,
+        title: `${part.mpn} · ${part.description}`,
+        type: "Part",
+        area: "rnd",
+        status: "Draft",
+        priority: "Normal",
+        notes: `Category: ${part.category} · MPN: ${part.mpn}`,
+        fields: {
+          mpn: part.mpn,
+          description: part.description,
+          manufacturer: part.manufacturer || "",
+          packageFootprint: part.packageFootprint || "",
+          category: part.category,
+          release_status: "Engineering_Only",
+          revision: "01",
+          assignee: persona.person.split(" · ")[0] ?? "Hardware Lead",
+        },
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      return {
+        ...state,
+        records: [newPartRecord, ...state.records],
+        masters: {
+          ...state.masters,
+          parts: nextParts,
+        },
+        audit: [
+          {
+            id: createId(),
+            at: now(),
+            action: "Part registered (Engineering Only)",
+            detail: `Added ${part.mpn} (${part.description}) to Part Master · Engineering Only`,
+          },
+          ...state.audit,
+        ],
+        notifications: [
+          `Component ${part.mpn} registered as Engineering Only`,
+          ...state.notifications,
+        ],
+      };
+    });
+    announce(`Component ${part.mpn} saved to Part Master.`);
+  };
   const handleDispatchFeasibility = async (
     enquiryId: string,
     departments: string[],
@@ -3386,7 +3487,7 @@ function Portal() {
               onLog={log}
             />
           ) : view === "analysis" ? (
-            testMembership ? <SharedProjectAnalysis membership={testMembership} /> : <ProjectAnalysisOverview key={persona.id} projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")} records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords} documents={scopedDocuments} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} />
+            testMembership ? <SharedProjectAnalysis membership={testMembership} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} /> : <ProjectAnalysisOverview key={persona.id} projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")} records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords} documents={scopedDocuments} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} />
           ) : view === "vault" ? (
             <><div className="flex items-center justify-between"><div><h1 className="text-lg font-semibold">Documents & Vault</h1><p className="text-xs text-muted-foreground">Original documents and project-linked files within your department access.</p></div><div className="flex gap-2">{testMembership && <Action label="Shared documents & uploads" primary onClick={() => {setSharedTestInitialTab("Documents"); setShowSharedTestWorkspace(true);}} />}<Action label="Back to workspace" onClick={() => navigate(effectiveArea)} /></div></div><HardwareDeliverablesDrive documents={scopedDocuments} departments={portal.departments} departmentContext={departmentContext} persona={persona} portal={portal} onSelectDocument={openDocument} onOpenCustomerRegister={() => setCustomerRegisterOpen(true)} uploadReadOnlyReason={testMembership ? "This view is browser-local. Shared TEST uploads remain in Shared TEST records until the shared document contract is verified." : undefined} onDocumentCreated={async document => update(state => { const ownWork = state.records.filter(r=>!r.archived && r.area === persona.departmentId); const keys = new Set([...ownWork.flatMap(projectReferences),...state.documents.filter(d=>canDepartmentAccessDocument(d,persona,departmentContext)).flatMap(d=>d.linkedRecordRefs ?? [])]); const projects = state.records.filter(r => r.type === "Project" && (persona.kind === "admin" || keys.has(r.id) || keys.has(r.reference))); const selected = projects.find(p => p.id === document.projectId); assertUploadContextCurrent(document, projects, state.departments, sourceGerberPackages(state.documents.filter(d => canDepartmentAccessDocument(d, persona, departmentContext)), selected)); return { ...state, documents:[document,...state.documents], audit:[{id:createId(),at:now(),action:"Draft document uploaded",detail:`${document.title} · Browser-local`},...state.audit].slice(0,100) }; })} /></>
           ) : view === "index" ? (
@@ -3887,12 +3988,15 @@ function Portal() {
         <RecordForm
           area={activeArea}
           portal={portal}
+          persona={persona}
           initialType={createType}
           initialValues={createInitialValues}
           defaultAssignee={persona.person.split(" · ")[0] ?? ""}
           onClose={() => { setCreateType(null); setCreateInitialValues(null); setModal(null); }}
           onSave={addRecord}
           onAddCustomer={handleCustomerCreated}
+          onAddSupplier={handleSupplierCreated}
+          onAddPart={handlePartCreated}
         />
       )}{" "}
       {modal === "wizard" && persona.kind === "admin" && (
@@ -7742,7 +7846,12 @@ function RecordForm({
           onClose={() => setShowAddSupplierModal(false)}
           onSupplierCreated={(newSup) => {
             onAddSupplier?.(newSup);
-            setValues((prev) => ({ ...prev, supplier: newSup.name }));
+            setValues((prev) => ({
+              ...prev,
+              supplier: newSup.id || newSup.name,
+              supplierId: newSup.id,
+              supplierName: newSup.name,
+            }));
           }}
         />
       )}
@@ -7751,7 +7860,12 @@ function RecordForm({
           onClose={() => setShowAddPartModal(false)}
           onPartCreated={(newPrt) => {
             onAddPart?.(newPrt);
-            setValues((prev) => ({ ...prev, part: newPrt.mpn, mpn: newPrt.mpn }));
+            setValues((prev) => ({
+              ...prev,
+              part: newPrt.id || newPrt.mpn,
+              partId: newPrt.id,
+              mpn: newPrt.mpn,
+            }));
           }}
         />
       )}

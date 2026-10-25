@@ -480,14 +480,14 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         startDate: "2026-08-01",
         prerequisite: "Automated test jig flashing and AOI inspection",
         stageRemark: "Hold disposition pending for five units; only accepted quantity is eligible for release.",
-        decisionOrReason: "150 units passed 100% EOL; 5 units held for rework; 45 units in queue.",
+        decisionOrReason: "150 units passed 100% EOL (accepted); 5 units held pending MRB disposition; 45 units pending final inspection.",
         nextAction: "Execute MRB disposition and ship first 150 units with commercial invoice.",
       },
     ],
     dependencies: [
       {
         id: "dep-s06-1",
-        whatNeeded: "MRB Disposition on 5 SMT Rework Units",
+        whatNeeded: "MRB Disposition on 5 SMT Held Units",
         deliverableCode: "HLPL-RFT-QA-MRB-01",
         providerDept: "Quality Assurance",
         providerLead: "Jordan Blake",
@@ -529,4 +529,427 @@ export function verifyProductionReconciliation(rec: ProductionReconciliation): b
   const lotSum = rec.acceptedUnits + rec.heldUnits + rec.pendingInspectionUnits;
   const planDiff = rec.totalPlannedUnits - rec.lotQuantity;
   return lotSum === rec.lotQuantity && planDiff === rec.remainingPlannedUnits;
+}
+
+
+import type { AnalysisRecord, AnalysisDocument } from "./project-analysis-data";
+
+export interface ScenarioFixtureManifest {
+  scenarioId: "S01" | "S02" | "S03" | "S04" | "S05" | "S06";
+  fixtureKey: string;
+  project?: AnalysisRecord | undefined;
+  records: AnalysisRecord[];
+  documents: AnalysisDocument[];
+}
+
+export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
+  {
+    scenarioId: "S01",
+    fixtureKey: "INTERNAL-JIG",
+    project: {
+      id: "fix-s01-prj",
+      reference: "TEST-JIG-01",
+      title: "TEST Internal Harness & EOL Jig",
+      type: "Project",
+      status: "Open",
+      area: "rnd",
+      priority: "Normal",
+      fields: {
+        revision: "01",
+        customer: "Internal Hexense Labs — Production Tooling",
+        currentStage: "Stage 4",
+      },
+    },
+    records: [
+      {
+        id: "fix-s01-rec-1",
+        reference: "HLPL-JIG-EHW-SCH-01",
+        title: "Harness 20-Pin Continuity Schematic",
+        type: "Schematic",
+        status: "Approved",
+        area: "ehw",
+        priority: "High",
+        fields: { projectId: "TEST-JIG-01", revision: "01" },
+      },
+      {
+        id: "fix-s01-rec-2",
+        reference: "HLPL-JIG-MECH-STP-01",
+        title: "Pogo-Pin Enclosure Clearance 3D STEP",
+        type: "CAD",
+        status: "In review",
+        area: "mech",
+        priority: "Normal",
+        fields: { projectId: "TEST-JIG-01", revision: "01" },
+      },
+      {
+        id: "fix-s01-rec-3",
+        reference: "HLPL-JIG-TE-PRG-01",
+        title: "Automated EOL Flashing Script",
+        type: "Program",
+        status: "Draft",
+        area: "fw",
+        priority: "Normal",
+        fields: { projectId: "TEST-JIG-01", revision: "01" },
+      },
+    ],
+    documents: [
+      {
+        id: "doc-s01-1",
+        title: "EOL Jig Mechanical Assembly Drawing",
+        type: "Drawing",
+        linkedRecordRefs: ["TEST-JIG-01", "HLPL-JIG-MECH-STP-01"],
+      },
+    ],
+  },
+  {
+    scenarioId: "S02",
+    fixtureKey: "DECLINED-ENQUIRY",
+    project: undefined, // strictly NO project created per §14.14 S02 invariant
+    records: [
+      {
+        id: "fix-s02-rec-1",
+        reference: "ENQ-2026-EXT-01",
+        title: "TEST Extended-Temperature Tracker Enquiry",
+        type: "Enquiry",
+        status: "Declined",
+        area: "sales",
+        priority: "Normal",
+        fields: {
+          customer: "Nordic Fleet Logistics AB",
+          targetWindow: "6 Weeks",
+          terminalReason: "Arrow 14-week lead-time exceeds customer 6-week window",
+          revision: "01",
+        },
+      },
+      {
+        id: "fix-s02-rec-2",
+        reference: "HLPL-EXT-PUR-FEAS-01",
+        title: "Automotive Cold-Temp Component Sourcing Feasibility",
+        type: "Contract review",
+        status: "Rejected",
+        area: "pur",
+        priority: "High",
+        fields: {
+          supplier: "Arrow Electronics",
+          leadTimeWeeks: "14",
+          constraintWeeks: "6",
+          outcome: "Feasibility Rejected",
+          revision: "01",
+          linkedRecords: "ENQ-2026-EXT-01",
+        },
+      },
+    ],
+    documents: [
+      {
+        id: "doc-s02-1",
+        title: "Formal Commercial Declination Letter",
+        type: "Notice",
+        linkedRecordRefs: ["ENQ-2026-EXT-01", "HLPL-EXT-PUR-FEAS-01"],
+      },
+    ],
+  },
+  {
+    scenarioId: "S03",
+    fixtureKey: "CLIENT-POC",
+    project: {
+      id: "fix-s03-prj",
+      reference: "TEST-POC-01",
+      title: "TEST Fleet OBD Tracker PoC",
+      type: "Project",
+      status: "Open",
+      area: "sales",
+      priority: "Normal",
+      fields: {
+        revision: "01",
+        customer: "Tata Motors Limited · EV Fleet Division",
+        currentStage: "Stage 3",
+      },
+    },
+    records: [
+      {
+        id: "fix-s03-rec-1",
+        reference: "ENQ-2026-POC-01",
+        title: "Fleet OBD PoC Enquiry",
+        type: "Enquiry",
+        status: "Approved",
+        area: "sales",
+        priority: "Normal",
+        fields: { projectId: "TEST-POC-01", customer: "Tata Motors Limited", revision: "01" },
+      },
+      {
+        id: "fix-s03-rec-2",
+        reference: "HLPL-POC-SAL-CRD-02",
+        title: "Client Ignition-Line Debounce Clarification",
+        type: "Clarification",
+        status: "In review",
+        area: "sales",
+        priority: "High",
+        fields: { projectId: "TEST-POC-01", targetDebounce: "50ms vs 200ms", revision: "01" },
+      },
+      {
+        id: "fix-s03-rec-3",
+        reference: "HLPL-POC-EHW-PRS-01",
+        title: "Product Requirement Specification · OBD PoC",
+        type: "PRS",
+        status: "Approved",
+        area: "ehw",
+        priority: "Normal",
+        fields: { projectId: "TEST-POC-01", revision: "01" },
+      },
+      {
+        id: "fix-s03-rec-4",
+        reference: "HLPL-POC-EMF-PRT-01",
+        title: "10-Unit Prototype Build Record",
+        type: "Prototype",
+        status: "Approved",
+        area: "emf",
+        priority: "Normal",
+        fields: { projectId: "TEST-POC-01", quantity: "10", revision: "01" },
+      },
+    ],
+    documents: [
+      {
+        id: "doc-s03-1",
+        title: "PoC Field Trial Dispatch & Verification Note",
+        type: "Report",
+        linkedRecordRefs: ["TEST-POC-01", "HLPL-POC-EMF-PRT-01"],
+      },
+    ],
+  },
+  {
+    scenarioId: "S04",
+    fixtureKey: "SYSTEM-PILOT",
+    project: {
+      id: "fix-s04-prj",
+      reference: "TEST-PILOT-01",
+      title: "TEST Vehicle Gateway Integration Pilot",
+      type: "Project",
+      status: "Open",
+      area: "rnd",
+      priority: "Normal",
+      fields: {
+        revision: "01",
+        customer: "Apex Telematics Corp",
+        currentStage: "Stage 5",
+      },
+    },
+    records: [
+      {
+        id: "fix-s04-rec-1",
+        reference: "HLPL-GWY-EHW-SCH-01",
+        title: "Gateway Controller Schematic V2",
+        type: "Schematic",
+        status: "Approved",
+        area: "ehw",
+        priority: "Normal",
+        fields: { projectId: "TEST-PILOT-01", revision: "02" },
+      },
+      {
+        id: "fix-s04-rec-2",
+        reference: "HLPL-GWY-FW-BIN-01",
+        title: "Gateway Telemetry Binary v1.2",
+        type: "Release",
+        status: "Approved",
+        area: "fw",
+        priority: "High",
+        fields: { projectId: "TEST-PILOT-01", revision: "01" },
+      },
+      {
+        id: "fix-s04-rec-3",
+        reference: "HLPL-GWY-QA-HSI-01",
+        title: "Hardware-Software Integration (HSI) Test Report",
+        type: "Test report",
+        status: "In review",
+        area: "qa",
+        priority: "High",
+        fields: { projectId: "TEST-PILOT-01", linkedRecords: "HLPL-GWY-FW-BIN-01", revision: "01" },
+      },
+      {
+        id: "fix-s04-rec-4",
+        reference: "HLPL-GWY-SAL-PLT-01",
+        title: "50-Vehicle Customer Pilot Protocol",
+        type: "Protocol",
+        status: "Open",
+        area: "sales",
+        priority: "Normal",
+        fields: { projectId: "TEST-PILOT-01", pilotVehicles: "50", revision: "01" },
+      },
+    ],
+    documents: [
+      {
+        id: "doc-s04-1",
+        title: "Gateway HSI Integration & Telemetry Protocol",
+        type: "Matrix",
+        linkedRecordRefs: ["TEST-PILOT-01", "HLPL-GWY-QA-HSI-01"],
+      },
+    ],
+  },
+  {
+    scenarioId: "S05",
+    fixtureKey: "PILOT-REFINEMENT",
+    project: {
+      id: "fix-s05-prj",
+      reference: "TEST-REFINEMENT-01",
+      title: "TEST Cold-Chain Tracker Pilot Refinement",
+      type: "Project",
+      status: "Open",
+      area: "rnd",
+      priority: "Normal",
+      fields: {
+        revision: "01",
+        customer: "BioPharma Transport Ltd",
+        currentStage: "Stage 5",
+      },
+    },
+    records: [
+      {
+        id: "fix-s05-rec-1",
+        reference: "HLPL-CCT-QA-ECN-01",
+        title: "ECN: Temperature Excursion Alert Duplication",
+        type: "Engineering change",
+        status: "In review",
+        area: "qa",
+        priority: "Critical",
+        fields: { projectId: "TEST-REFINEMENT-01", severity: "High", revision: "01" },
+      },
+      {
+        id: "fix-s05-rec-2",
+        reference: "HLPL-CCT-FW-BUG-01",
+        title: "Firmware v1.0.4 Alert Debounce Patch",
+        type: "Release",
+        status: "Submitted",
+        area: "fw",
+        priority: "High",
+        fields: { projectId: "TEST-REFINEMENT-01", patchVersion: "1.0.4", revision: "02" },
+      },
+      {
+        id: "fix-s05-rec-3",
+        reference: "HLPL-CCT-QA-REG-01",
+        title: "Regression Test Suite Log (Cellular Debounce)",
+        type: "Test report",
+        status: "Draft",
+        area: "qa",
+        priority: "Normal",
+        fields: { projectId: "TEST-REFINEMENT-01", revision: "01" },
+      },
+    ],
+    documents: [
+      {
+        id: "doc-s05-1",
+        title: "Alert Debounce Regression Verification Procedure",
+        type: "Procedure",
+        linkedRecordRefs: ["TEST-REFINEMENT-01", "HLPL-CCT-QA-REG-01"],
+      },
+    ],
+  },
+  {
+    scenarioId: "S06",
+    fixtureKey: "BULK-PRODUCTION",
+    project: {
+      id: "fix-s06-prj",
+      reference: "TEST-PROD-01",
+      title: "TEST Rugged Fleet Tracker Production",
+      type: "Project",
+      status: "Open",
+      area: "emf",
+      priority: "Normal",
+      fields: {
+        revision: "01",
+        customer: "National Logistics Fleet",
+        plannedUnits: "500",
+        currentStage: "Stage 6",
+      },
+    },
+    records: [
+      {
+        id: "fix-s06-rec-1",
+        reference: "HLPL-RFT-SAL-ORD-01",
+        title: "Customer Commercial Order 500 Trackers",
+        type: "Order",
+        status: "Approved",
+        area: "sales",
+        priority: "Normal",
+        fields: { projectId: "TEST-PROD-01", plannedQuantity: "500", revision: "01" },
+      },
+      {
+        id: "fix-s06-rec-2",
+        reference: "HLPL-RFT-EHW-BOM-01",
+        title: "Mass Production Released BOM Rev 03",
+        type: "BOM",
+        status: "Released",
+        area: "ehw",
+        priority: "Critical",
+        fields: { projectId: "TEST-PROD-01", stage: "released", revision: "03" },
+      },
+      {
+        id: "fix-s06-rec-3",
+        reference: "HLPL-RFT-EMF-WO-01",
+        title: "Manufacturing Work Order Lot 1 (200 Units)",
+        type: "Production order",
+        status: "Open",
+        area: "emf",
+        priority: "High",
+        fields: { projectId: "TEST-PROD-01", lotQuantity: "200", remainingBalance: "300", revision: "01" },
+      },
+      {
+        id: "fix-s06-rec-4",
+        reference: "HLPL-RFT-QA-ACC-01",
+        title: "Lot 1 EOL Acceptance Batch (150 Units)",
+        type: "Inspection",
+        status: "Approved",
+        area: "qa",
+        priority: "Normal",
+        fields: { projectId: "TEST-PROD-01", acceptedQuantity: "150", revision: "01" },
+      },
+      {
+        id: "fix-s06-rec-5",
+        reference: "HLPL-RFT-QA-MRB-01",
+        title: "MRB Disposition on 5 SMT Held Units",
+        type: "MRB Hold",
+        status: "In review",
+        area: "qa",
+        priority: "High",
+        fields: { projectId: "TEST-PROD-01", heldQuantity: "5", disposition: "Pending MRB review", revision: "01" },
+      },
+      {
+        id: "fix-s06-rec-6",
+        reference: "HLPL-RFT-QA-INSP-01",
+        title: "Lot 1 Final Inspection Queue (45 Units)",
+        type: "Inspection",
+        status: "Draft",
+        area: "qa",
+        priority: "Normal",
+        fields: { projectId: "TEST-PROD-01", pendingInspectionQuantity: "45", revision: "01" },
+      },
+      {
+        id: "fix-s06-rec-7",
+        reference: "HLPL-RFT-FIN-INV-01",
+        title: "Commercial Tax Invoice for 150 Accepted Units",
+        type: "Invoice",
+        status: "Submitted",
+        area: "fin",
+        priority: "High",
+        fields: { projectId: "TEST-PROD-01", invoicedQuantity: "150", revision: "01" },
+      },
+    ],
+    documents: [
+      {
+        id: "doc-s06-1",
+        title: "Lot 1 Certificate of Conformance (150 Units)",
+        type: "Certificate",
+        linkedRecordRefs: ["TEST-PROD-01", "HLPL-RFT-QA-ACC-01"],
+      },
+    ],
+  },
+];
+
+export function getAllScenarioFixtures(): { records: AnalysisRecord[]; documents: AnalysisDocument[] } {
+  const records: AnalysisRecord[] = [];
+  const documents: AnalysisDocument[] = [];
+  for (const manifest of SCENARIO_FIXTURE_MANIFESTS) {
+    if (manifest.project) records.push(manifest.project);
+    records.push(...manifest.records);
+    documents.push(...manifest.documents);
+  }
+  return { records, documents };
 }

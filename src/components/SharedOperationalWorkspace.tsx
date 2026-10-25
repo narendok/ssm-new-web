@@ -1,5 +1,7 @@
 import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
 import { SharedSupplierSelect } from "./SharedSupplierSelect";
+import { InlineSupplierModal, InlinePartModal, type SupplierRecordItem, type PartRecordItem } from "./InlineMasterModals";
+import type { RecordField } from "@/lib/record-form-catalogue";
 import { recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -60,7 +62,11 @@ export function SharedOperationalWorkspace({
     [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [inlineSupplierOpen, setInlineSupplierOpen] = useState(false),
+    [inlinePartOpen, setInlinePartOpen] = useState(false);
+
+
   const lock = useRef(false),
     retry = useRef<{ signature: string; id: string } | null>(null);
   async function save(action: SharedTestAction, payload: Record<string, SharedJson>) {
@@ -102,6 +108,81 @@ export function SharedOperationalWorkspace({
     );
   const data = query.data,
     actor = data.membership;
+  const actorDeptId = data.departments.find((d) => d.code === actor.department_code)?.id || "";
+  const purDeptId = data.departments.find((d) => d.code === "PUR")?.id || actorDeptId || "";
+
+  const canAddSupplier = actor.role === "admin" || actor.department_code === "PUR";
+  const canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "");
+
+  async function handleSharedSupplierCreated(supplier: SupplierRecordItem) {
+    const res = (await write({
+      data: {
+        action: "create_record",
+        payload: {
+          title: supplier.name,
+          reference: `HLPL-SUP-${Date.now().toString().slice(-4)}`,
+          record_type: "Supplier",
+          department_id: purDeptId,
+          fields: {
+            name: supplier.name,
+            category: supplier.category,
+            spocName: supplier.spocName,
+            spocEmail: supplier.spocEmail || "",
+            spocPhone: supplier.spocPhone || "",
+            verification_status: "Pending_Verification",
+            revision: "01",
+          },
+          notes: "Inline registered supplier · Pending Verification",
+        },
+        requestId: crypto.randomUUID(),
+      },
+    })) as { id?: string } | null;
+    await Promise.all([query.refetch(), common.refetch()]);
+    const createdId = res?.id || supplier.id;
+    setValues((prev) => ({
+      ...prev,
+      supplier: createdId,
+      supplierId: createdId,
+      supplierName: supplier.name,
+    }));
+    setNotice(`Supplier ${supplier.name} saved to Supplier Master.`);
+    setInlineSupplierOpen(false);
+  }
+
+  async function handleSharedPartCreated(part: PartRecordItem) {
+    const res = (await write({
+      data: {
+        action: "create_record",
+        payload: {
+          title: `${part.mpn} · ${part.description}`,
+          reference: `HLPL-PRT-${Date.now().toString().slice(-4)}`,
+          record_type: "Part",
+          department_id: actorDeptId,
+          fields: {
+            mpn: part.mpn,
+            description: part.description,
+            manufacturer: part.manufacturer || "",
+            packageFootprint: part.packageFootprint || "",
+            category: part.category,
+            release_status: "Engineering_Only",
+            revision: "01",
+          },
+          notes: "Inline registered component · Engineering Only",
+        },
+        requestId: crypto.randomUUID(),
+      },
+    })) as { id?: string } | null;
+    await Promise.all([query.refetch(), common.refetch()]);
+    const createdId = res?.id || part.id;
+    setValues((prev) => ({
+      ...prev,
+      part: createdId,
+      partId: createdId,
+      mpn: part.mpn,
+    }));
+    setNotice(`Component ${part.mpn} saved to Part Master.`);
+    setInlinePartOpen(false);
+  }
   const selectedDepartment =
     department || data.departments.find((d) => d.code === actor.department_code)?.id || "";
   const dept = data.departments.find((d) => d.id === selectedDepartment);
@@ -111,6 +192,125 @@ export function SharedOperationalWorkspace({
   const generatedReferenceBase = automaticRecordReference(data.records.find(r => r.id === values["projectId"] && r.record_type === "Project")?.reference || "", dept?.code || "", values["record_type"] || "");
   const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : generatedReferenceBase, data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
   const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
+
+  const renderFieldInput = (field: RecordField) => {
+    if (field.master === "suppliers") {
+      return (
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <SharedSupplierSelect
+              options={supplierOptions}
+              value={values[field.key] || ""}
+              onChange={(value) => setValues({ ...values, [field.key]: value, supplierId: value })}
+            />
+          </div>
+          {canAddSupplier && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 h-9 text-xs"
+              onClick={() => setInlineSupplierOpen(true)}
+            >
+              + Add Supplier
+            </Button>
+          )}
+        </div>
+      );
+    }
+    if (field.master === "parts") {
+      const partOptions = Array.from(
+        new Set(
+          data.records
+            .filter((r) => r.record_type.toLowerCase() === "part" && !["archived", "obsolete"].includes(r.status.toLowerCase()))
+            .map((r) => String(r.fields["mpn"] || r.reference || r.title))
+            .filter(Boolean),
+        ),
+      );
+      return (
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            {partOptions.length > 0 ? (
+              <select
+                className={fieldClass}
+                required={field.required}
+                value={values[field.key] || ""}
+                onChange={(e) => {
+                  const selectedPart = data.records.find(
+                    (r) =>
+                      r.record_type.toLowerCase() === "part" &&
+                      (r.id === e.target.value ||
+                        String(r.fields["mpn"] || "") === e.target.value ||
+                        r.reference === e.target.value),
+                  );
+                  setValues({
+                    ...values,
+                    [field.key]: e.target.value,
+                    partId: selectedPart?.id || e.target.value,
+                    mpn: (selectedPart?.fields["mpn"] as string) || e.target.value,
+                  });
+                }}
+              >
+                <option value="">Choose part / MPN…</option>
+                {partOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                className={fieldClass}
+                type="text"
+                required={field.required}
+                placeholder="Enter MPN or click + Add Part"
+                value={values[field.key] || ""}
+                onChange={(e) => setValues({ ...values, [field.key]: e.target.value, mpn: e.target.value })}
+              />
+            )}
+          </div>
+          {canAddPart && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0 h-9 text-xs"
+              onClick={() => setInlinePartOpen(true)}
+            >
+              + Add Part
+            </Button>
+          )}
+        </div>
+      );
+    }
+    if (field.options) {
+      return (
+        <select
+          className={fieldClass}
+          required={field.required}
+          value={values[field.key] || ""}
+          onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
+        >
+          <option value="">Choose…</option>
+          {field.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    return (
+      <input
+        className={fieldClass}
+        type={field.kind === "date" ? "date" : "text"}
+        required={field.required}
+        value={values[field.key] || ""}
+        onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
+      />
+    );
+  };
+
   const generatedReference = generatedReferenceBase ? referenceAtRevision(generatedReferenceBase, selectedRevision) : "";
   const source = data.records.filter(
     (r) =>
@@ -535,9 +735,7 @@ export function SharedOperationalWorkspace({
                     </label>
                     {spec && recordFields(spec, values["record_type"] || "").filter(field => field.key !== "procurementTrack" || !procurementTrack(values["record_type"] || "")).map(field => (
                       <label key={field.key} className="grid gap-1 text-xs">{field.label}
-                        {field.master === "suppliers" ? <SharedSupplierSelect options={supplierOptions} value={values[field.key] || ""} onChange={value => setValues({...values,[field.key]:value})} /> : field.options ? <select className={fieldClass} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})}>
-                          <option value="">Choose…</option>{field.options.map(option => <option key={option} value={option}>{option}</option>)}
-                        </select> : <input className={fieldClass} type={field.kind === "date" ? "date" : "text"} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})} />}
+                        {renderFieldInput(field)}
                       </label>
                     ))}
                   </>
@@ -546,9 +744,7 @@ export function SharedOperationalWorkspace({
             )}
                     {form === "update_record" && spec && recordFields(spec, data.records.find(r => r.id === recordId)?.record_type || "").filter(field => field.key !== "procurementTrack" || !procurementTrack(originalRecord?.record_type || "")).map(field => (
                       <label key={field.key} className="grid gap-1 text-xs">{field.label}
-                        {field.master === "suppliers" ? <SharedSupplierSelect options={supplierOptions} value={values[field.key] || ""} onChange={value => setValues({...values,[field.key]:value})} /> : field.options ? <select className={fieldClass} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})}>
-                          <option value="">Choose…</option>{field.options.map(option => <option key={option} value={option}>{option}</option>)}
-                        </select> : <input className={fieldClass} type={field.kind === "date" ? "date" : "text"} required={field.required} value={values[field.key] || ""} onChange={e => setValues({...values,[field.key]:e.target.value})} />}
+                        {renderFieldInput(field)}
                       </label>
                     ))}
             {form !== "create_project" && (
@@ -582,6 +778,18 @@ export function SharedOperationalWorkspace({
           </form>
         </DialogContent>
       </Dialog>
+      {inlineSupplierOpen && (
+        <InlineSupplierModal
+          onClose={() => setInlineSupplierOpen(false)}
+          onSupplierCreated={handleSharedSupplierCreated}
+        />
+      )}
+      {inlinePartOpen && (
+        <InlinePartModal
+          onClose={() => setInlinePartOpen(false)}
+          onPartCreated={handleSharedPartCreated}
+        />
+      )}
     </section>
   );
 }

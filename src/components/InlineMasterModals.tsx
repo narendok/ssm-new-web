@@ -33,7 +33,7 @@ export function InlineSupplierModal({
   onSupplierCreated,
 }: {
   onClose: () => void;
-  onSupplierCreated: (supplier: SupplierRecordItem) => void;
+  onSupplierCreated: (supplier: SupplierRecordItem) => Promise<void> | void;
 }) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("Active & Passive Components");
@@ -41,6 +41,7 @@ export function InlineSupplierModal({
   const [spocEmail, setSpocEmail] = useState("");
   const [spocPhone, setSpocPhone] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const categories = [
     "Active & Passive Components",
@@ -51,24 +52,33 @@ export function InlineSupplierModal({
     "Testing & Calibration Services",
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setError("Supplier Company Name is required.");
     if (!spocName.trim()) return setError("SPOC Contact Name is required.");
+
+    setBusy(true);
+    setError("");
 
     const newSupplier: SupplierRecordItem = {
       id: `sup-${Date.now()}`,
       name: name.trim(),
       category,
       spocName: spocName.trim(),
-      spocEmail: spocEmail.trim() || `${name.toLowerCase().replace(/[^a-z0-9]/g, "")}@supplier.example`,
-      spocPhone: spocPhone.trim() || "+91 90000 00000",
+      spocEmail: spocEmail.trim(),
+      spocPhone: spocPhone.trim(),
       status: "Pending_Verification",
       createdAt: new Date().toISOString().slice(0, 10),
     };
 
-    onSupplierCreated(newSupplier);
-    onClose();
+    try {
+      await onSupplierCreated(newSupplier);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to register supplier.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -184,17 +194,19 @@ export function InlineSupplierModal({
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <button
               type="button"
+              disabled={busy}
               onClick={onClose}
-              className="rounded-md border border-input px-3 py-1.5 font-medium hover:bg-muted"
+              className="rounded-md border border-input px-3 py-1.5 font-medium hover:bg-muted disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:bg-primary/90"
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               <Check className="size-3.5" />
-              Save Supplier & Select
+              {busy ? "Saving to Master…" : "Save Supplier & Select"}
             </button>
           </div>
         </form>
@@ -213,7 +225,7 @@ export function InlinePartModal({
   onPartCreated,
 }: {
   onClose: () => void;
-  onPartCreated: (part: PartRecordItem) => void;
+  onPartCreated: (part: PartRecordItem) => Promise<void> | void;
 }) {
   const [mpn, setMpn] = useState("");
   const [description, setDescription] = useState("");
@@ -221,6 +233,7 @@ export function InlinePartModal({
   const [packageFootprint, setPackageFootprint] = useState("");
   const [category, setCategory] = useState("Microcontrollers & Processors");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const categories = [
     "Microcontrollers & Processors",
@@ -232,24 +245,33 @@ export function InlinePartModal({
     "Mechanical & Hardware Enclosures",
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mpn.trim()) return setError("Manufacturer Part Number (MPN) is required.");
     if (!description.trim()) return setError("Part Description is required.");
+
+    setBusy(true);
+    setError("");
 
     const newPart: PartRecordItem = {
       id: `prt-${Date.now()}`,
       mpn: mpn.trim().toUpperCase(),
       description: description.trim(),
-      manufacturer: manufacturer.trim() || "Generic",
-      packageFootprint: packageFootprint.trim() || "Surface Mount",
+      manufacturer: manufacturer.trim(), // Stored as entered, never synthesized as 'Generic'
+      packageFootprint: packageFootprint.trim(), // Stored as entered, never synthesized as 'Surface Mount'
       category,
       status: "Engineering_Only",
       createdAt: new Date().toISOString().slice(0, 10),
     };
 
-    onPartCreated(newPart);
-    onClose();
+    try {
+      await onPartCreated(newPart);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to register component.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -364,17 +386,19 @@ export function InlinePartModal({
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <button
               type="button"
+              disabled={busy}
               onClick={onClose}
-              className="rounded-md border border-input px-3 py-1.5 font-medium hover:bg-muted"
+              className="rounded-md border border-input px-3 py-1.5 font-medium hover:bg-muted disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:bg-primary/90"
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               <Check className="size-3.5" />
-              Save Part & Select
+              {busy ? "Saving to Master…" : "Save Part & Select"}
             </button>
           </div>
         </form>
