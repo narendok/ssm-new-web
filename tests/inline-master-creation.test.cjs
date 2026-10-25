@@ -83,6 +83,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261025103000_saved_lifecycle_coordination",
     "20261025110000_saved_lifecycle_disposition",
     "20261025111644_project_input_feasibility_sheet",
+    "20261025152001_link_approved_input_baseline",
   ];
 
   for (const name of initialMigrations) {
@@ -719,5 +720,13 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   const client=uuid(990);await db.query("INSERT INTO auth.users VALUES($1,'client.input@example.test')",[client]);await db.query("INSERT INTO organization_members(organization_id,user_id,role,display_name) VALUES($1,$2,'viewer','Client')",[org,client]);
   await assert.rejects(asUser(client,()=>db.query("SELECT get_project_input_sheets()")),/INPUT_ACCESS_DENIED/);
   await assert.rejects(asUser(null,()=>db.query("SELECT get_project_input_sheets()")),/INPUT_ACCESS_DENIED/);
+
+  const intakeId=(await db.query("INSERT INTO operational_records(organization_id,department_id,area,record_type,reference,title,fields,created_by,updated_by,is_demo) VALUES($1,$2,'sales','Enquiry','HLPL-INPUT-ENQ-01','Input sheet pre-project test','{\"revision\":\"01\"}'::jsonb,$3,$3,true) RETURNING id",[org,dSal,salLead])).rows[0].id;
+  let pre=await sheetCall(salLead,"create",{sourceId:intakeId,scope:"Internal"});assert.equal(pre.project_record_id,null);
+  for(const p of params)pre=await sheetCall(salLead,"input",{sheetId:pre.id,expectedVersion:pre.version,parameterId:p.id,required:false,exclusionReason:"Explicitly excluded in isolated linkage test"});
+  pre=await sheetCall(admin,"approve",{sheetId:pre.id,expectedVersion:pre.version});
+  const accepted=await call(salLead,"create_project",{title:"Accepted after input approval",reference:"HLPL-INPUT-ACCEPTED-01"});
+  pre=await sheetCall(salLead,"link_project",{sheetId:pre.id,expectedVersion:pre.version,projectId:accepted.id});assert.equal(pre.project_record_id,accepted.id);assert.equal(pre.status,"Approved");
+  await assert.rejects(sheetCall(salLead,"input",{sheetId:pre.id,expectedVersion:pre.version,parameterId:"system_voltage",input:"Unauthorized baseline rewrite"}),/INPUT_BASELINE_LOCKED/);
 
 });

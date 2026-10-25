@@ -441,28 +441,26 @@ export function ProjectInputsWorkspace({
               </Button>
             </div>
           )}
-          {editable &&
-            !sheet.project_record_id &&
-            (membership.role === "admin" || dept === "SAL") && (
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <SharedMasterSelect
-                    label="Link accepted project"
-                    options={sources
-                      .filter((s) => s.type === "Project")
-                      .map((s) => ({ value: s.id, label: `${s.reference} · ${s.title}` }))}
-                    value={linkId}
-                    onChange={setLinkId}
-                  />
-                </div>
-                <Button
-                  disabled={busy || !linkId}
-                  onClick={() => void save("link_project", { projectId: linkId })}
-                >
-                  Link existing project
-                </Button>
+          {!sheet.project_record_id && (membership.role === "admin" || dept === "SAL") && (
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <SharedMasterSelect
+                  label="Link accepted project"
+                  options={sources
+                    .filter((s) => s.type === "Project")
+                    .map((s) => ({ value: s.id, label: `${s.reference} · ${s.title}` }))}
+                  value={linkId}
+                  onChange={setLinkId}
+                />
               </div>
-            )}
+              <Button
+                disabled={busy || !linkId}
+                onClick={() => void save("link_project", { projectId: linkId })}
+              >
+                Link existing project
+              </Button>
+            </div>
+          )}
           {editable && membership.role === "admin" && (
             <Button
               disabled={busy || sheet.input_owner_id === membership.membershipId}
@@ -646,6 +644,26 @@ export function ProjectInputsWorkspace({
                 />
               </label>
             ))}
+            <SharedMasterSelect
+              label="Use an existing source or evidence"
+              value=""
+              options={[
+                ...(people.data?.records || []).map((r) => ({
+                  value: `record:${r.id}`,
+                  label: `${r.reference} · ${r.title}`,
+                })),
+                ...(people.data?.documents || []).map((d) => ({
+                  value: `document:${d.id}`,
+                  label: `Document · ${d.title}`,
+                })),
+              ]}
+              onChange={(value) =>
+                setDraft((current) => ({
+                  ...current,
+                  [editing?.mode === "input" ? "source" : "evidence"]: value,
+                }))
+              }
+            />
             {editing?.mode === "input" ? (
               <>
                 <label className="flex gap-2 text-xs">
