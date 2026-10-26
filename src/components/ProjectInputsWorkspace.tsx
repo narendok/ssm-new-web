@@ -17,6 +17,7 @@ import type { AnalysisRecord } from "@/lib/project-analysis-data";
 import { SharedMasterSelect } from "./SharedMasterSelect";
 import { SmartParameterField } from "./SmartParameterField";
 import { SmartSorImporterModal } from "./SmartSorImporterModal";
+import { readAssessmentDraft } from "@/lib/assessment-drafts";
 import { Sparkles } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
@@ -118,6 +119,20 @@ function createDemoProjectInputsData(sources: AnalysisRecord[]): import("@/lib/p
   };
 }
 
+const demoInputStorageKey = "ssm:demo-project-input-sheets:v1";
+function loadDemoProjectInputs(sources: AnalysisRecord[]): import("@/lib/project-inputs.functions").InputSnapshot {
+  if (typeof window !== "undefined") {
+    try {
+      const saved = JSON.parse(localStorage.getItem(demoInputStorageKey) || "null");
+      if (saved && Array.isArray(saved.sheets) && Array.isArray(saved.events)) {
+        const sheets = saved.sheets.filter((row: InputSheet) => row && row.id && Number.isInteger(row.version) && row.parameter_values && sources.some(source => source.id === row.source_record_id || source.id === row.project_record_id));
+        if (sheets.length) return { sheets, events: saved.events };
+      }
+    } catch { /* Invalid demo recovery data cannot replace the initial sample. */ }
+  }
+  return createDemoProjectInputsData(sources);
+}
+
 export function ProjectInputsWorkspace({
   membership,
   sources,
@@ -137,25 +152,22 @@ export function ProjectInputsWorkspace({
     departmentCode: "SAL",
     departmentName: "Sales & Business Development",
     organizationName: "XYZ Pvt Ltd (Demo)",
-    organizationSlug: "demo",
-    profile: {
-      fullName: "Priya Sharma",
-      email: "priya.sharma@xyz.com",
-      avatarUrl: null,
-    },
+    displayName: "Demo input coordinator",
+    isClient: false,
   };
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["project-inputs", effectiveMembership.organizationId, effectiveMembership.membershipId],
-    queryFn: () => (membership ? load() : Promise.resolve(createDemoProjectInputsData(sources))),
+    queryFn: () => (membership ? load() : Promise.resolve(loadDemoProjectInputs(sources))),
     refetchInterval: membership ? 15000 : false,
   });
   const people = useQuery({
     queryKey: ["shared-test-workspace", effectiveMembership.organizationId, effectiveMembership.membershipId],
-    queryFn: () => (membership ? loadMembers() : Promise.resolve({ members: [], departments: [] })),
+    queryFn: () => loadMembers(),
+    enabled: !!membership,
   });
   const [sourceId, setSourceId] = useState(
-    initialSourceId && initialSourceId !== "all" ? initialSourceId : (sources.find((s) => s.type === "Project" || s.reference?.includes("PRJ"))?.id || sources[0]?.id || ""),
+    initialSourceId && initialSourceId !== "all" ? initialSourceId : "",
   );
   const [scope, setScope] = useState<"Client" | "Internal">(() =>
     inferScope(sources.find((source) => source.id === initialSourceId)),
@@ -180,10 +192,13 @@ export function ProjectInputsWorkspace({
   const [draftRecoveryError, setDraftRecoveryError] = useState("");
   const inputEditGeneration = useRef(0);
   const inputSaveInFlight = useRef(false);
+  const editedInputIds = useRef(new Set<string>());
+  const inputBaseVersion = useRef(0);
   const [assessmentDrafts, setAssessmentDrafts] = useState<Record<string, ParameterResponse>>({});
   const [assessmentDraftDirty, setAssessmentDraftDirty] = useState(false);
   const inputDraftSheetId = useRef("");
   const assessmentDraftScope = useRef("");
+  const assessmentGeneration = useRef(0);
   const sheet = query.data?.sheets.find(
     (s) => s.source_record_id === sourceId || s.project_record_id === sourceId,
   );
@@ -219,17 +234,18 @@ export function ProjectInputsWorkspace({
       (m) => m.department_id === people.data?.departments.find((d) => d.code === dept)?.id,
     ) || [];
   const parameters = [...PROJECT_INPUT_PARAMETERS, ...(sheet?.custom_parameters || [])];
-  const draftKey = sheet ? `ssm:input-draft:${effectiveMembership.organizationId}:${effectiveMembership.membershipId}:${sheet.id}` : "";
-  const draftMatchesSheet = !!sheet && inputDraftSheetId.current === sheet.id;
+  const draftKey = sheet ? `ssm:input-draft:${effectiveMembership.organizationId}:${effectiveMembership.membershipId}:${sheet.id}:${sheet.revision}` : "";
+  const draftMatchesSheet = !!sheet && inputDraftSheetId.current === draftKey;
+  const assessmentKey = draftKey ? `${draftKey}:assessment:${dept}` : "";
   useEffect(() => {
     if (!sheet) {
       inputDraftSheetId.current = "";
       setQuickInputsDraft({});
       return;
     }
-    const sheetChanged = inputDraftSheetId.current !== sheet.id;
+    const sheetChanged = inputDraftSheetId.current !== draftKey;
     if (!sheetChanged && inputDraftDirty) return;
-    inputDraftSheetId.current = sheet.id;
+    inputDraftSheetId.current = draftKey;
     const savedValues = Object.fromEntries(parameters.map((p) => {
       const value = sheet.parameter_values[p.id] || emptyRow;
       return [p.id, { input: value.input || "", source: value.source || "", finalValue: value.finalValue || "" }];
@@ -239,24 +255,32 @@ export function ProjectInputsWorkspace({
       try { recovered = readInputDraft(localStorage.getItem(draftKey), sheet.revision); } catch { /* Storage can be disabled. */ }
     }
     const recoveredValues = Object.fromEntries(Object.entries(recovered?.values || {}).filter(([id]) => parameters.some(p => p.id === id)));
+    const recoveredChanges = changedInputDrafts(recoveredValues, savedValues);
     setQuickInputsDraft({ ...savedValues, ...recoveredValues });
     if (sheetChanged) {
-      setInputDraftDirty(Object.keys(changedInputDrafts(recoveredValues, savedValues)).length > 0);
-      setAutoSavePaused(!!recovered && recovered.version !== sheet.version);
-      setError(recovered && recovered.version !== sheet.version ? "Recovered your draft, but the shared sheet has changed. Review the values and click Save inputs before autosave resumes." : "");
+      editedInputIds.current = new Set(Object.keys(recoveredChanges));
+      inputBaseVersion.current = recovered?.version ?? sheet.version;
+      const needsReview = editedInputIds.current.size > 0 && !!recovered && recovered.version !== sheet.version;
+      setInputDraftDirty(editedInputIds.current.size > 0);
+      setAutoSavePaused(needsReview);
+      setError(needsReview ? "Recovered your draft, but the shared sheet has changed. Review the values and click Save inputs before autosave resumes." : "");
+      if (recovered && !editedInputIds.current.size) {
+        try { localStorage.removeItem(draftKey); } catch { /* Recovery is optional. */ }
+      }
       setDraftRecoveryError("");
     }
-  }, [sheet?.id, sheet?.version, inputDraftDirty]);
+  }, [sheet?.id, sheet?.version, inputDraftDirty, draftKey]);
   useEffect(() => {
     if (!sheet || !draftKey || !draftMatchesSheet || !inputDraftDirty || !editable || !inputOwner) return;
     try {
-      localStorage.setItem(draftKey, JSON.stringify({ revision: sheet.revision, version: sheet.version, values: changedInputDrafts(quickInputsDraft, sheet.parameter_values) }));
+      const editedValues = Object.fromEntries(Object.entries(quickInputsDraft).filter(([id]) => editedInputIds.current.has(id)));
+      localStorage.setItem(draftKey, JSON.stringify({ revision: sheet.revision, version: inputBaseVersion.current, values: changedInputDrafts(editedValues, sheet.parameter_values) }));
       setDraftRecoveryError("");
     } catch { setDraftRecoveryError("Browser recovery storage is unavailable. Keep this page open until the shared save succeeds."); }
   }, [quickInputsDraft, inputDraftDirty, sheet?.id, sheet?.version, editable, inputOwner, draftKey, draftMatchesSheet]);
   useEffect(() => {
     if (!inputDraftDirty || !editable || !inputOwner || busy || autoSavePaused || !draftMatchesSheet) return;
-    const timer = window.setTimeout(() => { void saveQuickInputs(); }, 1500);
+    const timer = window.setTimeout(() => { void saveQuickInputs(true); }, 1500);
     return () => window.clearTimeout(timer);
   }, [quickInputsDraft, inputDraftDirty, editable, inputOwner, busy, autoSavePaused, sheet?.id, draftMatchesSheet]);
   useEffect(() => {
@@ -265,17 +289,39 @@ export function ProjectInputsWorkspace({
       setAssessmentDrafts({});
       return;
     }
-    const currentScope = `${sheet.id}:${dept}`;
+    const currentScope = assessmentKey;
     const scopeChanged = assessmentDraftScope.current !== currentScope;
     if (!scopeChanged && assessmentDraftDirty) return;
     assessmentDraftScope.current = currentScope;
-    setAssessmentDrafts(Object.fromEntries(parameters
+    const saved = Object.fromEntries(parameters
       .filter((p) => p.lead === dept || p.reviewers.includes(dept))
-      .map((p) => [p.id, { ...emptyResponse, ...sheet.parameter_values[p.id]?.responses[dept] }])));
-    if (scopeChanged) setAssessmentDraftDirty(false);
-  }, [sheet?.id, sheet?.version, dept, assessmentDraftDirty]);
+      .map((p) => [p.id, { ...emptyResponse, ...sheet.parameter_values[p.id]?.responses[dept] }]));
+    let recovered: ReturnType<typeof readAssessmentDraft>;
+    if (scopeChanged && editable && membership) {
+      try { recovered = readAssessmentDraft(localStorage.getItem(assessmentKey), sheet.revision); } catch { /* Recovery is optional. */ }
+    }
+    const restored = Object.fromEntries(Object.entries(recovered?.values || {}).filter(([id]) => id in saved));
+    setAssessmentDrafts({ ...saved, ...restored });
+    if (scopeChanged) {
+      assessmentGeneration.current++;
+      setAssessmentDraftDirty(Object.keys(restored).length > 0);
+      if (Object.keys(restored).length) setNotice("Recovered your department assessment draft. Review it before saving; no approval was submitted.");
+    }
+  }, [sheet?.id, sheet?.version, dept, assessmentDraftDirty, assessmentKey]);
+  useEffect(() => {
+    if (!sheet || !editable || !membership || !assessmentDraftDirty || assessmentDraftScope.current !== assessmentKey) return;
+    assessmentGeneration.current++;
+    try {
+      const changed = Object.fromEntries(Object.entries(assessmentDrafts).filter(([id, row]) => {
+        const saved = sheet.parameter_values[id]?.responses[dept] || emptyResponse;
+        return ["status", "remarks", "evidence", "ownerId", "dueDate"].some(key => row[key as keyof ParameterResponse] !== saved[key as keyof ParameterResponse]);
+      }));
+      localStorage.setItem(assessmentKey, JSON.stringify({revision: sheet.revision, version: sheet.version, values: changed}));
+    } catch { setDraftRecoveryError("Browser recovery storage is unavailable. Save department inputs before leaving this page."); }
+  }, [assessmentDrafts, assessmentDraftDirty, assessmentKey, editable, membership]);
   const stats = inputReadiness(sheet?.parameter_values || {}, parameters);
   const changedInputCount = sheet ? parameters.filter((p) => {
+    if (!editedInputIds.current.has(p.id)) return false;
     const before = sheet.parameter_values[p.id] || emptyRow;
     const after = quickInputsDraft[p.id] || { input: "", source: "", finalValue: "" };
     return before.input !== after.input || before.source !== after.source || before.finalValue !== after.finalValue;
@@ -296,11 +342,9 @@ export function ProjectInputsWorkspace({
     setError("");
     setNotice("");
     if (!membership) {
-      setBusy(true);
-      setError("");
-      setNotice("Saved to local workspace.");
+      setError("This action is a demo preview. Sign in to save workflow and approval changes to the shared workspace.");
       setBusy(false);
-      return true;
+      return false;
     }
     try {
       await write({
@@ -331,19 +375,20 @@ export function ProjectInputsWorkspace({
         .includes(filter.toLowerCase()),
   );
   const departments = [...new Set(parameters.flatMap((p) => [p.lead, ...p.reviewers, ...p.consumers]))].sort();
-  async function saveQuickInputs() {
+  async function saveQuickInputs(automatic = false) {
     if (!sheet || busy || inputSaveInFlight.current || !editable || !inputOwner) return;
     inputSaveInFlight.current = true;
-    const savingSheetId = sheet.id;
     const savingDraftKey = draftKey;
     const generation = inputEditGeneration.current;
     const snapshot = quickInputsDraft;
     setBusy(true);
     setError("");
     setNotice("");
-    let currentVersion = sheet.version;
+    let currentVersion = automatic ? inputBaseVersion.current : sheet.version;
+    let localSheet = sheet;
     let saved = 0;
     const changed = parameters.filter((p) => {
+      if (!editedInputIds.current.has(p.id)) return false;
       const before = sheet.parameter_values[p.id] || emptyRow;
       const after = snapshot[p.id] || { input: "", source: "", finalValue: "" };
       return before.input !== after.input || before.source !== after.source || before.finalValue !== after.finalValue;
@@ -351,7 +396,7 @@ export function ProjectInputsWorkspace({
     try {
       for (const p of changed) {
         const current = sheet.parameter_values[p.id] || emptyRow;
-        const result = await write({ data: { action: "input", payload: {
+        const payload = {
           sheetId: sheet.id,
           expectedVersion: currentVersion,
           parameterId: p.id,
@@ -360,23 +405,34 @@ export function ProjectInputsWorkspace({
           finalValue: snapshot[p.id]?.finalValue || "",
           required: current.required !== false,
           exclusionReason: (current as ParameterValue & { exclusionReason?: string }).exclusionReason || "",
-        } } });
+        };
+        let result: InputSheet;
+        if (membership) {
+          result = await write({ data: { action: "input", payload } });
+        } else {
+          result = { ...localSheet, version: currentVersion + 1, updated_at: new Date().toISOString(), parameter_values: { ...localSheet.parameter_values, [p.id]: { ...current, input: payload.input, source: payload.source, finalValue: payload.finalValue } } };
+          const demoSnapshot = { sheets: (query.data?.sheets || []).map(existing => existing.id === result.id ? result : existing), events: query.data?.events || [] };
+          localStorage.setItem(demoInputStorageKey, JSON.stringify(demoSnapshot));
+          localSheet = result;
+        }
         currentVersion = result.version;
-        queryClient.setQueryData<import("@/lib/project-inputs.functions").InputSnapshot>(["project-inputs", effectiveMembership.organizationId, effectiveMembership.membershipId], current => current ? { ...current, sheets: current.sheets.map(existing => existing.id === result.id ? result : existing) } : current);
+        queryClient.setQueryData<import("@/lib/project-inputs.functions").InputSnapshot>(["project-inputs", effectiveMembership.organizationId, effectiveMembership.membershipId], current => current ? { ...current, sheets: current.sheets.map(existing => existing.id === result.id && existing.version <= result.version ? result : existing) } : current);
         saved += 1;
       }
       await query.refetch();
-      if (inputDraftSheetId.current === savingSheetId) {
+      if (inputDraftSheetId.current === savingDraftKey) {
+        inputBaseVersion.current = currentVersion;
         if (inputEditGeneration.current === generation) {
+          editedInputIds.current.clear();
           setInputDraftDirty(false);
           try { localStorage.removeItem(savingDraftKey); } catch { /* Server save is already confirmed. */ }
         }
         setAutoSavePaused(false);
-        setNotice(changed.length ? `Saved ${saved} parameter${saved === 1 ? "" : "s"} to the shared project sheet.` : "No input changes to save.");
+        setNotice(changed.length ? `Saved ${saved} parameter${saved === 1 ? "" : "s"} ${membership ? "to the shared project sheet" : "in this browser’s demo workspace"}.` : "No input changes to save.");
       }
     } catch (e) {
       await query.refetch();
-      if (inputDraftSheetId.current === savingSheetId) {
+      if (inputDraftSheetId.current === savingDraftKey) {
       setAutoSavePaused(true);
       setError(saved
         ? `Saved ${saved} of ${changed.length} changed parameters. The remaining inputs are still in this editor; refresh the sheet before retrying. ${e instanceof Error ? e.message : "Save failed."}`
@@ -389,6 +445,9 @@ export function ProjectInputsWorkspace({
   }
   async function saveDepartmentInputs() {
     if (!sheet || busy) return;
+    if (!membership) { setError("Sign in to save department assessments to the shared workspace."); return; }
+    const savingScope = assessmentKey;
+    const generation = assessmentGeneration.current;
     const changed = assessmentParameters.filter((p) => {
       const before = sheet.parameter_values[p.id]?.responses[dept] || emptyResponse;
       const after = assessmentDrafts[p.id] || emptyResponse;
@@ -421,7 +480,10 @@ export function ProjectInputsWorkspace({
         saved += 1;
       }
       await query.refetch();
-      setAssessmentDraftDirty(false);
+      if (assessmentDraftScope.current === savingScope && assessmentGeneration.current === generation) {
+        setAssessmentDraftDirty(false);
+        try { localStorage.removeItem(savingScope); } catch { /* Shared save is confirmed. */ }
+      }
       setNotice(changed.length ? `Saved ${saved} ${dept} department assessment${saved === 1 ? "" : "s"}.` : "No department assessment changes to save.");
     } catch (e) {
       await query.refetch();
@@ -628,7 +690,7 @@ export function ProjectInputsWorkspace({
               </div>
             ))}
           </div>
-          {editable && inputOwner && <p role="status" className="text-[11px] text-muted-foreground">{busy ? "Saving to shared project inputs…" : autoSavePaused ? "Automatic save paused — review your draft and use Save inputs to retry." : inputDraftDirty ? "Draft changed · automatically saving after you finish typing…" : "Inputs saved · draft autosave is on."}{draftRecoveryError ? ` ${draftRecoveryError}` : ""}</p>}
+          {editable && inputOwner && <p role="status" className="text-[11px] text-muted-foreground">{busy ? (membership ? "Saving to shared project inputs…" : "Saving browser-local demo inputs…") : autoSavePaused ? "Automatic save paused — review your draft and use Save inputs to retry." : inputDraftDirty ? "Draft changed · automatically saving after you finish typing…" : membership ? "Inputs saved · draft autosave is on." : "Demo inputs saved in this browser · draft autosave is on."}{draftRecoveryError ? ` ${draftRecoveryError}` : ""}</p>}
           <div className="flex flex-wrap gap-2">
             <input
               aria-label="Search input parameters"
@@ -693,6 +755,8 @@ export function ProjectInputsWorkspace({
                     inputDraft={inputDraft}
                     disabled={!editable || !inputOwner}
                     onChange={(patch) => {
+                      if (!editedInputIds.current.size) inputBaseVersion.current = sheet.version;
+                      editedInputIds.current.add(p.id);
                       inputEditGeneration.current++;
                       setInputDraftDirty(true);
                       setQuickInputsDraft((prev) => ({
@@ -1073,20 +1137,27 @@ export function ProjectInputsWorkspace({
       {sorModalOpen && (
         <SmartSorImporterModal
           isOpen={sorModalOpen}
+          purpose="inputs"
           onClose={() => setSorModalOpen(false)}
           onImportSor={async (sorData) => {
+            if (!sheet || !editable || !inputOwner) throw new Error("Only the input coordinator can import into a draft sheet.");
             const patch: Record<string, { input: string; source: string; finalValue: string }> = {};
             for (const [key, val] of Object.entries(sorData.parameterValues)) {
+              if (!parameters.some(p => p.id === key) || !val.trim()) continue;
+              const existing = quickInputsDraft[key];
+              if (existing?.input.trim() || existing?.finalValue.trim()) continue;
+              if (!editedInputIds.current.size) inputBaseVersion.current = sheet.version;
+              editedInputIds.current.add(key);
               patch[key] = {
                 input: val,
                 source: `Smart SOR Import · ${sorData.customerName || "Customer Requirements"}`,
-                finalValue: val,
+                finalValue: "",
               };
             }
             inputEditGeneration.current++;
-            setInputDraftDirty(true);
+            setInputDraftDirty(Object.keys(patch).length > 0 || inputDraftDirty);
             setQuickInputsDraft((prev) => ({ ...prev, ...patch }));
-            setNotice(`Pre-filled ${Object.keys(sorData.parameterValues).length} smart parameters from SOR (${sorData.projectTitle}). Click Save to persist.`);
+            setNotice(`Added ${Object.keys(patch).length} source inputs. Existing values were preserved; new values will autosave as drafts.`);
           }}
         />
       )}

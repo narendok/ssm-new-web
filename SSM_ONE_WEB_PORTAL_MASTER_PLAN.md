@@ -1,5 +1,7 @@
 # SSM One - Web Portal Implementation Plan
 
+> Latest decision and evidence checkpoint: see section 15 of [the consolidated handoff](docs/ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md). Its 26 October decisions supersede older UI alternatives; its completion ledger distinguishes tested changes, live deployment and outstanding acceptance. The final prompt in that file remains the one execution prompt.
+
 ## Plan Boundary
 
 This document is the detailed implementation subplan for the SSM One web portal and backend. The cross-platform authority is the [SSM-new root master plan](../SSM_ONE_MASTER_PLAN.md); this web plan must follow its shared department names, platform contracts, delivery gates, and acceptance rules. It specifies the portal architecture, operational flows, data schemas, department ownership, document controls, and web delivery roadmap.

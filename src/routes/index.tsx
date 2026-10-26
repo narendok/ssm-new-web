@@ -15,6 +15,10 @@ import { DocumentUploadPilotDialog, type UploadDraft } from "@/components/Docume
 import { assertUploadContextCurrent, sourceGerberPackages, type UploadScope, type UploadType, type SourcePackage } from "@/lib/document-upload-pilot";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
 import { SharedOperationalWorkspace } from "@/components/SharedOperationalWorkspace";
+import { getSharedTestWorkspace, mutateSharedTestWorkspace } from "@/lib/shared-test.functions";
+import { mutateProjectInputs } from "@/lib/project-inputs.functions";
+import { PROJECT_INPUT_PARAMETERS } from "@/lib/project-inputs";
+import { importSharedSor, type SorImportRun } from "@/lib/sor-import-flow";
 import { SharedPortalSearch } from "@/components/SharedPortalSearch";
 import { useBusinessDate } from "@/hooks/use-business-date";
 import { SharedTestWorkspace } from "@/components/SharedTestWorkspace";
@@ -2245,6 +2249,10 @@ export const Route = createFileRoute("/")({
 function Portal() {
   const [portal, setPortal] = useState<PortalState | null>(null);
   const getTestMembershipFn = useServerFn(getTestMembership);
+  const loadSorWorkspace = useServerFn(getSharedTestWorkspace);
+  const writeSorRecord = useServerFn(mutateSharedTestWorkspace);
+  const writeSorInputs = useServerFn(mutateProjectInputs);
+  const sorRun = useRef<SorImportRun | null>(null);
   const [testMembership, setTestMembership] = useState<TestMembership | null>(null);
   const [testAuthReady, setTestAuthReady] = useState(false);
   const [testAuthError,setTestAuthError]=useState<string|null>(null);
@@ -2396,6 +2404,7 @@ function Portal() {
   const [createInitialValues, setCreateInitialValues] = useState<Record<string, string> | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [globalSorOpen, setGlobalSorOpen] = useState(false);
+  const [analysisSourceId, setAnalysisSourceId] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | null>(null);
   const [departmentContext, setDepartmentContext] = useState<string | null>(() => {
     if ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId) {
@@ -2960,7 +2969,7 @@ function Portal() {
         ...(enquiry ? { enquiriesOpportunities: [salesEnquiryFromRecord(record, state.customersRegistry ?? []), ...(state.enquiriesOpportunities ?? [])] } : {}),
       };
     });
-    if (!saved) return;
+    if (!saved) throw new Error("Record was not saved. Your draft is preserved.");
     if (input.type === "Project") {
       setSelectedProjectId(record.reference);
       setProjectScopes(current => ({ ...current, [input.area]: record.reference }));
@@ -2972,6 +2981,21 @@ function Portal() {
     }
     setModal(null);
     announce(`${record.reference} created.`);
+  };
+  const handleSalesIntake: NonNullable<React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onSubmitIntake"]> = async data => {
+    if (data.mode === "convert" && data.enquiryIdToConvert) {
+      const dispatched = await handleDispatchFeasibility(data.enquiryIdToConvert, data.dispatchFeasibility ? data.feasibilityDepts : ["SAL", "FIN"], data.targetClosureDate);
+      if (!dispatched) throw new Error("Feasibility dispatch was not saved.");
+      return;
+    }
+    await addRecord({
+      area: "sales", type: data.mode === "enquiry" ? "Enquiry" : "Opportunity", title: data.title,
+      notes: data.scopeSummary, status: data.dispatchFeasibility ? "In review" : "Draft", priority: "High",
+      fields: { customer: data.customerName, customerCode: data.customerCode, contactPerson: data.spocName,
+        email: data.spocEmail, targetVolume: data.targetVolume, targetDate: data.targetClosureDate,
+        projectTrack: data.track, feasibilityDepartments: data.feasibilityDepts.join(", "),
+        ...(data.parameterValues ? { smartParameters: JSON.stringify(data.parameterValues) } : {}) },
+    });
   };
   const updateTask = async (taskId: string, patch: Partial<RecordItem>, action: string) => {
     if (persona.kind === "client") {
@@ -3459,7 +3483,7 @@ function Portal() {
                   : `Executive Admin · ${active.short} Department Access`}
               </p>
             </button>
-            {testMembership && <HeaderAction label="Shared TEST records" icon={Layers} onClick={() => {setSharedTestInitialTab("Tasks"); setShowSharedTestWorkspace(true);}} />}
+            {testMembership?.role === "admin" && <HeaderAction label="Data tools" icon={Layers} onClick={() => {setSharedTestInitialTab("Tasks"); setShowSharedTestWorkspace(true);}} />}
             <PersonaSwitcher
               persona={persona}
               onSelect={switchPersona}
@@ -3512,7 +3536,7 @@ function Portal() {
           {persona.kind === "client" ? (
             <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
           ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","index"].includes(view) ? (
- <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} initialProjectScope={view === "project" ? selectedProjectId : undefined} darkMode={darkMode} onLogout={handleLogout}/>
+ <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} initialProjectScope={view === "project" ? selectedProjectId : undefined} recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)} onOpenInputs={() => setView("analysis")} darkMode={darkMode} onLogout={handleLogout}/>
           ) : view === "departments" ? (
             <CommonDepartmentSearchView
               currentDepartment={adminDepartment}
@@ -3550,8 +3574,19 @@ function Portal() {
             </section>
           ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") && (view === "project" || view === "queue" || view === "summary" || view === "records" || view === "deliverables") ? (
             <DepartmentProjectWorkspace key={`${persona.id}:${activeDepartmentScope}:${view}`}
+              salesPipeline={{
+                customers: portal.customersRegistry ?? defaultCustomers,
+                enquiries: portal.enquiriesOpportunities ?? defaultEnquiriesOpportunities,
+                onOpenNewEnquiry: () => handleOpenCreate("Enquiry"),
+                onOpenCustomerRegister: () => setCustomerRegisterOpen(true),
+                onOpenFeasibilityGate: projectCode => { setSelectedProjectId(projectCode); setAi4tInitialTab("feasibility"); setAi4tOpen(true); },
+                onSendForFeasibility: enquiry => setFeasibilityDispatchEnquiry(enquiry),
+                onSubmitIntake: handleSalesIntake,
+                onAddCustomer: handleCustomerCreated,
+              }}
               initialTab={view === "records" ? "records" : view === "deliverables" ? "deliverables" : undefined}
               recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
+              onOpenInputs={() => setView("analysis")}
               departmentCode={active.short} departmentName={active.name} lead={leadName}
               records={leadRecords} projects={leadProjects} documents={scopedDocuments} sharedTestMembership={testMembership ?? undefined}
               approvals={portal.approvals.map(approvalScope).filter(approval => approvalInDepartment(approval, activeDepartmentScope))}
@@ -3587,7 +3622,7 @@ function Portal() {
               onLog={log}
             />
           ) : view === "analysis" ? (
-            testMembership ? <SharedProjectAnalysis membership={testMembership} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} /> : <ProjectAnalysisOverview
+            testMembership ? <SharedProjectAnalysis membership={testMembership} initialSourceId={analysisSourceId} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} /> : <ProjectAnalysisOverview
                 key={persona.id}
                 projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")}
                 records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords}
@@ -3927,6 +3962,8 @@ function Portal() {
             />
           ) : (
             <DepartmentWorkspace
+              onSubmitIntake={handleSalesIntake}
+              onAddCustomer={handleCustomerCreated}
               area={active}
               records={activeRecords.filter(
                 (record) =>
@@ -4246,26 +4283,42 @@ function Portal() {
       {globalSorOpen && (
         <SmartSorImporterModal
           isOpen={globalSorOpen}
-          onClose={() => setGlobalSorOpen(false)}
+          onClose={() => {setGlobalSorOpen(false); sorRun.current = null;}}
           onImportSor={async (parsedSor) => {
+            if (testMembership) {
+              if (testMembership.isClient || (testMembership.role !== "admin" && (testMembership.role !== "department_lead" || testMembership.departmentCode !== "SAL"))) throw new Error("Sales or Admin must create opportunities. Use Inputs & Feasibility to review your department's existing projects.");
+              const workspace = await loadSorWorkspace();
+              const departmentIds = Object.fromEntries(workspace.departments.map(d => [d.code, d.id]));
+              sorRun.current ||= { signature: JSON.stringify(parsedSor), recordRequest: crypto.randomUUID(), approvalRequests: {} };
+              const sourceId = await importSharedSor(parsedSor, sorRun.current, departmentIds["SAL"] || "", departmentIds, new Set(PROJECT_INPUT_PARAMETERS.map(p => p.id)), {
+                createRecord: async (payload, requestId) => await writeSorRecord({data: {action: "create_record", payload, requestId}}) as {id?: string},
+                createSheet: sourceId => writeSorInputs({data: {action: "create", payload: {sourceId, scope: "Client"}}}),
+                saveInput: payload => writeSorInputs({data: {action: "input", payload}}),
+                requestReview: (recordId, departmentId, requestId) => writeSorRecord({data: {action: "request_approval", requestId, payload: {record_id: recordId, reviewer_department_id: departmentId}}}),
+              });
+              sorRun.current = null;
+              setAnalysisSourceId(sourceId);
+              announce("Opportunity, draft inputs and selected department review requests saved to your shared account. No project was created.");
+              setView("analysis");
+              return;
+            }
             const at = now();
-            const projectCode = parsedSor.templateId === "sor-readymade-obd2" ? "PRJ-RMS-001" : "PRJ-TATA-EV-001";
             const newOpp: RecordItem = {
               id: createId(),
-              reference: "OPP-" + projectCode.replace("PRJ-", "") + "-" + Date.now().toString().slice(-4),
+              reference: "OPP-SOR-" + createId().slice(0,8),
               area: "sales",
               departmentId: findAreaDepartment(portal.departments, "sales")?.id,
               type: "Opportunity",
               title: parsedSor.projectTitle || "New Opportunity from SOR",
-              notes: parsedSor.rawSorText ? parsedSor.rawSorText.slice(0, 500) : "Imported from Statement of Requirements (SOR)",
+              notes: parsedSor.scopeSummary || parsedSor.rawSnippet || "",
               status: "In review",
               priority: "High",
               createdAt: at,
               updatedAt: at,
               fields: {
-                customer: parsedSor.customerName || "Customer",
-                annualVolume: parsedSor.targetVolume ? String(parsedSor.targetVolume) : "1000",
-                smartParameters: JSON.stringify(parsedSor.smartParameters || {}),
+                customer: parsedSor.customerName,
+                annualVolume: parsedSor.targetVolume,
+                smartParameters: JSON.stringify(parsedSor.parameterValues),
                 requiredDepartments: (parsedSor.feasibilityDepartments || []).join(","),
               },
             };
@@ -6948,6 +7001,8 @@ function CrossDepartmentSyncHub({ onClose }: { onClose: () => void }) {
 }
 
 function DepartmentWorkspace({
+  onSubmitIntake,
+  onAddCustomer,
   area,
   records,
   allRecords,
@@ -6983,6 +7038,8 @@ function DepartmentWorkspace({
   onAddTeamMember,
   allTeamMembers,
 }: {
+  onSubmitIntake?: React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onSubmitIntake"];
+  onAddCustomer?: React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onAddCustomer"];
   area: (typeof areas)[number];
   records: RecordItem[];
   allRecords: RecordItem[];
@@ -7160,36 +7217,8 @@ function DepartmentWorkspace({
             onOpenNewTask={() => onCreate("Task")}
             onOpenAssetCatalog={() => onOpenAssetCatalog?.()}
             onConfigureModularAssets={(projectCode) => onConfigureModularAssets?.(projectCode)}
-            onSubmitIntake={async (data) => {
-              if (data.mode === "convert" && data.enquiryIdToConvert) {
-                await handleDispatchFeasibility(
-                  data.enquiryIdToConvert,
-                  data.dispatchFeasibility ? data.feasibilityDepts : ["SAL", "FIN"],
-                  data.targetClosureDate
-                );
-              } else {
-                await addRecord({
-                  area: "sales",
-                  type: data.mode === "enquiry" ? "Enquiry" : "Opportunity",
-                  title: data.title,
-                  notes: data.scopeSummary,
-                  status: data.dispatchFeasibility ? "In review" : "Draft",
-                  priority: "High",
-                  fields: {
-                    customer: data.customerName,
-                    customerCode: data.customerCode,
-                    contactPerson: data.spocName,
-                    email: data.spocEmail,
-                    targetVolume: data.targetVolume,
-                    targetDate: data.targetClosureDate,
-                    projectTrack: data.track,
-                    feasibilityDepartments: (data.feasibilityDepts || []).join(", "),
-                    ...(data.parameterValues ? { smartParameters: JSON.stringify(data.parameterValues) } : {}),
-                  },
-                });
-              }
-            }}
-            onAddCustomer={handleCustomerCreated}
+            {...(onSubmitIntake ? { onSubmitIntake } : {})}
+            onAddCustomer={onAddCustomer}
           />
           {renderCoordinationCenter()}
         </section>

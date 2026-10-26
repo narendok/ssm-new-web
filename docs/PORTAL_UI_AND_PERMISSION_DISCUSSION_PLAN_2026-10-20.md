@@ -211,3 +211,7 @@ No UI hiding alone establishes security. Existing backend TEST restrictions curr
 | Actual relative path | Project/scope | Owner department | Record/file type | Stage | Revision/baseline | Access grant / reference audience | Linked task/source | Current status / gaps |
 |---|---|---|---|---|---|---|---|---|
 | Awaiting user folder | | | | | | | | |
+
+## 26 October authoritative addendum
+
+Latest decisions and implementation evidence are consolidated in section 15 of [the single handoff](ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md). In particular use Today / Tomorrow-Planned with collapsed Completed, not the older three-column execution row. Inputs & Feasibility uses one canonical shared sheet, source-only imports, controlled departmental edits and scoped recoverable drafts. Earlier discussion alternatives do not override these later user decisions.

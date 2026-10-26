@@ -1,5 +1,4 @@
 import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/ResponsiveFilterBar";
-import { SmartSorImporterModal } from "./SmartSorImporterModal";
 import { SalesEnquiriesAndOpportunities, defaultCustomers, defaultEnquiriesOpportunities } from "./SalesWorkspaceAndCustomerRegister";
 import { Sparkles } from "lucide-react";
 import { matchesWorkspaceDocument } from "@/lib/sidebar-selection";
@@ -40,6 +39,7 @@ type WorkspaceDocument = {
 };
 
 type Props = {
+  salesPipeline?: React.ComponentProps<typeof SalesEnquiriesAndOpportunities> | undefined;
   departmentCode: string;
   departmentName: string;
   lead: string;
@@ -55,6 +55,7 @@ type Props = {
   initialTab?: "overview" | "tasks" | "deliverables" | "approvals" | "records" | "team" | undefined;
   onProjectChange: (value: string) => void;
   onCreateRecord: () => void;
+  onOpenInputs?: (() => void) | undefined;
   onCreateDeliverable?: (() => void) | undefined;
   onCreateProject?: (() => void) | undefined;
   onOpenRecord: (id: string) => void;
@@ -92,7 +93,6 @@ export function DepartmentProjectWorkspace(props: Props) {
     ...sharedDocs.filter((sd) => !props.documents.some((d) => d.id === sd.id || d.title === sd.title)),
   ];
   const isSalesDept = departmentCode.toUpperCase() === "SAL";
-  const [sorModalOpen, setSorModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "tasks" | "deliverables" | "approvals" | "records" | "team" | "sales-pipeline">(
     props.initialTab ?? (isSalesDept ? "sales-pipeline" : "overview")
   );
@@ -155,12 +155,13 @@ export function DepartmentProjectWorkspace(props: Props) {
             {props.onCreateProject && <button type="button" onClick={props.onCreateProject} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold">New Project</button>}
             <button
               type="button"
-              onClick={() => setSorModalOpen(true)}
+              onClick={props.onOpenInputs}
+              disabled={!props.onOpenInputs}
               className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-xs hover:bg-primary/20 transition-colors cursor-pointer"
-              title="Smart SOR Importer: Import and parse customer Statement of Requirements"
+              title="Open project inputs and feasibility; the input coordinator can import requirements there"
             >
               <Sparkles className="size-3.5" />
-              <span>Smart SOR Importer</span>
+              <span>Inputs & Feasibility</span>
             </button>
             <button
               type="button"
@@ -274,13 +275,7 @@ export function DepartmentProjectWorkspace(props: Props) {
       {/* SUBVIEW 0: SALES PIPELINE (FOR SALES DEPT) */}
       {isSalesDept && activeTab === "sales-pipeline" && (
         <div className="space-y-4">
-          <SalesEnquiriesAndOpportunities
-            customers={defaultCustomers}
-            enquiries={defaultEnquiriesOpportunities}
-            onOpenNewEnquiry={props.onCreateRecord}
-            onOpenFeasibilityGate={() => {}}
-            onSendForFeasibility={() => {}}
-          />
+          {props.salesPipeline ? <SalesEnquiriesAndOpportunities {...props.salesPipeline} /> : <p className="text-xs text-muted-foreground">Open the Sales workspace to manage intake.</p>}
         </div>
       )}
 
@@ -699,15 +694,6 @@ export function DepartmentProjectWorkspace(props: Props) {
             )}
           </div>
         </section>
-      )}
-      {sorModalOpen && (
-        <SmartSorImporterModal
-          isOpen={sorModalOpen}
-          onClose={() => setSorModalOpen(false)}
-          onImportSor={(parsedSor) => {
-            setSorModalOpen(false);
-          }}
-        />
       )}
     </main>
   );

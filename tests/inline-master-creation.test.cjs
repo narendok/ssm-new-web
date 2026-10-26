@@ -84,6 +84,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261025110000_saved_lifecycle_disposition",
     "20261025111644_project_input_feasibility_sheet",
     "20261025152001_link_approved_input_baseline",
+    "20261026090000_preproject_sales_intake",
   ];
 
   for (const name of initialMigrations) {
@@ -183,6 +184,16 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     })
   ).id;
   assert.ok(project, "Project must be created");
+
+  // Pre-project intake must remain independent of project creation, with Sales authority enforced.
+  const preProjectPayload = {record_type:"Opportunity",title:"Pre-project feasibility intake",reference:"HLPL-GEN-SAL-OPP-PREPROJECT-01",project_id:null,fields:{revision:"01"}};
+  const projectCount = Number((await db.query("SELECT count(*) AS n FROM operational_records WHERE record_type='Project'")).rows[0].n);
+  const opportunity = await call(salLead,"create_record",preProjectPayload,uuid(1101));
+  assert.ok(opportunity.id);
+  assert.equal((await call(salLead,"create_record",preProjectPayload,uuid(1101))).id,opportunity.id,"Retry returns original opportunity");
+  assert.equal(Number((await db.query("SELECT count(*) AS n FROM operational_records WHERE record_type='Project'")).rows[0].n),projectCount,"Intake creates no dummy project");
+  await assert.rejects(call(hwLead,"create_record",{...preProjectPayload,reference:"HLPL-GEN-SAL-OPP-DENIED-01"}),/PREPROJECT_SALES_AUTHORITY_REQUIRED/);
+  await assert.rejects(call(hwLead,"create_record",{...preProjectPayload,record_type:"Schematic",reference:"HLPL-GEN-EHW-SCH-DENIED-01"}),/PROJECT_REQUIRED/);
 
   // 2. Behavioral verification: Authenticated Supplier creation by PUR with stable request ID
   const stableSupplierRequestId = uuid(101);

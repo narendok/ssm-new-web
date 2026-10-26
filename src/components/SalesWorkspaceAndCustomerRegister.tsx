@@ -1,5 +1,5 @@
 import { businessDate } from "@/lib/business-date";
-import { useState, useId } from "react";
+import { useState, useId, useEffect } from "react";
 import { SmartSorImporterModal } from "./SmartSorImporterModal";
 import type { ParsedSorResult } from "@/lib/sor-parser";
 import {
@@ -1258,7 +1258,7 @@ export function UnifiedSalesIntakeModal({
 }: {
   isOpen: boolean;
   initialMode?: "enquiry" | "opportunity" | "convert";
-  initialEnquiryId?: string;
+  initialEnquiryId?: string | undefined;
   customers: CustomerRecord[];
   enquiries: EnquiryOpportunity[];
   onClose: () => void;
@@ -1272,12 +1272,13 @@ export function UnifiedSalesIntakeModal({
     scopeSummary: string;
     targetVolume: string;
     targetClosureDate: string;
-    track: "turnkey" | "software" | "ready_made";
+    track: "turnkey" | "software" | "firmware" | "ready_made";
     dispatchFeasibility: boolean;
     feasibilityDepts: string[];
-    enquiryIdToConvert?: string;
+    enquiryIdToConvert?: string | undefined;
+    parameterValues?: Record<string, string> | undefined;
   }) => Promise<void>;
-  onAddCustomer?: (customer: CustomerRecord) => void;
+  onAddCustomer?: ((customer: CustomerRecord) => void) | undefined;
 }) {
   const [mode, setMode] = useState<"enquiry" | "opportunity" | "convert">(initialMode);
   const [selectedEnquiryId, setSelectedEnquiryId] = useState(initialEnquiryId || "");
@@ -1379,7 +1380,7 @@ export function UnifiedSalesIntakeModal({
         spocEmail: currentCustomer.spocEmail,
         scopeSummary: scopeSummary.trim(),
         targetVolume: targetVolume.trim(),
-        targetClosureDate,
+        targetClosureDate: targetClosureDate || "",
         track,
         dispatchFeasibility: mode !== "enquiry" && dispatchFeasibility,
         feasibilityDepts: selectedDepts,
@@ -1745,16 +1746,17 @@ export function SalesEnquiriesAndOpportunities({
     scopeSummary: string;
     targetVolume: string;
     targetClosureDate: string;
-    track: "turnkey" | "software" | "ready_made";
+    track: "turnkey" | "software" | "firmware" | "ready_made";
     dispatchFeasibility: boolean;
     feasibilityDepts: string[];
-    enquiryIdToConvert?: string;
+    enquiryIdToConvert?: string | undefined;
+    parameterValues?: Record<string, string> | undefined;
   }) => Promise<void>;
-  onAddCustomer?: (customer: CustomerRecord) => void;
+  onAddCustomer?: ((customer: CustomerRecord) => void) | undefined;
 }) {
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [sorImporterOpen, setSorImporterOpen] = useState(false);
-  const [sorEnquiryTarget, setSorEnquiryTarget] = useState<CustomerEnquiry | undefined>(undefined);
+  const [sorEnquiryTarget, setSorEnquiryTarget] = useState<EnquiryOpportunity | undefined>(undefined);
   const [intakeModalMode, setIntakeModalMode] = useState<"enquiry" | "opportunity" | "convert">("opportunity");
   const [intakeEnquiryId, setIntakeEnquiryId] = useState<string | undefined>(undefined);
   const [filterTab, setFilterTab] = useState<
@@ -2236,13 +2238,15 @@ export function SalesEnquiriesAndOpportunities({
               await onSubmitIntake({
                 mode: "opportunity",
                 title: parsedSor.projectTitle || "New Opportunity from SOR",
-                customerName: parsedSor.customerName || "Customer",
-                customerCode: "CUST-SOR",
-                spocName: "Customer Lead",
-                spocEmail: "contact@customer.com",
-                scopeSummary: parsedSor.rawSorText ? parsedSor.rawSorText.slice(0, 300) : "Imported from Statement of Requirements (SOR)",
-                annualVolume: parsedSor.targetVolume ? Number(parsedSor.targetVolume) : 1000,
-                targetClosureDate: new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0],
+                customerName: parsedSor.customerName,
+                customerCode: parsedSor.customerCode,
+                spocName: parsedSor.spocName,
+                spocEmail: parsedSor.spocEmail,
+                scopeSummary: parsedSor.scopeSummary || parsedSor.rawSnippet || "",
+                targetVolume: parsedSor.targetVolume,
+                track: parsedSor.projectTrack,
+                parameterValues: parsedSor.parameterValues,
+                targetClosureDate: parsedSor.targetClosureDate,
                 dispatchFeasibility: true,
                 feasibilityDepts: parsedSor.feasibilityDepartments && parsedSor.feasibilityDepartments.length > 0
                   ? parsedSor.feasibilityDepartments

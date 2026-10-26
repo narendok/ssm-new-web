@@ -175,7 +175,7 @@ export function SmartParameterField({
             <span>Agreed Baseline Value</span>
             {inputDraft.finalValue && (
               <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5 text-[9px]">
-                <Check className="size-2.5" /> Locked
+                <Check className="size-2.5" /> Value entered
               </span>
             )}
           </span>

@@ -25,8 +25,9 @@ interface SmartSorImporterModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImportSor: (sorData: ParsedSorResult) => Promise<void> | void;
-  initialEnquiryTitle?: string;
-  initialCustomerName?: string;
+  initialEnquiryTitle?: string | undefined;
+  initialCustomerName?: string | undefined;
+  purpose?: "opportunity" | "inputs";
 }
 
 export function SmartSorImporterModal({
@@ -35,15 +36,17 @@ export function SmartSorImporterModal({
   onImportSor,
   initialEnquiryTitle,
   initialCustomerName,
+  purpose = "opportunity",
 }: SmartSorImporterModalProps) {
-  const [activeTab, setActiveTab] = useState<"templates" | "paste" | "upload">("templates");
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("sor-tata-ev-telematics");
+  const [activeTab, setActiveTab] = useState<"templates" | "paste" | "upload">("paste");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [rawText, setRawText] = useState("");
   const [parsed, setParsed] = useState<ParsedSorResult>(() => {
-    const defaultTemplate = STANDARD_SOR_TEMPLATES[0];
-    return defaultTemplate ? { ...defaultTemplate.parsed } : parseSorText("");
+    return { ...parseSorText(""), projectTitle: initialEnquiryTitle || "", customerName: initialCustomerName || "" };
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [needsParsing, setNeedsParsing] = useState(false);
 
   if (!isOpen) return null;
 
@@ -51,24 +54,37 @@ export function SmartSorImporterModal({
     setSelectedTemplateId(template.id);
     setParsed({ ...template.parsed });
     setRawText(template.content);
+    setNeedsParsing(false);
+    setError("");
   };
 
   const handleParseCustomText = () => {
     if (!rawText.trim()) return;
     const result = parseSorText(rawText);
     setParsed(result);
+    setSelectedTemplateId("");
+    setNeedsParsing(false);
+    setError("");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 1024 * 1024 || !/\.(txt|csv|json)$/i.test(file.name)) {
+      setError("Choose a text, CSV or JSON requirements export up to 1 MB.");
+      return;
+    }
     const reader = new FileReader();
+    reader.onerror = () => setError("The file could not be read. Your current input is preserved.");
     reader.onload = (event) => {
       const content = event.target?.result as string;
       if (content) {
         setRawText(content);
         const result = parseSorText(content);
         setParsed(result);
+        setNeedsParsing(false);
+        setSelectedTemplateId("");
+        setError("");
       }
     };
     reader.readAsText(file);
@@ -99,10 +115,14 @@ export function SmartSorImporterModal({
   };
 
   const handleApply = async () => {
+    if (isSubmitting || needsParsing) return;
     setIsSubmitting(true);
+    setError("");
     try {
       await onImportSor(parsed);
       onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed. Your input is preserved; retry when available.");
     } finally {
       setIsSubmitting(false);
     }
@@ -154,7 +174,7 @@ export function SmartSorImporterModal({
                 }`}
               >
                 <FileSpreadsheet className="size-3.5" />
-                OEM Standard Templates
+                Sample Templates
               </button>
               <button
                 type="button"
@@ -194,7 +214,7 @@ export function SmartSorImporterModal({
           {activeTab === "templates" && (
             <div className="space-y-2.5">
               <label className="text-xs font-bold text-foreground">
-                Select Standard Automotive / Commercial Spec Sheet:
+                Select sample data for testing (not a customer-approved specification):
               </label>
               <div className="grid gap-2.5 sm:grid-cols-3">
                 {STANDARD_SOR_TEMPLATES.map((tmpl) => (
@@ -240,7 +260,7 @@ export function SmartSorImporterModal({
               <textarea
                 rows={5}
                 value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
+                onChange={(e) => { setRawText(e.target.value); setNeedsParsing(true); setSelectedTemplateId(""); }}
                 placeholder="Paste client SOR text with voltage, IP rating, CAN lines, temperature, cellular modem, and volume..."
                 className="w-full rounded-lg border border-border bg-background p-3 font-mono text-xs text-foreground focus:ring-1 focus:ring-primary"
               />
@@ -342,7 +362,7 @@ export function SmartSorImporterModal({
                   </select>
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-muted-foreground">Target Annual Volume</label>
+                <label className="text-[11px] font-bold text-muted-foreground">Quantity / volume (include period)</label>
                   <input
                     type="text"
                     value={parsed.targetVolume}
@@ -440,7 +460,7 @@ export function SmartSorImporterModal({
         {/* Footer Actions */}
         <div className="flex items-center justify-between border-t border-border px-6 py-3.5 bg-muted/20">
           <p className="text-xs text-muted-foreground">
-            Creates Opportunity, initializes Project Analysis sheet, and alerts {parsed.feasibilityDepartments.length} teams.
+            {purpose === "inputs" ? "Adds source inputs only. Agreed values and approvals stay unchanged." : "Review extracted values before saving. Missing facts remain blank."}
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -454,14 +474,15 @@ export function SmartSorImporterModal({
             <button
               type="button"
               onClick={handleApply}
-              disabled={isSubmitting || !parsed.projectTitle}
+              disabled={isSubmitting || needsParsing || (purpose === "inputs" ? !Object.keys(parsed.parameterValues).length : !parsed.projectTitle.trim())}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs transition hover:opacity-90 disabled:opacity-50"
             >
               <Sparkles className="size-3.5" />
-              {isSubmitting ? "Creating Opportunity..." : "Create Opportunity & Dispatch Feasibility"}
+              {isSubmitting ? "Applying..." : purpose === "inputs" ? "Apply source inputs" : "Create opportunity"}
             </button>
           </div>
         </div>
+        {error && <p role="alert" className="px-6 pb-3 text-xs text-destructive">{error}</p>}
       </div>
     </div>
   );

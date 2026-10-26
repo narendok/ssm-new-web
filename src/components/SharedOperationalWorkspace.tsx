@@ -36,6 +36,9 @@ export function SharedOperationalWorkspace({
   onLogout,
   adminDepartment,
   initialProjectScope,
+  recordTypeFilter,
+  onClearRecordTypeFilter,
+  onOpenInputs,
 }: {
   membership: TestMembership;
   view: string;
@@ -43,6 +46,9 @@ export function SharedOperationalWorkspace({
   onLogout: () => Promise<void>;
   adminDepartment?: string;
   initialProjectScope?: string | undefined;
+  recordTypeFilter?: string | null | undefined;
+  onClearRecordTypeFilter?: (() => void) | undefined;
+  onOpenInputs?: (() => void) | undefined;
 }) {
   const load = useServerFn(getSharedTestWorkspace),
     coordination = useServerFn(getCoordination),
@@ -577,6 +583,9 @@ export function SharedOperationalWorkspace({
           approvals={approvals}
           team={team}
           projectScope={scope}
+          recordTypeFilter={recordTypeFilter}
+          onClearRecordTypeFilter={onClearRecordTypeFilter}
+          onOpenInputs={onOpenInputs}
           onProjectChange={setScope}
           initialTab={
             view === "assignee"

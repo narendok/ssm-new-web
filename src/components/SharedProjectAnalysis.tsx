@@ -21,9 +21,11 @@ export const getCoordination = createServerFn({ method: "GET" })
 export function SharedProjectAnalysis({
   membership,
   onOpenProject,
+  initialSourceId,
 }: {
   membership: TestMembership;
   onOpenProject?: ((project: AnalysisRecord) => void) | undefined;
+  initialSourceId?: string | undefined;
 }) {
   const load = useServerFn(getCoordination);
   const query = useQuery({
@@ -61,7 +63,7 @@ export function SharedProjectAnalysis({
       )}
       <ProjectAnalysisOverview
         showReferenceScenarios={false}
-        renderProjectInputs={projectId=><ProjectInputsWorkspace key={projectId} membership={membership} sources={serverRecords} initialSourceId={projectId}/>}
+        renderProjectInputs={projectId=><ProjectInputsWorkspace key={`${projectId}:${initialSourceId || ""}`} membership={membership} sources={serverRecords} initialSourceId={projectId === "all" ? initialSourceId : projectId}/>}
         projects={serverRecords.filter((r) => r.type === "Project")}
         records={serverRecords}
         documents={serverDocuments}

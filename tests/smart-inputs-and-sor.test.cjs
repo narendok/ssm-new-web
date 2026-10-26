@@ -103,15 +103,43 @@ test('parseSorText extracts structured parameters from raw client text', () => {
   `;
 
   const parsed = parseSorText(rawText);
-  assert.equal(parsed.customerName, 'Tata Motors Limited · EV Fleet Division');
+  assert.equal(parsed.customerName, 'Tata Motors Commercial');
   assert.ok(parsed.parameterValues.system_voltage.includes('24V'));
-  assert.ok(parsed.parameterValues.operating_range.includes('18V – 36V'));
+  assert.equal(parsed.parameterValues.operating_range, '18V - 36V');
   assert.ok(parsed.parameterValues.ip.includes('IP67'));
   assert.ok(parsed.parameterValues.cellular.includes('4G LTE Cat-1'));
   assert.ok(parsed.parameterValues.can.includes('Dual CAN'));
-  assert.ok(parsed.parameterValues.temperature.includes('-40°C to +85°C'));
-  assert.equal(parsed.targetVolume, '35000 units / year');
+  assert.equal(parsed.parameterValues.temperature, '-40 to +85 C');
+  assert.equal(parsed.targetVolume, '35,000 units');
   assert.equal(parsed.feasibilityDepartments.length, 8);
+});
+
+test('SOR extraction leaves unknowns blank and never promotes mentioned requirements to certification', () => {
+  const empty = parseSorText('Discuss an AIS-140 device with a Tata-compatible connector.');
+  assert.deepEqual(empty.parameterValues, {});
+  for (const key of ['customerCode', 'customerName', 'spocName', 'spocEmail', 'projectTitle', 'targetVolume', 'targetClosureDate']) assert.equal(empty[key], '');
+  const source = 'Project: X\nOperating Range: 9V - 32V\nCertifications: AIS-140 required, not yet tested\nExternal Serial Ports: RS485\nVolume: 20 units for pilot';
+  const parsed = parseSorText(source);
+  assert.equal(parsed.parameterValues.operating_range, '9V - 32V');
+  assert.equal(parsed.parameterValues.certifications, 'AIS-140 required, not yet tested');
+  assert.equal(parsed.parameterValues.serial_ports, 'RS485');
+  assert.equal(parsed.targetVolume, '20 units for pilot');
+  assert.equal(parsed.rawSnippet, source);
+  assert.equal(parsed.parameterValues.region, undefined);
+  assert.equal(parsed.parameterValues.system_voltage, undefined);
+});
+
+test('document drafts never fabricate electrical, cost, quantity or compliance facts', () => {
+  const docs = deriveDownstreamDocumentSpecs({});
+  for (const section of Object.values(docs)) for (const [key, value] of Object.entries(section)) if (key !== 'title') assert.equal(value, '');
+});
+
+test('JSON and two-column CSV source exports preserve supplied values without importing approval flags', () => {
+  const json = parseSorText(JSON.stringify({projectTitle:'Internal test',parameterValues:{system_voltage:'24 V',data_security:'Local storage only'},status:'Approved',finalValue:'Not an input'}));
+  assert.equal(json.projectTitle,'Internal test');assert.equal(json.parameterValues.system_voltage,'24 V');
+  assert.equal(json.parameterValues.data_security,'Local storage only');assert.equal(json.parameterValues.finalValue,undefined);
+  const csv = parseSorText('"Project","Pilot"\n"System Voltage","12 V"\n"Volume","35,000 units for pilot"');
+  assert.equal(csv.projectTitle,'Pilot');assert.equal(csv.parameterValues.system_voltage,'12 V');assert.equal(csv.targetVolume,'35,000 units for pilot');
 });
 
 test('SalesWorkspaceAndCustomerRegister and ProjectInputsWorkspace include Smart SOR and SmartParameterField', () => {

@@ -1,6 +1,6 @@
 # SSM One Cross-Platform Master Plan
 
-Last reconciled: 19 October 2026
+Last reconciled: 26 October 2026 — latest decisions/evidence in consolidated handoff section 15
 Status: Active planning baseline. This file is the shared authority for the SSM-new project. Detailed platform documents below implement this plan and must not redefine its cross-platform decisions.
 
 ## Scope and authority
@@ -62,7 +62,7 @@ All 12 departmental requirement points compile into the unified **Contract Revie
 
 ## User-confirmed workflow and UX requirements
 
-- All department roles use a consistent task board: Today / In Progress on the left, Review in its own lane, To Do on the right, and Completed collapsed by default with an expand control. A task appears in one lane only.
+- All department roles use Today and Tomorrow / Planned task columns, priority-first, with Completed collapsed. Overdue unfinished work remains in Today with original due dates. Approvals have a separate queue. This supersedes earlier three/four-column alternatives.
 - Department workspace is one project-aware view. A project selector scopes project identity, tasks, linked documents/references, approvals, and recorded owners to that project while leaving unlinked department records clearly separate.
 - Team, task, approval, reference, and document views default to department-relevant information while retaining explicitly authorized collaboration.
 - Lifecycle gates and document generation must be backed by real persistent records and attributable actions before the portal is described as operational end to end.
@@ -83,3 +83,6 @@ Close a batch only when the exact source revision and changed files are identifi
 ## Latest record-flow verification requirements — 25 October 2026
 
 Read [the consolidated implementation and verification handoff](ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md), especially section 14, before further record-flow implementation. This is the latest scoped user-requirement expansion of this master plan, not a second competing work package. Its latest explicit user decisions supersede conflicting older UI/record-flow alternatives; compatible requirements remain. It contains per-type starting contracts, property/callback dictionaries, role and edge-case verification, 38-family document reconciliation, evidence gates and one final execution prompt. Nothing in a planning table is deployment or standards-certification evidence.
+## 26 October implementation checkpoint
+
+Read section 15 of [the consolidated handoff](ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md) for the complete latest requirement/evidence ledger and remaining gates. The October 19 delivery gate above is historical, not the current build or deployment status. This handoff is one work package with one final execution prompt.
