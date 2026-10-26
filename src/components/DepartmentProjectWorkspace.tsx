@@ -1,4 +1,7 @@
 import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/ResponsiveFilterBar";
+import { SmartSorImporterModal } from "./SmartSorImporterModal";
+import { SalesEnquiriesAndOpportunities, defaultCustomers, defaultEnquiriesOpportunities } from "./SalesWorkspaceAndCustomerRegister";
+import { Sparkles } from "lucide-react";
 import { matchesWorkspaceDocument } from "@/lib/sidebar-selection";
 import { getSharedTestWorkspace } from "@/lib/shared-test.functions";
 import type { TestMembership } from "@/lib/test-auth.functions";
@@ -88,8 +91,10 @@ export function DepartmentProjectWorkspace(props: Props) {
     ...props.documents,
     ...sharedDocs.filter((sd) => !props.documents.some((d) => d.id === sd.id || d.title === sd.title)),
   ];
-  const [activeTab, setActiveTab] = useState<"overview" | "tasks" | "deliverables" | "approvals" | "records" | "team">(
-    props.initialTab ?? "overview"
+  const isSalesDept = departmentCode.toUpperCase() === "SAL";
+  const [sorModalOpen, setSorModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"overview" | "tasks" | "deliverables" | "approvals" | "records" | "team" | "sales-pipeline">(
+    props.initialTab ?? (isSalesDept ? "sales-pipeline" : "overview")
   );
 
   useEffect(() => {
@@ -148,6 +153,15 @@ export function DepartmentProjectWorkspace(props: Props) {
             <div className="min-w-0 max-w-72"><CompactFilterSelect label="Workspace project" shortLabel="Project" icon={FolderKanban} value={projectScope} onChange={props.onProjectChange} options={[{value:"all",label:"All projects"},...(!all && !project ? [{value:projectScope,label:"Selected project unavailable"}] : []),...projects.map(item=>({value:item.reference,label:`${item.reference} · ${item.title}`}))]}/></div>
 
             {props.onCreateProject && <button type="button" onClick={props.onCreateProject} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold">New Project</button>}
+            <button
+              type="button"
+              onClick={() => setSorModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-xs hover:bg-primary/20 transition-colors cursor-pointer"
+              title="Smart SOR Importer: Import and parse customer Statement of Requirements"
+            >
+              <Sparkles className="size-3.5" />
+              <span>Smart SOR Importer</span>
+            </button>
             <button
               type="button"
               onClick={props.onCreateRecord}
@@ -229,6 +243,7 @@ export function DepartmentProjectWorkspace(props: Props) {
       {/* 4. Sub-Navigation Tabs */}
       <nav aria-label="Workspace subviews" className="flex items-center gap-1.5 overflow-x-auto rounded-xl border border-border bg-muted/40 p-1">
         {[
+          ...(isSalesDept ? [{ key: "sales-pipeline", label: "Opportunities & Enquiries", icon: Sparkles }] : []),
           { key: "overview", label: "Overview", icon: LayoutDashboard },
           { key: "tasks", label: `Tasks (${taskRecords.length})`, icon: CheckSquare },
           { key: "deliverables", label: `Project Deliverables (${documents.length})`, icon: FileSpreadsheet },
@@ -255,6 +270,19 @@ export function DepartmentProjectWorkspace(props: Props) {
           );
         })}
       </nav>
+
+      {/* SUBVIEW 0: SALES PIPELINE (FOR SALES DEPT) */}
+      {isSalesDept && activeTab === "sales-pipeline" && (
+        <div className="space-y-4">
+          <SalesEnquiriesAndOpportunities
+            customers={defaultCustomers}
+            enquiries={defaultEnquiriesOpportunities}
+            onOpenNewEnquiry={props.onCreateRecord}
+            onOpenFeasibilityGate={() => {}}
+            onSendForFeasibility={() => {}}
+          />
+        </div>
+      )}
 
       {/* SUBVIEW 1: OVERVIEW */}
       {activeTab === "overview" && (

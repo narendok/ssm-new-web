@@ -141,6 +141,7 @@ export type RoleAwareSidebarProps = {
       | "tickets"
       | "hr_admin"
   ) => void;
+  onOpenSmartSor?: (() => void) | undefined;
   onOpenCustomerRegister?: (() => void) | undefined;
   onOpenAi4tLifecycle?: (() => void) | undefined;
   onOpenProjectAnalysis?: (() => void) | undefined;
@@ -418,6 +419,15 @@ export function RoleAwareSidebar({
             badge: openTaskCounts["sales"],
             isActive: activeArea === "sales",
             onClick: () => handleItemClick(() => onNavigate("sales")),
+          },
+          {
+            id: "adm-sor",
+            label: "Smart SOR Importer",
+            shortLabel: "SOR",
+            icon: Sparkles,
+            badge: "NEW",
+            isActive: view === "sor",
+            onClick: () => handleItemClick(() => (props.onOpenSmartSor ? props.onOpenSmartSor() : onNavigate("sales", "queue"))),
           },
           {
             id: "adm-projects",
@@ -961,6 +971,15 @@ export function RoleAwareSidebar({
               icon: UsersRound,
               isActive: activeArea === "sales" && view === "queue",
               onClick: () => handleItemClick(() => onNavigate("sales", "queue")),
+            },
+            {
+              id: "sales-sor",
+              label: "Smart SOR Importer",
+              shortLabel: "SOR",
+              icon: Sparkles,
+              badge: "Spec",
+              isActive: view === "sor",
+              onClick: () => handleItemClick(() => (props.onOpenSmartSor ? props.onOpenSmartSor() : onNavigate("sales", "queue"))),
             },
             {
               id: "sales-customers",

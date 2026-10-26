@@ -16,6 +16,8 @@ import type { TestMembership } from "@/lib/test-auth.functions";
 import type { AnalysisRecord } from "@/lib/project-analysis-data";
 import { SharedMasterSelect } from "./SharedMasterSelect";
 import { SmartParameterField } from "./SmartParameterField";
+import { SmartSorImporterModal } from "./SmartSorImporterModal";
+import { Sparkles } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 const field = "w-full rounded border border-input bg-background p-2 text-xs";
@@ -93,6 +95,7 @@ export function ProjectInputsWorkspace({
   ),
     [filter, setFilter] = useState(""),
     [section, setSection] = useState("All");
+  const [sorModalOpen, setSorModalOpen] = useState(false);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -357,12 +360,27 @@ export function ProjectInputsWorkspace({
   }
   return (
     <section className="space-y-4" aria-label="Project inputs and feasibility">
-      <div>
-        <h2 className="font-semibold">Inputs & Feasibility</h2>
-        <p className="text-xs text-muted-foreground">
-          Client or internal requirements, departmental assessments and an approved specification
-          baseline. Example hints are not decided values.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-semibold text-base flex items-center gap-2">
+            <span>Inputs & Feasibility</span>
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Client or internal requirements, departmental assessments and an approved specification
+            baseline. Example hints are not decided values.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setSorModalOpen(true)}
+          className="inline-flex items-center gap-1.5 border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 shadow-xs cursor-pointer font-semibold"
+          title="Import OEM Statement of Requirements (SOR) to pre-fill parameters and Opportunity"
+        >
+          <Sparkles className="size-3.5" />
+          <span>Smart SOR Importer</span>
+        </Button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-56 flex-1">
@@ -978,6 +996,26 @@ export function ProjectInputsWorkspace({
           </form>
         </DialogContent>
       </Dialog>
+      {sorModalOpen && (
+        <SmartSorImporterModal
+          isOpen={sorModalOpen}
+          onClose={() => setSorModalOpen(false)}
+          onImportSor={async (sorData) => {
+            const patch: Record<string, { input: string; source: string; finalValue: string }> = {};
+            for (const [key, val] of Object.entries(sorData.parameterValues)) {
+              patch[key] = {
+                input: val,
+                source: `Smart SOR Import · ${sorData.customerName || "Customer Requirements"}`,
+                finalValue: val,
+              };
+            }
+            inputEditGeneration.current++;
+            setInputDraftDirty(true);
+            setQuickInputsDraft((prev) => ({ ...prev, ...patch }));
+            setNotice(`Pre-filled ${Object.keys(sorData.parameterValues).length} smart parameters from SOR (${sorData.projectTitle}). Click Save to persist.`);
+          }}
+        />
+      )}
     </section>
   );
 }

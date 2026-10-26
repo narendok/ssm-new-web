@@ -2393,6 +2393,7 @@ function Portal() {
   const [createType, setCreateType] = useState<string | null>(null);
   const [createInitialValues, setCreateInitialValues] = useState<Record<string, string> | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [globalSorOpen, setGlobalSorOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [departmentContext, setDepartmentContext] = useState<string | null>(() => {
     if ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId) {
@@ -3369,6 +3370,7 @@ function Portal() {
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
+          onOpenSmartSor={() => setGlobalSorOpen(true)}
           sidebarExpanded={sidebarExpanded}
           onToggleExpanded={() => setSidebarExpanded((value) => !value)}
           purchasingSubView={purchasingSubView}
@@ -4038,6 +4040,7 @@ function Portal() {
         <MobileMenu
           recordTypeFilter={recordTypeFilter} onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
+          onOpenSmartSor={() => setGlobalSorOpen(true)}
           onClose={() => setMobileMenu(false)}
           onNavigate={(area, targetView) => {
             navigate(area as AreaId, (targetView as any) ?? "queue");
@@ -11275,6 +11278,7 @@ function MobileMenu({
   recordTypeFilter,
   onRecordTypeFilterChange,
   onNavigateRecordType,
+  onOpenSmartSor,
   onOpenCustomerRegister,
   onOpenAi4tLifecycle,
   onOpenProjectAnalysis,
@@ -11309,6 +11313,7 @@ function MobileMenu({
   recordTypeFilter?: RoleAwareSidebarProps["recordTypeFilter"];
   onRecordTypeFilterChange?: RoleAwareSidebarProps["onRecordTypeFilterChange"];
   onNavigateRecordType?: RoleAwareSidebarProps["onNavigateRecordType"];
+  onOpenSmartSor?: (() => void) | undefined;
   onOpenCustomerRegister?: (() => void) | undefined;
   onOpenAi4tLifecycle?: (() => void) | undefined;
   onOpenProjectAnalysis?: (() => void) | undefined;
@@ -11340,6 +11345,7 @@ function MobileMenu({
           view={view}
           recordTypeFilter={recordTypeFilter} onRecordTypeFilterChange={onRecordTypeFilterChange}
           onNavigateRecordType={onNavigateRecordType}
+          onOpenSmartSor={onOpenSmartSor}
           sidebarExpanded={true}
           isMobile={true}
           onCloseMobile={onClose}
