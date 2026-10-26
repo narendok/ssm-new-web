@@ -40,6 +40,7 @@ type WorkspaceDocument = {
 
 type Props = {
   salesPipeline?: React.ComponentProps<typeof SalesEnquiriesAndOpportunities> | undefined;
+  salesPipelineView?: React.ReactNode;
   departmentCode: string;
   departmentName: string;
   lead: string;
@@ -275,7 +276,7 @@ export function DepartmentProjectWorkspace(props: Props) {
       {/* SUBVIEW 0: SALES PIPELINE (FOR SALES DEPT) */}
       {isSalesDept && activeTab === "sales-pipeline" && (
         <div className="space-y-4">
-          {props.salesPipeline ? <SalesEnquiriesAndOpportunities {...props.salesPipeline} /> : <p className="text-xs text-muted-foreground">Open the Sales workspace to manage intake.</p>}
+          {props.salesPipelineView ?? (props.salesPipeline ? <SalesEnquiriesAndOpportunities {...props.salesPipeline} /> : <p className="text-xs text-muted-foreground">Open the Sales workspace to manage intake.</p>)}
         </div>
       )}
 

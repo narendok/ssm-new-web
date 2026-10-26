@@ -1,6 +1,8 @@
 import { businessDate } from "@/lib/business-date";
 import { useState, useId, useEffect } from "react";
 import { SmartSorImporterModal } from "./SmartSorImporterModal";
+import { InlineCustomerModal as CanonicalCustomerModal } from "./InlineCustomerModal";
+import { SharedMasterSelect } from "./SharedMasterSelect";
 import type { ParsedSorResult } from "@/lib/sor-parser";
 import {
   Users,
@@ -87,12 +89,15 @@ export type EnquiryOpportunity = {
     | "Sent for Feasibility"
     | "Feasibility Complete"
     | "Baseline Locked"
-    | "Project Started";
+    | "Project Started"
+    | "Declined";
   feasibilitySignedDepts: string[];
   totalFeasibilityDepts: number;
+  feasibilityDepartments?: string[] | undefined;
   rfqReference?: string;
   linkedProjectCode?: string;
   modularConfig?: ProjectModularConfiguration | undefined;
+  projectTrack?: "turnkey" | "software" | "firmware" | "ready_made" | undefined;
   createdAt: string;
   updatedAt: string;
 };
@@ -1255,6 +1260,8 @@ export function UnifiedSalesIntakeModal({
   onClose,
   onSubmitIntake,
   onAddCustomer,
+  onCreateCustomer,
+  reviewDepartments,
 }: {
   isOpen: boolean;
   initialMode?: "enquiry" | "opportunity" | "convert";
@@ -1266,6 +1273,7 @@ export function UnifiedSalesIntakeModal({
     mode: "enquiry" | "opportunity" | "convert";
     title: string;
     customerCode: string;
+    customerId?: string | undefined;
     customerName: string;
     spocName: string;
     spocEmail: string;
@@ -1276,26 +1284,26 @@ export function UnifiedSalesIntakeModal({
     dispatchFeasibility: boolean;
     feasibilityDepts: string[];
     enquiryIdToConvert?: string | undefined;
+    expectedUpdatedAt?: string | undefined;
     parameterValues?: Record<string, string> | undefined;
   }) => Promise<void>;
   onAddCustomer?: ((customer: CustomerRecord) => void) | undefined;
+  onCreateCustomer?: ((values: {name:string;contact:string;email:string;operationId:string}) => Promise<CustomerRecord>) | undefined;
+  reviewDepartments?: {code:string;name:string}[] | undefined;
 }) {
+  const defaultReviewers=(track:string)=>(track==="ready_made"?["SAL","FIN"]:["EHW","FW","SW","MECH","PUR","QA","EMF","MMF"]).filter(code=>!reviewDepartments||reviewDepartments.some(d=>d.code===code));
   const [mode, setMode] = useState<"enquiry" | "opportunity" | "convert">(initialMode);
   const [selectedEnquiryId, setSelectedEnquiryId] = useState(initialEnquiryId || "");
-  const [selectedCustomerCode, setSelectedCustomerCode] = useState(customers[0]?.code || "");
+  const [sourceVersion,setSourceVersion]=useState("");
+  const [selectedCustomerCode, setSelectedCustomerCode] = useState("");
+  const [inlineCreatedCustomer,setInlineCreatedCustomer]=useState<CustomerRecord>();
   const [title, setTitle] = useState("");
   const [scopeSummary, setScopeSummary] = useState("");
-  const [targetVolume, setTargetVolume] = useState("50,000 Units / Year");
-  const [targetClosureDate, setTargetClosureDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 30);
-    return d.toISOString().split("T")[0];
-  });
-  const [track, setTrack] = useState<"turnkey" | "software" | "ready_made">("turnkey");
+  const [targetVolume, setTargetVolume] = useState("");
+  const [targetClosureDate, setTargetClosureDate] = useState("");
+  const [track, setTrack] = useState<"turnkey" | "software" | "firmware" | "ready_made">("turnkey");
   const [dispatchFeasibility, setDispatchFeasibility] = useState(true);
-  const [selectedDepts, setSelectedDepts] = useState<string[]>([
-    "EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF", "FIN", "SIT", "HR"
-  ]);
+  const [selectedDepts, setSelectedDepts] = useState<string[]>(()=>defaultReviewers("turnkey"));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [inlineCustomerOpen, setInlineCustomerOpen] = useState(false);
@@ -1307,31 +1315,39 @@ export function UnifiedSalesIntakeModal({
       setSelectedEnquiryId(initialEnquiryId);
       const enq = enquiries.find((e) => e.id === initialEnquiryId);
       if (enq) {
+        setSourceVersion(enq.updatedAt);
         setSelectedCustomerCode(enq.customerCode);
-        setTitle(enq.title.startsWith("Opportunity") ? enq.title : "Opportunity · " + enq.title);
+        setTitle(enq.title);
+        setTrack(enq.projectTrack || "turnkey");
+        setSelectedDepts(defaultReviewers(enq.projectTrack || "turnkey"));
         setScopeSummary(enq.scopeSummary);
-        setTargetVolume(enq.targetVolume || "50,000 Units / Year");
-        if (enq.targetClosureDate) setTargetClosureDate(enq.targetClosureDate);
+        setTargetVolume(enq.targetVolume || "");
+        setTargetClosureDate(enq.targetClosureDate || "");
       }
     }
-  }, [initialMode, initialEnquiryId, enquiries]);
+  }, [initialMode, initialEnquiryId]);
 
   // Handle convert selection
   const handleSelectEnquiryToConvert = (id: string) => {
     setSelectedEnquiryId(id);
     const enq = enquiries.find((e) => e.id === id);
     if (enq) {
+      setSourceVersion(enq.updatedAt);
       setSelectedCustomerCode(enq.customerCode);
-      setTitle(enq.title.startsWith("Opportunity") ? enq.title : "Opportunity · " + enq.title);
+      setTitle(enq.title);
+      setTrack(enq.projectTrack || "turnkey");
+      setSelectedDepts(defaultReviewers(enq.projectTrack || "turnkey"));
       setScopeSummary(enq.scopeSummary);
-      setTargetVolume(enq.targetVolume || "50,000 Units / Year");
-      if (enq.targetClosureDate) setTargetClosureDate(enq.targetClosureDate);
+      setTargetVolume(enq.targetVolume || "");
+      setTargetClosureDate(enq.targetClosureDate || "");
     }
   };
 
-  const currentCustomer = customers.find((c) => c.code === selectedCustomerCode) || customers[0];
+  const selectableCustomers = inlineCreatedCustomer && !customers.some(c=>c.id===inlineCreatedCustomer.id) ? [...customers,inlineCreatedCustomer] : customers;
+  const currentCustomer = selectableCustomers.find((c) => c.code === selectedCustomerCode);
 
-  const allDepts = [
+  const configuredDepts = [
+    { code:"SAL",label:"SAL · Sales",desc:"Commercial scope and client coordination" },
     { code: "EHW", label: "EHW · Hardware", desc: "Schematics, PCB layout & TVS" },
     { code: "FW", label: "FW · Firmware", desc: "Drivers, RTOS kernel & CAN" },
     { code: "SW", label: "SW · Software", desc: "Cloud APIs, Web & Mobile App" },
@@ -1344,6 +1360,7 @@ export function UnifiedSalesIntakeModal({
     { code: "SIT", label: "SIT · Service/IT", desc: "Cloud infra & field telemetry" },
     { code: "HR", label: "HR · HR/Ops", desc: "Staffing & IPC competency" },
   ];
+  const allDepts=reviewDepartments ? reviewDepartments.map(d=>({code:d.code,label:`${d.code} · ${d.name}`,desc:configuredDepts.find(item=>item.code===d.code)?.desc || d.name})) : configuredDepts;
 
   const handleToggleDept = (code: string) => {
     setSelectedDepts((prev) =>
@@ -1362,7 +1379,6 @@ export function UnifiedSalesIntakeModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return setError("Title / Subject is required.");
-    if (!currentCustomer) return setError("Please select or add a customer.");
     if (mode === "convert" && !selectedEnquiryId) return setError("Please select an enquiry to convert.");
     if ((mode === "opportunity" || mode === "convert") && dispatchFeasibility && selectedDepts.length === 0) {
       return setError("Please select at least one department for feasibility analysis or uncheck dispatch.");
@@ -1371,13 +1387,15 @@ export function UnifiedSalesIntakeModal({
     setSubmitting(true);
     setError("");
     try {
+      const original = mode === "convert" ? enquiries.find(e=>e.id===selectedEnquiryId) : undefined;
       await onSubmitIntake({
         mode,
         title: title.trim(),
-        customerCode: currentCustomer.code,
-        customerName: currentCustomer.name,
-        spocName: currentCustomer.spocName,
-        spocEmail: currentCustomer.spocEmail,
+        customerCode: currentCustomer?.code || original?.customerCode || "",
+        ...(currentCustomer ? {customerId:currentCustomer.id} : {}),
+        customerName: currentCustomer?.name || original?.customerName || "",
+        spocName: currentCustomer?.spocName || original?.spocName || "",
+        spocEmail: currentCustomer?.spocEmail || original?.spocEmail || "",
         scopeSummary: scopeSummary.trim(),
         targetVolume: targetVolume.trim(),
         targetClosureDate: targetClosureDate || "",
@@ -1385,6 +1403,7 @@ export function UnifiedSalesIntakeModal({
         dispatchFeasibility: mode !== "enquiry" && dispatchFeasibility,
         feasibilityDepts: selectedDepts,
         enquiryIdToConvert: mode === "convert" ? selectedEnquiryId : undefined,
+        expectedUpdatedAt: mode === "convert" ? sourceVersion : undefined,
       });
       onClose();
     } catch (err: any) {
@@ -1472,7 +1491,7 @@ export function UnifiedSalesIntakeModal({
               >
                 <option value="">Choose an existing enquiry…</option>
                 {enquiries
-                  .filter((e) => e.kind === "enquiry")
+                  .filter((e) => e.kind === "enquiry" && e.status !== "Declined")
                   .map((e) => (
                     <option key={e.id} value={e.id}>
                       {e.reference} · {e.title} ({e.customerName})
@@ -1491,18 +1510,7 @@ export function UnifiedSalesIntakeModal({
               <label className="block font-semibold text-foreground">
                 Customer OEM / Client Account:
               </label>
-              <select
-                aria-label="Select customer"
-                value={selectedCustomerCode}
-                onChange={(e) => setSelectedCustomerCode(e.target.value)}
-                className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs font-medium text-foreground"
-              >
-                {customers.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.code} · {c.name} ({c.cityState || "India"})
-                  </option>
-                ))}
-              </select>
+              <SharedMasterSelect label="Customer" value={selectedCustomerCode} onChange={setSelectedCustomerCode} options={selectableCustomers.map(c=>({value:c.code,label:`${c.name} · ${c.code}`}))}/>
             </div>
             <div>
               <button
@@ -1534,7 +1542,7 @@ export function UnifiedSalesIntakeModal({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1">
               <label className="block font-semibold text-foreground">
-                Annual Target Volume:
+                Quantity / volume (include period):
               </label>
               <input
                 type="text"
@@ -1562,11 +1570,12 @@ export function UnifiedSalesIntakeModal({
               <select
                 aria-label="Project technical track"
                 value={track}
-                onChange={(e) => setTrack(e.target.value as any)}
+                onChange={(e) => {const next=e.target.value as typeof track;setTrack(next);setSelectedDepts(defaultReviewers(next));}}
                 className="h-9 w-full rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground"
               >
                 <option value="turnkey">Turnkey HW+SW (Full Dev)</option>
                 <option value="software">Pure Software (Cloud & App)</option>
+                <option value="firmware">Firmware / Embedded Device</option>
                 <option value="ready_made">Ready-Made Device (Off-the-shelf)</option>
               </select>
             </div>
@@ -1610,7 +1619,7 @@ export function UnifiedSalesIntakeModal({
                     onChange={(e) => setDispatchFeasibility(e.target.checked)}
                     className="size-4 rounded border-border text-primary focus:ring-primary"
                   />
-                  <span>Assign to Technical Teams for Feasibility Analysis (IATF 16949 §8.2.3)</span>
+                  <span>Assign departments for feasibility review</span>
                 </label>
                 {dispatchFeasibility && (
                   <div className="flex items-center gap-1.5">
@@ -1699,7 +1708,11 @@ export function UnifiedSalesIntakeModal({
       </div>
 
       {/* Inline Customer Modal */}
-      {inlineCustomerOpen && (
+      {inlineCustomerOpen && onCreateCustomer && <CanonicalCustomerModal onClose={()=>setInlineCustomerOpen(false)} onSave={async values=>{
+        const saved=await onCreateCustomer(values);
+        setInlineCreatedCustomer(saved);setSelectedCustomerCode(saved.code);setInlineCustomerOpen(false);
+      }}/>}
+      {inlineCustomerOpen && !onCreateCustomer && (
         <InlineCustomerModal
           onClose={() => setInlineCustomerOpen(false)}
           onCustomerCreated={(newCust) => {
@@ -1726,6 +1739,9 @@ export function SalesEnquiriesAndOpportunities({
   onConfigureModularAssets,
   onSubmitIntake,
   onAddCustomer,
+  onCreateCustomer,
+  onOpenSourceInputs,
+  reviewDepartments,
 }: {
   customers: CustomerRecord[];
   enquiries: EnquiryOpportunity[];
@@ -1740,6 +1756,7 @@ export function SalesEnquiriesAndOpportunities({
     mode: "enquiry" | "opportunity" | "convert";
     title: string;
     customerCode: string;
+    customerId?: string | undefined;
     customerName: string;
     spocName: string;
     spocEmail: string;
@@ -1750,9 +1767,13 @@ export function SalesEnquiriesAndOpportunities({
     dispatchFeasibility: boolean;
     feasibilityDepts: string[];
     enquiryIdToConvert?: string | undefined;
+    expectedUpdatedAt?: string | undefined;
     parameterValues?: Record<string, string> | undefined;
   }) => Promise<void>;
   onAddCustomer?: ((customer: CustomerRecord) => void) | undefined;
+  onCreateCustomer?: ((values: {name:string;contact:string;email:string;operationId:string}) => Promise<CustomerRecord>) | undefined;
+  onOpenSourceInputs?: ((sourceId:string)=>void) | undefined;
+  reviewDepartments?: {code:string;name:string}[] | undefined;
 }) {
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [sorImporterOpen, setSorImporterOpen] = useState(false);
@@ -1766,8 +1787,8 @@ export function SalesEnquiriesAndOpportunities({
 
   const filteredItems = enquiries
     .filter((item) => {
-      if (filterTab === "opportunities") return item.kind === "opportunity";
-      if (filterTab === "enquiries") return item.kind === "enquiry";
+      if (filterTab === "opportunities") return item.kind === "opportunity" && item.status !== "Declined";
+      if (filterTab === "enquiries") return item.kind === "enquiry" && item.status !== "Declined";
       if (filterTab === "feasibility")
         return item.status === "Sent for Feasibility" || item.status === "Feasibility Complete";
       if (filterTab === "locked")
@@ -1791,8 +1812,8 @@ export function SalesEnquiriesAndOpportunities({
       return b.updatedAt.localeCompare(a.updatedAt);
     });
 
-  const opportunitiesCount = enquiries.filter((e) => e.kind === "opportunity").length;
-  const enquiriesCount = enquiries.filter((e) => e.kind === "enquiry").length;
+  const opportunitiesCount = enquiries.filter((e) => e.kind === "opportunity" && e.status !== "Declined").length;
+  const enquiriesCount = enquiries.filter((e) => e.kind === "enquiry" && e.status !== "Declined").length;
 
   return (
     <div className="space-y-6">
@@ -2016,7 +2037,7 @@ export function SalesEnquiriesAndOpportunities({
               <p className="mt-2 text-sm font-semibold text-foreground">No matching enquiries or opportunities</p>
               <p className="mt-1 text-xs text-muted-foreground">Try clearing the search or adding a new enquiry.</p>
               <button
-                onClick={onOpenNewEnquiry}
+                onClick={()=>{setIntakeModalMode("enquiry");setIntakeEnquiryId(undefined);setIntakeModalOpen(true);}}
                 className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
               >
                 <Plus className="size-3.5" />
@@ -2070,6 +2091,7 @@ export function SalesEnquiriesAndOpportunities({
                         <button
                           type="button"
                           onClick={() => {
+                            if (onOpenSourceInputs) {onOpenSourceInputs(item.id);return;}
                             setSorEnquiryTarget(item);
                             setSorImporterOpen(true);
                           }}
@@ -2087,7 +2109,7 @@ export function SalesEnquiriesAndOpportunities({
                       <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground pt-1">
                         <span className="flex items-center gap-1">
                           <Building2 className="size-3 text-steel" />
-                          <strong className="text-foreground">{item.customerName}</strong> ({item.spocName})
+                          <strong className="text-foreground">{item.customerName || "Customer not linked"}</strong>{item.spocName ? ` (${item.spocName})` : ""}
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="size-3" />
@@ -2100,21 +2122,21 @@ export function SalesEnquiriesAndOpportunities({
                       </div>
 
                       {/* Modular Architecture & Component Lineage Chips */}
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {(item.modularConfig || onConfigureModularAssets) && <div className="flex flex-wrap items-center gap-2 pt-1">
                         <span className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
                           <Cpu className="size-2.5 text-primary" />
-                          PCB: {item.modularConfig?.selectedPcbIds?.length ? item.modularConfig.selectedPcbIds.map((id) => defaultPcbCatalog.find((p) => p.id === id)?.code || id).join(" + ") : "HLPL-MOD-PCB-01"}
+                          PCB: {item.modularConfig?.selectedPcbIds?.length ? item.modularConfig.selectedPcbIds.map((id) => defaultPcbCatalog.find((p) => p.id === id)?.code || id).join(" + ") : "Not linked"}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
                           <Cable className="size-2.5 text-primary" />
-                          Harness: {item.modularConfig?.selectedHarnessId ? defaultHarnessCatalog.find((h) => h.id === item.modularConfig?.selectedHarnessId)?.code || "MX150-14P" : "HLPL-HARN-MX150"}
+                          Harness: {item.modularConfig?.selectedHarnessId ? defaultHarnessCatalog.find((h) => h.id === item.modularConfig?.selectedHarnessId)?.code || item.modularConfig.selectedHarnessId : "Not linked"}
                         </span>
                         <span className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
                           <Code2 className="size-2.5 text-primary" />
-                          FW: {item.modularConfig?.selectedFirmwareId ? defaultFirmwareCatalog.find((f) => f.id === item.modularConfig?.selectedFirmwareId)?.code || "AIS140-RTOS" : "HLPL-FW-AIS140"}
+                          FW: {item.modularConfig?.selectedFirmwareId ? defaultFirmwareCatalog.find((f) => f.id === item.modularConfig?.selectedFirmwareId)?.code || item.modularConfig.selectedFirmwareId : "Not linked"}
                         </span>
                         <span className="rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                          ⚡ 14-17 Wks Saved · Stage 4 Waived
+                          Reuse requires approved project configuration
                         </span>
                         {onConfigureModularAssets && (
                           <button
@@ -2126,7 +2148,7 @@ export function SalesEnquiriesAndOpportunities({
                             Configure Reuse
                           </button>
                         )}
-                      </div>
+                      </div>}
                     </div>
 
                     {/* Right: Feasibility Status & Actions */}
@@ -2141,7 +2163,7 @@ export function SalesEnquiriesAndOpportunities({
                             <span className="text-[11px] text-muted-foreground">HOD Sign-offs</span>
                           </div>
                           <div className="flex items-center gap-1 mt-0.5">
-                            {["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF", "FIN", "SIT", "HR"].map((d) => (
+                            {(item.feasibilityDepartments ?? ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF", "FIN", "SIT", "HR"]).map((d) => (
                               <span
                                 key={d}
                                 className={`rounded px-1 text-[9px] font-mono font-semibold ${
@@ -2157,20 +2179,23 @@ export function SalesEnquiriesAndOpportunities({
                         </div>
                       ) : (
                         <div className="text-right text-[11px] text-muted-foreground mr-2">
-                          <span>Not sent for feasibility</span>
+                          <span>{item.status === "Declined" ? "Closed intake" : "No review requests yet"}</span>
                         </div>
                       )}
 
                       {/* Primary Action Button */}
-                      {isOpportunity ? (
+                      {item.status === "Declined" ? <span className="text-xs text-muted-foreground">Closed intake · retained for history</span> : isOpportunity ? (
+                        <>
+                        {item.totalFeasibilityDepts===0 && <button type="button" onClick={()=>onSendForFeasibility(item)} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold">Send for Feasibility</button>}
                         <button
-                          disabled={!item.linkedProjectCode} title={!item.linkedProjectCode ? "Inquiry reviews are available in Approvals. Link a project later for its lifecycle dashboard." : undefined} onClick={() => item.linkedProjectCode && onOpenFeasibilityGate(item.linkedProjectCode)}
+                          disabled={!onOpenSourceInputs && !item.linkedProjectCode} title={!onOpenSourceInputs && !item.linkedProjectCode ? "Inquiry reviews are available in Approvals. Link a project later for its lifecycle dashboard." : undefined} onClick={() => onOpenSourceInputs ? onOpenSourceInputs(item.id) : item.linkedProjectCode && onOpenFeasibilityGate(item.linkedProjectCode)}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20"
                         >
                           <Shield className="size-3.5" />
-                          {isFeasible ? "View Baseline & Kick-off" : "Open Feasibility Gate"}
+                          {onOpenSourceInputs ? "Inputs & Feasibility" : isFeasible ? "View Baseline & Kick-off" : "Open Feasibility Gate"}
                           <ChevronRight className="size-3" />
                         </button>
+                        </>
                       ) : (
                         <>
                         <button
@@ -2222,6 +2247,8 @@ export function SalesEnquiriesAndOpportunities({
             }
           }}
           onAddCustomer={onAddCustomer}
+          onCreateCustomer={onCreateCustomer}
+          reviewDepartments={reviewDepartments}
         />
       )}
       {sorImporterOpen && (

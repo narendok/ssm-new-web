@@ -85,6 +85,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261025111644_project_input_feasibility_sheet",
     "20261025152001_link_approved_input_baseline",
     "20261026090000_preproject_sales_intake",
+    "20261026100000_atomic_sales_intake",
   ];
 
   for (const name of initialMigrations) {
@@ -194,6 +195,39 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   assert.equal(Number((await db.query("SELECT count(*) AS n FROM operational_records WHERE record_type='Project'")).rows[0].n),projectCount,"Intake creates no dummy project");
   await assert.rejects(call(hwLead,"create_record",{...preProjectPayload,reference:"HLPL-GEN-SAL-OPP-DENIED-01"}),/PREPROJECT_SALES_AUTHORITY_REQUIRED/);
   await assert.rejects(call(hwLead,"create_record",{...preProjectPayload,record_type:"Schematic",reference:"HLPL-GEN-EHW-SCH-DENIED-01"}),/PROJECT_REQUIRED/);
+
+  async function salesCall(user,payload,key=crypto.randomUUID()) {
+    return asUser(user,async()=> (await db.query('SELECT public.mutate_sales_intake($1::jsonb,$2) AS result',[JSON.stringify(payload),key])).rows[0].result);
+  }
+  const intakePayload={mode:'enquiry',title:'Atomic enquiry',scopeSummary:'Actual intake values, pending review',targetVolume:'20 pilot units',track:'turnkey',dispatchFeasibility:false,parameterValues:{system_voltage:'12 V'},status:'approved'};
+  for(const user of [hwLead,purLead,emp,null]) await assert.rejects(salesCall(user,intakePayload),/SALES_INTAKE_DENIED|permission denied/);
+  const intakeRequest=crypto.randomUUID(),intake=await salesCall(salLead,intakePayload,intakeRequest);
+  assert.equal((await salesCall(salLead,intakePayload,intakeRequest)).id,intake.id);
+  await assert.rejects(salesCall(salLead,{...intakePayload,title:'Different'},intakeRequest),/REQUEST_ID_REUSED/);
+  let intakeRow=(await db.query('SELECT * FROM operational_records WHERE id=$1',[intake.id])).rows[0];
+  assert.equal(intakeRow.status,'draft','Caller approval flags are ignored');assert.equal(intakeRow.record_type,'Enquiry');
+  const oldReference=intakeRow.reference;
+  const convert={...intakePayload,mode:'convert',sourceId:intake.id,expectedUpdatedAt:new Date(intakeRow.updated_at).toISOString(),dispatchFeasibility:true,feasibilityDepts:['EHW','QA']};
+  const converted=await salesCall(salLead,convert);
+  assert.equal(converted.id,intake.id,'Conversion preserves source UUID');assert.equal(converted.reference,oldReference,'Conversion preserves controlled source reference');assert.equal(converted.sheetId,intake.sheetId,'Conversion preserves sheet');assert.equal(converted.reviewCount,2);
+  intakeRow=(await db.query('SELECT * FROM operational_records WHERE id=$1',[intake.id])).rows[0];
+  assert.equal(intakeRow.record_type,'Opportunity');assert.equal(intakeRow.status,'in_review');
+  assert.equal(Number((await db.query('SELECT count(*) AS n FROM approvals WHERE record_id=$1',[intake.id])).rows[0].n),2);
+  assert.equal(Number((await db.query('SELECT count(*) AS n FROM tasks WHERE record_id=$1',[intake.id])).rows[0].n),2);
+  const atomicSheet=(await db.query('SELECT * FROM project_input_sheets WHERE id=$1',[intake.sheetId])).rows[0];
+  assert.equal(atomicSheet.project_record_id,null);assert.equal(atomicSheet.parameter_values.system_voltage.finalValue,'');assert.deepEqual(atomicSheet.parameter_values.system_voltage.responses,{});
+  await assert.rejects(salesCall(salLead,{mode:'dispatch',sourceId:intake.id,expectedUpdatedAt:new Date(intakeRow.updated_at).toISOString(),feasibilityDepts:['EHW']}),/ALREADY_DISPATCHED_OR_CLOSED/);
+  const recordsBeforeFailure=Number((await db.query('SELECT count(*) AS n FROM operational_records')).rows[0].n);
+  await assert.rejects(salesCall(salLead,{...intakePayload,mode:'opportunity',dispatchFeasibility:true,feasibilityDepts:['EHW'],parameterValues:{unknown_parameter:'12 V'}}),/PARAMETER/);
+  assert.equal(Number((await db.query('SELECT count(*) AS n FROM operational_records')).rows[0].n),recordsBeforeFailure,'A late input error rolls back the created source and sheet');
+  await assert.rejects(salesCall(salLead,{...intakePayload,mode:'opportunity',dispatchFeasibility:true,feasibilityDepts:['EHW','EHW']}),/DEPARTMENTS_INVALID/);
+  await assert.rejects(salesCall(salLead,{...intakePayload,customerId:crypto.randomUUID()}),/CUSTOMER_INVALID/);
+  const staleIntake=await salesCall(salLead,{...intakePayload,title:'Stale conversion probe'});
+  await assert.rejects(salesCall(salLead,{...intakePayload,mode:'convert',sourceId:staleIntake.id,expectedUpdatedAt:'2000-01-01T00:00:00Z'}),/STALE_SALES_INTAKE/);
+  const staleRow=(await db.query('SELECT * FROM operational_records WHERE id=$1',[staleIntake.id])).rows[0];
+  await assert.rejects(salesCall(salLead,{...intakePayload,mode:'convert',sourceId:staleIntake.id,expectedUpdatedAt:new Date(staleRow.updated_at).toISOString(),parameterValues:{system_voltage:'24 V'}}),/EXISTING_INPUT_PRESERVED/);
+  assert.equal((await db.query('SELECT record_type FROM operational_records WHERE id=$1',[staleIntake.id])).rows[0].record_type,'Enquiry','Failed conversion leaves original enquiry unchanged');
+  assert.equal(Number((await db.query("SELECT count(*) AS n FROM operational_records WHERE record_type='Project'")).rows[0].n),projectCount,'Enquiry conversion never creates a dummy project');
 
   // 2. Behavioral verification: Authenticated Supplier creation by PUR with stable request ID
   const stableSupplierRequestId = uuid(101);

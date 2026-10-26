@@ -1,4 +1,5 @@
 import { InlineCustomerModal } from "./InlineCustomerModal";
+import { SharedSalesPipeline } from "./SharedSalesPipeline";
 import { SharedMasterSelect } from "./SharedMasterSelect";
 import { sharedMasterOptions } from "@/lib/shared-master-options";
 import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
@@ -48,7 +49,7 @@ export function SharedOperationalWorkspace({
   initialProjectScope?: string | undefined;
   recordTypeFilter?: string | null | undefined;
   onClearRecordTypeFilter?: (() => void) | undefined;
-  onOpenInputs?: (() => void) | undefined;
+  onOpenInputs?: ((sourceId?:string) => void) | undefined;
 }) {
   const load = useServerFn(getSharedTestWorkspace),
     coordination = useServerFn(getCoordination),
@@ -565,6 +566,7 @@ export function SharedOperationalWorkspace({
         />
       ) : (
         <DepartmentProjectWorkspace
+          salesPipelineView={(dept?.code || actor.department_code)==="SAL" ? <SharedSalesPipeline snapshot={{...data,records:data.records.filter(r=>!["Enquiry","Opportunity"].includes(r.record_type)||scope==="all"||records.some(row=>row.id===r.id&&[scope,projectRows.find(p=>p.id===scope||p.reference===scope)?.id,projectRows.find(p=>p.id===scope||p.reference===scope)?.reference].includes(row.fields["projectId"])))}} onRefresh={async()=>{await Promise.all([query.refetch(),common.refetch()]);}} onOpenInputs={onOpenInputs}/> : undefined}
           departmentCode={dept?.code || actor.department_code || "ALL"}
           departmentName={dept?.name || actor.department_name || "Projects"}
           lead={
