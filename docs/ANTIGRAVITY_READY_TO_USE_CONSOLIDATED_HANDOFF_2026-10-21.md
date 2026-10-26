@@ -982,6 +982,7 @@ This section is the latest dated decision addendum. It supersedes conflicting ol
 | Hardware shortcut filter | Missing forwarding in authenticated SharedOperationalWorkspace corrected. Source/filter tests pass; full authenticated EHW browser acceptance remains a separate gate. |
 | UI preservation | Antigravity's rich controlled Vault, smart fields, ready-made track, sales modal, RACI unassignment and Android selector changes retained. Normal employees/leads no longer see the developer Shared TEST header utility; Admin has Data tools. |
 | Automated web checks | 185/185 tests passed; TypeScript passed; production client/SSR build passed on 26 October. Detailed local logs: `C:\Users\Test\Documents\SSM-new\verification-2026-10-26-tests.log` and `verification-2026-10-26-build.log`. |
+| Git / Lovable sync | Implementation commit `a20082b` pushed normally to `origin/main`; local HEAD and remote tracking matched. Lovable UI independently displayed “Pushed from GitHub — fix(inputs): persist source drafts and connect guarded SOR intake; reconcile plan”. This is editor import evidence, not a production publish. |
 | Android | No Android source changes in this checkpoint; do not repeat earlier Antigravity build claims as a fresh independent device test. |
 
 ### 15.3 Explicit remaining acceptance and deferred work
