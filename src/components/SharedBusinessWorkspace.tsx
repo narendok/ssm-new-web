@@ -17,6 +17,8 @@ import {
 } from "@/lib/business-workspace.functions";
 import type { TestMembership } from "@/lib/test-auth.functions";
 import { businessDate } from "@/lib/business-date";
+import { User, ShieldCheck, GraduationCap, ClipboardList, Wallet, Receipt } from "lucide-react";
+import { budgetSummaries, personalAssignments } from "@/lib/business-presentation";
 
 type Question = { id: string; label: string; type: string; required: boolean; options?: string[] };
 const input = "rounded-md border border-input bg-background px-2 py-1.5 text-sm w-full";
@@ -50,6 +52,8 @@ export function SharedBusinessWorkspace({
     [search, setSearch] = useState(""),
     [channel, setChannel] = useState("");
   const pending = useRef<{ signature: string; id: string } | null>(null);
+  const [profileTab, setProfileTab] = useState("details");
+  const [budgetTab, setBudgetTab] = useState("requests");
   const lock = useRef(false);
   async function save(
     kind: BusinessAction,
@@ -231,9 +235,9 @@ export function SharedBusinessWorkspace({
   }
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-2">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-xs">
         <div>
-          <h1 className="text-lg font-semibold">{title[view] || "Workspace"}</h1>
+          <h1 className="text-xl font-bold tracking-tight">{title[view] || "Workspace"}</h1>
           <p className="text-xs text-muted-foreground">
             {actor.display_name}{" "}
             <span
@@ -295,7 +299,7 @@ export function SharedBusinessWorkspace({
           )}
         </div>
       </header>
-      {data.notifications.length > 0 && (
+      {!["profile", "budgets"].includes(view) && data.notifications.length > 0 && (
         <details className="rounded-lg border border-border/60 px-3 py-2 text-xs">
           <summary className="cursor-pointer">Recent updates ({data.notifications.length})</summary>
           <ul className="mt-2 space-y-1">
@@ -320,15 +324,25 @@ export function SharedBusinessWorkspace({
           {error}
         </p>
       )}
-      <input
+      {view !== "profile" && <input
         className={`${input} max-w-sm`}
         aria-label="Search this workspace"
         placeholder="Search…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-      />
+      />}
       {view === "budgets" && (
         <>
+          {budgetSummaries(items).map(summary => <section key={summary.currency} aria-label={`Budget summary ${summary.currency}`} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[["Allocated", summary.allocated], ["Committed", summary.committed], ["Spent", summary.spent], ["Available", summary.available]].map(([label, value]) => <article key={String(label)} className={`${card} border-l-4 ${label === "Available" ? "border-l-emerald-500" : label === "Committed" ? "border-l-amber-500" : "border-l-primary/60"}`}><p className="text-xs text-muted-foreground">{String(label)}</p><p className="mt-1 text-lg font-semibold">{summary.currency} {money(value)}</p></article>)}
+          </section>)}
+          <nav aria-label="Budget sections" className="flex gap-1 rounded-lg border border-border/50 bg-muted p-1">
+            {[["requests", "Expense Requests", Receipt], ["allocations", "Budget Allocations", Wallet]].map(([key, label, Icon]) => {
+              const Symbol = Icon as typeof Wallet;
+              return <button key={String(key)} type="button" aria-pressed={budgetTab === key} onClick={() => setBudgetTab(String(key))} className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium ${budgetTab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}><Symbol className="size-4" />{String(label)}</button>;
+            })}
+          </nav>
+          <div hidden={budgetTab !== "allocations"}>
           <section className="grid gap-3 md:grid-cols-3">
             {by("allocation").map((i) => (
               <article key={i.id} className={card}>
@@ -359,6 +373,9 @@ export function SharedBusinessWorkspace({
               </article>
             ))}
           </section>
+          {!by("allocation").length && <p className="text-sm text-muted-foreground">No permitted budget allocations.</p>}
+          </div>
+          <div hidden={budgetTab !== "requests"}>
           <section className="space-y-2">
             {filter(by("expense")).map((i) => (
               <article
@@ -372,7 +389,7 @@ export function SharedBusinessWorkspace({
                     {str(i.data["requesterName"])} · {deptName(i.departmentId)} ·{" "}
                     {str(i.data["category"])} · {str(i.data["currency"])} {money(i.data["amount"])}
                   </p>
-                  <p className="text-xs mt-1">{str(i.data["status"])}</p>
+                  <p className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs font-medium">{str(i.data["status"]).replaceAll("_", " ")}</p>
                 </div>
                 <div className="flex gap-2">
                   {i.ownerId !== actor.membership_id &&
@@ -411,6 +428,7 @@ export function SharedBusinessWorkspace({
               No permitted expense requests. Requests do not require a project.
             </p>
           )}
+          </div>
         </>
       )}
       {view === "tickets" && (
@@ -460,7 +478,15 @@ export function SharedBusinessWorkspace({
       )}
       {view === "profile" && (
         <>
-          <section className={card}>
+          <p className="text-xs text-muted-foreground">Personal employment details, assigned policies, training and feedback forms.</p>
+          <nav aria-label="My Profile sections" className="flex gap-1 overflow-x-auto rounded-lg border border-border/50 bg-muted p-1">
+            {[["details", "My Details", User], ["policy", "Policies", ShieldCheck], ["training", "Training", GraduationCap], ["form", "Forms & Surveys", ClipboardList]].map(([key, label, Icon]) => {
+              const Symbol = Icon as typeof User;
+              return <button key={String(key)} type="button" aria-pressed={profileTab === key} onClick={() => setProfileTab(String(key))} className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs font-medium ${profileTab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}><Symbol className="size-4" />{String(label)}</button>;
+            })}
+          </nav>
+          <div hidden={profileTab !== "details"}>
+          <section className={`${card} border-t-4 border-t-emerald-500`}>
             <h2 className="font-semibold text-sm">{actor.display_name}</h2>
             <p className="text-xs text-muted-foreground">
               {actor.department_code || "Department not recorded"} ·{" "}
@@ -478,16 +504,16 @@ export function SharedBusinessWorkspace({
               ].map((key) => (
                 <div key={key}>
                   <dt className="text-xs text-muted-foreground">
-                    {key.replace(/([A-Z])/g, " $1")}
+                    {({ employeeCode: "Employee Code", email: "Email", phone: "Phone", roleTitle: "Role", joiningDate: "Joining Date", facilityLocation: "Location", emergencyContact: "Emergency Contact" } as Record<string,string>)[key]}
                   </dt>
                   <dd>{str(own?.data[key]) || "Not recorded"}</dd>
                 </div>
               ))}
             </dl>
           </section>
-          <h2 className="font-semibold text-sm">My policies, training & forms</h2>
-          {by("assignment")
-            .filter((i) => i.ownerId === actor.membership_id)
+          </div>
+          {profileTab !== "details" && <>
+          {personalAssignments(items, actor.membership_id, profileTab)
             .map((i) => {
               const template = items.find((t) => t.id === i.data["templateId"]);
               return (
@@ -509,6 +535,8 @@ export function SharedBusinessWorkspace({
                 </article>
               );
             })}
+          {!personalAssignments(items, actor.membership_id, profileTab).length && <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No assigned {profileTab === "form" ? "forms or surveys" : profileTab === "policy" ? "policies" : "training"}.</p>}
+          </>}
           <p className="text-xs text-muted-foreground">
             Issued letters and equipment remain in their original controlled document and asset
             registers. No sample personnel records are substituted.
