@@ -2065,6 +2065,18 @@ export function SalesEnquiriesAndOpportunities({
                         <span className="text-[11px] font-medium text-muted-foreground">
                           {item.targetVolume}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSorEnquiryTarget(item);
+                            setSorImporterOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/20 transition cursor-pointer"
+                          title="Smart SOR Importer: Pre-fill Opportunity or view/update specifications from customer Statement of Requirements"
+                        >
+                          <Sparkles className="size-3" />
+                          <span>Smart SOR</span>
+                        </button>
                       </div>
 
                       <h3 className="text-sm font-bold text-foreground">{item.title}</h3>
@@ -2210,7 +2222,38 @@ export function SalesEnquiriesAndOpportunities({
           onAddCustomer={onAddCustomer}
         />
       )}
-
+      {sorImporterOpen && (
+        <SmartSorImporterModal
+          isOpen={sorImporterOpen}
+          initialCustomerName={sorEnquiryTarget?.customerName}
+          initialEnquiryTitle={sorEnquiryTarget?.title}
+          onClose={() => {
+            setSorImporterOpen(false);
+            setSorEnquiryTarget(undefined);
+          }}
+          onImportSor={async (parsedSor) => {
+            if (onSubmitIntake) {
+              await onSubmitIntake({
+                mode: "opportunity",
+                title: parsedSor.projectTitle || "New Opportunity from SOR",
+                customerName: parsedSor.customerName || "Customer",
+                customerCode: "CUST-SOR",
+                spocName: "Customer Lead",
+                spocEmail: "contact@customer.com",
+                scopeSummary: parsedSor.rawSorText ? parsedSor.rawSorText.slice(0, 300) : "Imported from Statement of Requirements (SOR)",
+                annualVolume: parsedSor.targetVolume ? Number(parsedSor.targetVolume) : 1000,
+                targetClosureDate: new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0],
+                dispatchFeasibility: true,
+                feasibilityDepts: parsedSor.feasibilityDepartments && parsedSor.feasibilityDepartments.length > 0
+                  ? parsedSor.feasibilityDepartments
+                  : ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"],
+              });
+            }
+            setSorImporterOpen(false);
+            setSorEnquiryTarget(undefined);
+          }}
+        />
+      )}
     </div>
   );
 }

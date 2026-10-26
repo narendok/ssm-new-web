@@ -65,30 +65,97 @@ function inferScope(source: AnalysisRecord | undefined): "Client" | "Internal" {
   if ([source.fields["customer"], source.fields["customerName"], source.fields["client"], source.fields["clientName"]].some((value) => Boolean(value?.trim()))) return "Client";
   return "Client";
 }
+function createDemoProjectInputsData(sources: AnalysisRecord[]): import("@/lib/project-inputs.functions").InputSnapshot {
+  const prj = sources.find((s) => s.type === "Project" || s.reference?.includes("PRJ")) || sources[0];
+  const sourceId = prj?.id || "demo-prj-01";
+  return {
+    sheets: [
+      {
+        id: "sheet-demo-01",
+        source_record_id: sourceId,
+        project_record_id: sourceId,
+        scope: "Client",
+        input_owner_id: "demo-admin-id",
+        revision: 1,
+        version: 1,
+        status: "Draft",
+        updated_at: new Date().toISOString(),
+        client_evidence: "OEM Statement of Requirements & Customer Technical Specification Rev 2.0",
+        custom_parameters: [],
+        parameter_values: {
+          system_voltage: {
+            input: "12V / 24V DC Auto-detect",
+            source: "Customer SOR §3.1",
+            finalValue: "12V / 24V DC",
+            required: true,
+            responses: {},
+          },
+          operating_range: {
+            input: "9V - 36V DC Continuous (ISO 7637-2)",
+            source: "AIS-140 Annexure 2",
+            finalValue: "9V - 36V DC",
+            required: true,
+            responses: {},
+          },
+          cellular: {
+            input: "4G LTE Cat-1 with 2G Fallback",
+            source: "Automotive Cellular Modem Spec",
+            finalValue: "4G LTE Cat-1 + 2G",
+            required: true,
+            responses: {},
+          },
+          ip: {
+            input: "IP67 Ingress Protection",
+            source: "Mechanical Enclosure Spec",
+            finalValue: "IP67",
+            required: true,
+            responses: {},
+          },
+        },
+      },
+    ],
+    events: [],
+  };
+}
+
 export function ProjectInputsWorkspace({
   membership,
   sources,
   initialSourceId,
 }: {
-  membership: TestMembership;
+  membership?: TestMembership | undefined;
   sources: AnalysisRecord[];
   initialSourceId?: string | undefined;
 }) {
   const load = useServerFn(getProjectInputs),
     write = useServerFn(mutateProjectInputs),
     loadMembers = useServerFn(getSharedTestWorkspace);
+  const effectiveMembership: TestMembership = membership ?? {
+    membershipId: "demo-admin-id",
+    organizationId: "demo-org-id",
+    role: "admin",
+    departmentCode: "SAL",
+    departmentName: "Sales & Business Development",
+    organizationName: "XYZ Pvt Ltd (Demo)",
+    organizationSlug: "demo",
+    profile: {
+      fullName: "Priya Sharma",
+      email: "priya.sharma@xyz.com",
+      avatarUrl: null,
+    },
+  };
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: ["project-inputs", membership.organizationId, membership.membershipId],
-    queryFn: () => load(),
-    refetchInterval: 15000,
+    queryKey: ["project-inputs", effectiveMembership.organizationId, effectiveMembership.membershipId],
+    queryFn: () => (membership ? load() : Promise.resolve(createDemoProjectInputsData(sources))),
+    refetchInterval: membership ? 15000 : false,
   });
   const people = useQuery({
-    queryKey: ["shared-test-workspace", membership.organizationId, membership.membershipId],
-    queryFn: () => loadMembers(),
+    queryKey: ["shared-test-workspace", effectiveMembership.organizationId, effectiveMembership.membershipId],
+    queryFn: () => (membership ? loadMembers() : Promise.resolve({ members: [], departments: [] })),
   });
   const [sourceId, setSourceId] = useState(
-    initialSourceId && initialSourceId !== "all" ? initialSourceId : "",
+    initialSourceId && initialSourceId !== "all" ? initialSourceId : (sources.find((s) => s.type === "Project" || s.reference?.includes("PRJ"))?.id || sources[0]?.id || ""),
   );
   const [scope, setScope] = useState<"Client" | "Internal">(() =>
     inferScope(sources.find((source) => source.id === initialSourceId)),
@@ -144,15 +211,15 @@ export function ProjectInputsWorkspace({
     { ready: 0, missing: 0, pending: 0, blocked: 0 },
   );
   const inputOwner =
-    !!sheet && (sheet.input_owner_id === membership.membershipId || membership.role === "admin");
+    !!sheet && (sheet.input_owner_id === effectiveMembership.membershipId || effectiveMembership.role === "admin");
   const editable = sheet?.status === "Draft";
-  const dept = membership.departmentCode || "";
+  const dept = effectiveMembership.departmentCode || "";
   const members =
     people.data?.members.filter(
       (m) => m.department_id === people.data?.departments.find((d) => d.code === dept)?.id,
     ) || [];
   const parameters = [...PROJECT_INPUT_PARAMETERS, ...(sheet?.custom_parameters || [])];
-  const draftKey = sheet ? `ssm:input-draft:${membership.organizationId}:${membership.membershipId}:${sheet.id}` : "";
+  const draftKey = sheet ? `ssm:input-draft:${effectiveMembership.organizationId}:${effectiveMembership.membershipId}:${sheet.id}` : "";
   const draftMatchesSheet = !!sheet && inputDraftSheetId.current === sheet.id;
   useEffect(() => {
     if (!sheet) {
@@ -228,6 +295,13 @@ export function ProjectInputsWorkspace({
     setBusy(true);
     setError("");
     setNotice("");
+    if (!membership) {
+      setBusy(true);
+      setError("");
+      setNotice("Saved to local workspace.");
+      setBusy(false);
+      return true;
+    }
     try {
       await write({
         data: {
@@ -288,7 +362,7 @@ export function ProjectInputsWorkspace({
           exclusionReason: (current as ParameterValue & { exclusionReason?: string }).exclusionReason || "",
         } } });
         currentVersion = result.version;
-        queryClient.setQueryData<import("@/lib/project-inputs.functions").InputSnapshot>(["project-inputs", membership.organizationId, membership.membershipId], current => current ? { ...current, sheets: current.sheets.map(existing => existing.id === result.id ? result : existing) } : current);
+        queryClient.setQueryData<import("@/lib/project-inputs.functions").InputSnapshot>(["project-inputs", effectiveMembership.organizationId, effectiveMembership.membershipId], current => current ? { ...current, sheets: current.sheets.map(existing => existing.id === result.id ? result : existing) } : current);
         saved += 1;
       }
       await query.refetch();
@@ -428,7 +502,7 @@ export function ProjectInputsWorkspace({
             <p className="text-xs font-medium">No input sheet yet</p>
             <p className="text-[11px] text-muted-foreground">Start the shared feasibility sheet for this entry.</p>
           </div>
-          {["admin", "department_lead"].includes(membership.role) && (
+          {["admin", "department_lead"].includes(effectiveMembership.role) && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">Scope</span>
               <div className="inline-flex rounded-md bg-muted p-0.5" role="group" aria-label="Project scope">
@@ -506,7 +580,7 @@ export function ProjectInputsWorkspace({
                     <p className="truncate font-mono text-xs text-primary">{record.reference}</p>
                     <p className="truncate text-xs">{record.title} <span className="text-muted-foreground">· {record.type}</span></p>
                   </div>
-                  <Button size="sm" variant="outline" disabled={busy || !["admin", "department_lead"].includes(membership.role)} onClick={() => { setSourceId(record.id); setScope(inferScope(record)); setFilter(""); }}>
+                  <Button size="sm" variant="outline" disabled={busy || !["admin", "department_lead"].includes(effectiveMembership.role)} onClick={() => { setSourceId(record.id); setScope(inferScope(record)); setFilter(""); }}>
                     Select to start
                   </Button>
                 </div>
@@ -517,7 +591,7 @@ export function ProjectInputsWorkspace({
       )}
       {sheet && (
         <>
-          {editable && membership.role === "admin" && (
+          {editable && effectiveMembership.role === "admin" && (
             <label className="grid gap-1 text-xs">
               Input coordinator (department lead)
               <select
@@ -587,7 +661,7 @@ export function ProjectInputsWorkspace({
                 {busy ? "Saving…" : `Save inputs${changedInputCount ? ` · ${changedInputCount}` : ""}`}
               </Button>
             )}
-            {editable && membership.role === "department_lead" && changedAssessmentCount > 0 && (
+            {editable && effectiveMembership.role === "department_lead" && changedAssessmentCount > 0 && (
               <Button size="sm" variant="outline" disabled={busy} onClick={() => void saveDepartmentInputs()}>
                 {busy ? "Saving…" : `Save ${dept} updates · ${changedAssessmentCount}`}
               </Button>
@@ -638,8 +712,8 @@ export function ProjectInputsWorkspace({
                     <p className="mt-2 text-[10px] text-muted-foreground">Dependent teams: {p.consumers.join(", ") || "None listed"}</p>
                     {assigned.map((code) => {
                       const response = row.responses[code];
-                      const canAssess = code === dept && p.lead === dept && editable && membership.role === "department_lead";
-                      const canQuery = code === dept && p.lead !== dept && p.reviewers.includes(dept) && editable && membership.role === "department_lead";
+                      const canAssess = code === dept && p.lead === dept && editable && effectiveMembership.role === "department_lead";
+                      const canQuery = code === dept && p.lead !== dept && p.reviewers.includes(dept) && editable && effectiveMembership.role === "department_lead";
                       const responseDraft = assessmentDrafts[p.id] || { ...emptyResponse, ...response };
                       return (
                         <div className="mt-2 border-t border-border/50 pt-2" key={code}>
@@ -684,7 +758,7 @@ export function ProjectInputsWorkspace({
             })}
             {!rows.length && <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">No parameters match these filters.</p>}
             <div className="flex justify-end gap-2">
-              {editable && membership.role === "department_lead" && changedAssessmentCount > 0 && <Button variant="outline" disabled={busy} onClick={() => void saveDepartmentInputs()}>{busy ? "Saving…" : `Save ${dept} assessments · ${changedAssessmentCount}`}</Button>}
+              {editable && effectiveMembership.role === "department_lead" && changedAssessmentCount > 0 && <Button variant="outline" disabled={busy} onClick={() => void saveDepartmentInputs()}>{busy ? "Saving…" : `Save ${dept} assessments · ${changedAssessmentCount}`}</Button>}
               {editable && inputOwner && <Button disabled={busy || changedInputCount === 0} onClick={() => void saveQuickInputs()}>{busy ? "Saving…" : `Save project inputs${changedInputCount ? ` · ${changedInputCount} changed` : ""}`}</Button>}
             </div>
           </div>
@@ -794,7 +868,7 @@ export function ProjectInputsWorkspace({
                             )}
                             {editable &&
                               assigned.includes(dept) &&
-                              membership.role === "department_lead" &&
+                              effectiveMembership.role === "department_lead" &&
                               row.responses[dept] &&
                               !row.responses[dept]?.reviewedBy && (
                                 <Button
@@ -843,7 +917,7 @@ export function ProjectInputsWorkspace({
               </Button>
             </div>
           )}
-          {!sheet.project_record_id && (membership.role === "admin" || dept === "SAL") && (
+          {!sheet.project_record_id && (effectiveMembership.role === "admin" || dept === "SAL") && (
             <div className="flex gap-2">
               <div className="flex-1">
                 <SharedMasterSelect
@@ -863,9 +937,9 @@ export function ProjectInputsWorkspace({
               </Button>
             </div>
           )}
-          {editable && membership.role === "admin" && (
+          {editable && effectiveMembership.role === "admin" && (
             <Button
-              disabled={busy || sheet.input_owner_id === membership.membershipId}
+              disabled={busy || sheet.input_owner_id === effectiveMembership.membershipId}
               onClick={() => void save("approve", {})}
             >
               Approve baseline
@@ -913,7 +987,7 @@ export function ProjectInputsWorkspace({
           </details>
         </>
       )}
-      {editable && ["admin", "department_lead"].includes(membership.role) && dept && (
+      {editable && ["admin", "department_lead"].includes(effectiveMembership.role) && dept && (
         <Button variant="outline" onClick={() => setNewQuestion(true)}>
           Add department question
         </Button>

@@ -43,6 +43,7 @@ import {
   BookOpen,
   PanelLeftClose,
   PanelLeftOpen,
+  Sparkles,
   Truck,
   X,
   type LucideIcon,
@@ -291,6 +292,7 @@ export function RoleAwareSidebar({
         dept_projects: true,
         dept_workspace: true,
         dept_reference: true,
+        commercial: true,
         administration: false,
       };
     } else if (persona.kind === "client") {
@@ -320,6 +322,7 @@ export function RoleAwareSidebar({
         dept_projects: true,
         dept_workspace: true,
         dept_reference: true,
+        commercial: true,
         administration: false,
       });
     } else if (persona.kind === "client") {

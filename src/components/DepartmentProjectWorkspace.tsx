@@ -700,6 +700,15 @@ export function DepartmentProjectWorkspace(props: Props) {
           </div>
         </section>
       )}
+      {sorModalOpen && (
+        <SmartSorImporterModal
+          isOpen={sorModalOpen}
+          onClose={() => setSorModalOpen(false)}
+          onImportSor={(parsedSor) => {
+            setSorModalOpen(false);
+          }}
+        />
+      )}
     </main>
   );
 }

@@ -182,6 +182,8 @@ import {
   deriveDeliverablesForStage,
 } from "@/lib/department-chronicles";
 import { DocumentStandardViewer } from "@/components/DocumentStandardViewer";
+import { SmartSorImporterModal } from "@/components/SmartSorImporterModal";
+import { ProjectInputsWorkspace } from "@/components/ProjectInputsWorkspace";
 
 type AreaId =
   | "home"
@@ -3585,7 +3587,20 @@ function Portal() {
               onLog={log}
             />
           ) : view === "analysis" ? (
-            testMembership ? <SharedProjectAnalysis membership={testMembership} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} /> : <ProjectAnalysisOverview key={persona.id} projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")} records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords} documents={scopedDocuments} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} />
+            testMembership ? <SharedProjectAnalysis membership={testMembership} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} /> : <ProjectAnalysisOverview
+                key={persona.id}
+                projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")}
+                records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords}
+                documents={scopedDocuments}
+                renderProjectInputs={projectId => (
+                  <ProjectInputsWorkspace
+                    key={projectId}
+                    sources={((persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords) as any}
+                    initialSourceId={projectId}
+                  />
+                )}
+                onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}}
+              />
           ) : view === "vault" ? (
             <><div className="flex items-center justify-between"><div><h1 className="text-lg font-semibold">Documents & Vault</h1><p className="text-xs text-muted-foreground">Original documents and project-linked files within your department access.</p></div><div className="flex gap-2">{testMembership && <Action label="Shared documents & uploads" primary onClick={() => {setSharedTestInitialTab("Documents"); setShowSharedTestWorkspace(true);}} />}<Action label="Back to workspace" onClick={() => navigate(effectiveArea)} /></div></div><HardwareDeliverablesDrive documents={scopedDocuments} departments={portal.departments} departmentContext={departmentContext} persona={persona} portal={portal} onSelectDocument={openDocument} onOpenCustomerRegister={() => setCustomerRegisterOpen(true)} uploadReadOnlyReason={testMembership ? "This view is browser-local. Shared TEST uploads remain in Shared TEST records until the shared document contract is verified." : undefined} onDocumentCreated={async document => update(state => { const ownWork = state.records.filter(r=>!r.archived && r.area === persona.departmentId); const keys = new Set([...ownWork.flatMap(projectReferences),...state.documents.filter(d=>canDepartmentAccessDocument(d,persona,departmentContext)).flatMap(d=>d.linkedRecordRefs ?? [])]); const projects = state.records.filter(r => r.type === "Project" && (persona.kind === "admin" || keys.has(r.id) || keys.has(r.reference))); const selected = projects.find(p => p.id === document.projectId); assertUploadContextCurrent(document, projects, state.departments, sourceGerberPackages(state.documents.filter(d => canDepartmentAccessDocument(d, persona, departmentContext)), selected)); return { ...state, documents:[document,...state.documents], audit:[{id:createId(),at:now(),action:"Draft document uploaded",detail:`${document.title} · Browser-local`},...state.audit].slice(0,100) }; })} /></>
           ) : view === "index" ? (
@@ -4226,6 +4241,38 @@ function Portal() {
           enquiry={feasibilityDispatchEnquiry}
           onClose={() => setFeasibilityDispatchEnquiry(null)}
           onDispatch={handleDispatchFeasibility}
+        />
+      )}{" "}
+      {globalSorOpen && (
+        <SmartSorImporterModal
+          isOpen={globalSorOpen}
+          onClose={() => setGlobalSorOpen(false)}
+          onImportSor={async (parsedSor) => {
+            const at = now();
+            const projectCode = parsedSor.templateId === "sor-readymade-obd2" ? "PRJ-RMS-001" : "PRJ-TATA-EV-001";
+            const newOpp: RecordItem = {
+              id: createId(),
+              reference: "OPP-" + projectCode.replace("PRJ-", "") + "-" + Date.now().toString().slice(-4),
+              area: "sales",
+              departmentId: findAreaDepartment(portal.departments, "sales")?.id,
+              type: "Opportunity",
+              title: parsedSor.projectTitle || "New Opportunity from SOR",
+              notes: parsedSor.rawSorText ? parsedSor.rawSorText.slice(0, 500) : "Imported from Statement of Requirements (SOR)",
+              status: "In review",
+              priority: "High",
+              createdAt: at,
+              updatedAt: at,
+              fields: {
+                customer: parsedSor.customerName || "Customer",
+                annualVolume: parsedSor.targetVolume ? String(parsedSor.targetVolume) : "1000",
+                smartParameters: JSON.stringify(parsedSor.smartParameters || {}),
+                requiredDepartments: (parsedSor.feasibilityDepartments || []).join(","),
+              },
+            };
+            await addRecord(newOpp);
+            announce(`Created Opportunity from SOR: ${newOpp.title}`);
+            setGlobalSorOpen(false);
+          }}
         />
       )}{" "}
       {alertsOpen && (
