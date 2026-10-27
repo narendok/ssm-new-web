@@ -38,6 +38,7 @@ import {
 import type { Persona } from "@/components/RoleAwareSidebar";
 
 interface DepartmentBudgetsWorkspaceProps {
+  sharedPresentation?: { summary: React.ReactNode; requests: React.ReactNode; allocations: React.ReactNode; requestCount:number; allocationCount:number; onNewRequest:()=>void; actions?:React.ReactNode } | undefined;
   persona: Persona;
   departmentScope?: string | undefined;
   selectedProjectId?: string | null;
@@ -59,6 +60,7 @@ interface DepartmentBudgetsWorkspaceProps {
 }
 
 export function DepartmentBudgetsWorkspace({
+  sharedPresentation,
   persona,
   departmentScope,
   selectedProjectId,
@@ -348,7 +350,7 @@ export function DepartmentBudgetsWorkspace({
                 DEMO Sandbox
               </span>
             )}
-            <span className="text-xs text-muted-foreground font-mono">{DEFAULT_BUDGET_PERIOD.name}</span>
+            <span className="text-xs text-muted-foreground font-mono">{sharedPresentation ? "Your authorized account records" : DEFAULT_BUDGET_PERIOD.name}</span>
           </div>
           <h2 className="text-xl font-bold tracking-tight text-foreground mt-1">
             Budgets & Expenses
@@ -362,6 +364,7 @@ export function DepartmentBudgetsWorkspace({
           <Button
             size="sm"
             onClick={() => {
+              if(sharedPresentation){sharedPresentation.onNewRequest();return;}
               setFormError(null);
               setIsNewRequestModalOpen(true);
             }}
@@ -370,6 +373,7 @@ export function DepartmentBudgetsWorkspace({
             <Plus className="w-3.5 h-3.5" />
             New Expense / Travel Request
           </Button>
+          {sharedPresentation?.actions}
         </div>
       </div>
 
@@ -386,6 +390,7 @@ export function DepartmentBudgetsWorkspace({
       )}
 
       {/* KPI Cards */}
+      {sharedPresentation ? sharedPresentation.summary : <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-4 rounded-xl bg-card border border-border shadow-sm">
           <div className="flex items-center justify-between text-muted-foreground text-xs font-medium">
@@ -433,6 +438,7 @@ export function DepartmentBudgetsWorkspace({
       </div>
 
       {/* Navigation Tabs & Scoped Filters */}
+      </>}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 p-1 bg-muted rounded-lg border border-border/50 w-fit">
           <button
@@ -441,7 +447,7 @@ export function DepartmentBudgetsWorkspace({
               activeTab === "requests" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Expense & Travel Requests ({filteredRequests.length})
+            Expense & Travel Requests ({sharedPresentation?.requestCount ?? filteredRequests.length})
           </button>
           <button
             onClick={() => setActiveTab("allocations")}
@@ -449,11 +455,11 @@ export function DepartmentBudgetsWorkspace({
               activeTab === "allocations" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Department Allocations ({filteredAllocations.length})
+            Department Allocations ({sharedPresentation?.allocationCount ?? filteredAllocations.length})
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        {!sharedPresentation && <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />
             <input
@@ -480,10 +486,11 @@ export function DepartmentBudgetsWorkspace({
               <option value="Rejected">Rejected</option>
             </select>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Main Content Areas */}
+      {sharedPresentation ? (activeTab === "requests" ? sharedPresentation.requests : sharedPresentation.allocations) : <>
       {activeTab === "requests" ? (
         <div className="border border-border rounded-xl bg-card overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
@@ -736,6 +743,7 @@ export function DepartmentBudgetsWorkspace({
       )}
 
       {/* New Request Modal with Direct Inputs & Form Error Preservation */}
+      </>}
       <Dialog open={isNewRequestModalOpen} onOpenChange={setIsNewRequestModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

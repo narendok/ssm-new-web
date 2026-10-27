@@ -30,12 +30,14 @@ import {
 import type { Persona } from "@/components/RoleAwareSidebar";
 
 interface TeamCommunicationWorkspaceProps {
+  sharedContent?: React.ReactNode;
   persona: Persona;
   onOpenProjectDetail?: (projectId: string) => void;
   onOpenDocument?: (docId: string) => void;
 }
 
 export function TeamCommunicationWorkspace({
+  sharedContent,
   persona,
   onOpenProjectDetail,
   onOpenDocument,
@@ -53,9 +55,9 @@ export function TeamCommunicationWorkspace({
   }
 
   // Scope channels by authenticated persona membership
-  const accessibleChannels = DEFAULT_CHANNELS.filter((c) => canUserAccessChannel(c, persona));
+  const accessibleChannels = sharedContent ? [] : DEFAULT_CHANNELS.filter((c) => canUserAccessChannel(c, persona));
   const [activeChannelId, setActiveChannelId] = useState<string>(() => accessibleChannels[0]?.id || "chan-general");
-  const [messages, setMessages] = useState<SharedChatMessage[]>(DEFAULT_CHAT_MESSAGES);
+  const [messages, setMessages] = useState<SharedChatMessage[]>(sharedContent ? [] : DEFAULT_CHAT_MESSAGES);
   const [inputText, setInputText] = useState("");
   const [isUrgent, setIsUrgent] = useState(false);
   const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(null);
@@ -187,7 +189,7 @@ export function TeamCommunicationWorkspace({
 
   return (
     <div className="space-y-4">
-      <span className="inline-flex rounded border border-amber-500/30 px-2 py-1 text-[10px] text-amber-600" title="Browser-local examples. Shared account communication is separate.">DEMO</span>
+      {!sharedContent && <span className="inline-flex rounded border border-amber-500/30 px-2 py-1 text-[10px] text-amber-600" title="Browser-local examples. Shared account communication is separate.">DEMO</span>}
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-3 border-b border-border/40">
         <div>
@@ -212,6 +214,7 @@ export function TeamCommunicationWorkspace({
       </div>
 
       {/* Main Grid: Channels Sidebar + Chat Stream */}
+      {sharedContent ?? <>
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 min-h-[580px]">
         {/* Left: Channels List */}
         <div className="p-3 rounded-xl bg-card border border-border shadow-sm space-y-3">
@@ -434,6 +437,7 @@ export function TeamCommunicationWorkspace({
       </div>
 
       {/* Create Poll Modal */}
+      </>}
       <Dialog open={isPollModalOpen} onOpenChange={setIsPollModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

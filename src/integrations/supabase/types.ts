@@ -491,6 +491,7 @@ export type Database = {
       }
       documents: {
         Row: {
+          metadata: Json
           created_at: string
           created_by: string
           department_id: string | null
@@ -504,6 +505,7 @@ export type Database = {
           visibility: string
         }
         Insert: {
+          metadata?: Json
           created_at?: string
           created_by: string
           department_id?: string | null
@@ -517,6 +519,7 @@ export type Database = {
           visibility?: string
         }
         Update: {
+          metadata?: Json
           created_at?: string
           created_by?: string
           department_id?: string | null

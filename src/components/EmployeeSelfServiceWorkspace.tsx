@@ -43,6 +43,9 @@ import {
 import type { Persona } from "@/components/RoleAwareSidebar";
 
 interface EmployeeSelfServiceWorkspaceProps {
+  sharedProfile?: (Omit<EmployeeProfile,"status"> & {status: EmployeeProfile["status"] | "Not recorded"}) | undefined;
+  sharedSection?: ((section: "details" | "letters" | "policies" | "training" | "forms" | "assets") => React.ReactNode) | undefined;
+  sharedCounts?: {policies:number;training:number;forms:number} | undefined;
   persona: Persona;
   testMembership?: {
     organizationId?: string | undefined;
@@ -65,6 +68,9 @@ interface EmployeeSelfServiceWorkspaceProps {
 }
 
 export function EmployeeSelfServiceWorkspace({
+  sharedProfile,
+  sharedSection,
+  sharedCounts,
   persona,
   testMembership,
   letters: initialLetters,
@@ -77,7 +83,8 @@ export function EmployeeSelfServiceWorkspace({
   onUpdateForms,
 }: EmployeeSelfServiceWorkspaceProps) {
   // Resolve profile based on authenticated persona and TEST membership. FAILS CLOSED if unrecognized or Client!
-  const profile = resolveEmployeeProfile(persona, testMembership);
+  const profile = sharedProfile && testMembership && sharedProfile.id === testMembership.membershipId
+    ? sharedProfile : resolveEmployeeProfile(persona, testMembership);
 
   if (!profile || persona.kind === "client") {
     return (
@@ -243,7 +250,7 @@ export function EmployeeSelfServiceWorkspace({
           }`}
         >
           <ShieldCheck className="w-3.5 h-3.5" />
-          My Policies ({employeePolicies.filter((p) => p.status === "Pending").length} Pending)
+          My Policies ({sharedCounts?.policies ?? employeePolicies.filter((p) => p.status === "Pending").length} Pending)
         </button>
         <button
           onClick={() => setActiveTab("training")}
@@ -252,7 +259,7 @@ export function EmployeeSelfServiceWorkspace({
           }`}
         >
           <GraduationCap className="w-3.5 h-3.5" />
-          My Training & Quizzes ({employeeTrainings.length})
+          My Training & Quizzes ({sharedCounts?.training ?? employeeTrainings.length})
         </button>
         <button
           onClick={() => setActiveTab("forms")}
@@ -261,7 +268,7 @@ export function EmployeeSelfServiceWorkspace({
           }`}
         >
           <ClipboardList className="w-3.5 h-3.5" />
-          Forms & Surveys ({employeeForms.length})
+          Forms & Surveys ({sharedCounts?.forms ?? employeeForms.length})
         </button>
         <button
           onClick={() => setActiveTab("assets")}
@@ -275,12 +282,13 @@ export function EmployeeSelfServiceWorkspace({
       </div>
 
       {/* Details View */}
+      {sharedSection && activeTab !== "details" ? sharedSection(activeTab) : <>
       {activeTab === "details" && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2 p-5 rounded-xl bg-card border border-border shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
               <User className="w-4 h-4 text-primary" />
-              Verified Employment Profile
+              {sharedProfile ? "Employment Profile" : "Verified Employment Profile"}
             </h3>
 
             <div className="grid grid-cols-2 gap-4 text-xs">
@@ -321,7 +329,7 @@ export function EmployeeSelfServiceWorkspace({
             </div>
 
             <div className="pt-3 border-t border-border/60 text-xs text-muted-foreground">
-              To request a change to statutory records or banking details, submit an HR request ticket via taylor.quinn@example.com.
+              To request a change to statutory records or banking details, submit an HR request through your authorized HR contact.
             </div>
           </div>
 
@@ -626,6 +634,7 @@ export function EmployeeSelfServiceWorkspace({
         </div>
       )}
 
+      </>}
       {/* Quiz Modal */}
       {selectedTraining && (
         <Dialog open={!!selectedTraining} onOpenChange={() => setSelectedTraining(null)}>

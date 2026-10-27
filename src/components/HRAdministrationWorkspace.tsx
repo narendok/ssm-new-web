@@ -54,6 +54,8 @@ export const INITIAL_HR_EMPLOYEES: HREmployeeRecord[] = [
 ];
 
 export type HRAdministrationWorkspaceProps = {
+  sharedSection?: ((section: "directory" | "policies" | "trainings" | "surveys")=>React.ReactNode) | undefined;
+  sharedCounts?: {employees:number;policies:number;trainings:number;forms:number} | undefined;
   currentUser: {
     role: string;
     name: string;
@@ -69,6 +71,8 @@ export type HRAdministrationWorkspaceProps = {
 };
 
 export const HRAdministrationWorkspace: React.FC<HRAdministrationWorkspaceProps> = ({
+  sharedSection,
+  sharedCounts,
   currentUser,
   policies,
   trainings,
@@ -82,7 +86,7 @@ export const HRAdministrationWorkspace: React.FC<HRAdministrationWorkspaceProps>
     "directory" | "policies" | "trainings" | "surveys"
   >("directory");
 
-  const [employees, setEmployees] = useState<HREmployeeRecord[]>(INITIAL_HR_EMPLOYEES);
+  const [employees, setEmployees] = useState<HREmployeeRecord[]>(sharedSection ? [] : INITIAL_HR_EMPLOYEES);
   const [searchQuery, setSearchQuery] = useState("");
 
   // Policy creation modal
@@ -221,7 +225,7 @@ export const HRAdministrationWorkspace: React.FC<HRAdministrationWorkspaceProps>
           }`}
         >
           <Users className="w-3.5 h-3.5" />
-          <span>Employee Directory ({employees.length})</span>
+          <span>Employee Directory ({sharedCounts?.employees ?? employees.length})</span>
         </button>
 
         <button
@@ -233,7 +237,7 @@ export const HRAdministrationWorkspace: React.FC<HRAdministrationWorkspaceProps>
           }`}
         >
           <ShieldCheck className="w-3.5 h-3.5" />
-          <span>Policies & Compliance ({policies.length})</span>
+          <span>Policies & Compliance ({sharedCounts?.policies ?? policies.length})</span>
         </button>
 
         <button
@@ -245,7 +249,7 @@ export const HRAdministrationWorkspace: React.FC<HRAdministrationWorkspaceProps>
           }`}
         >
           <GraduationCap className="w-3.5 h-3.5" />
-          <span>Training Matrix ({trainings.length})</span>
+          <span>Training Matrix ({sharedCounts?.trainings ?? trainings.length})</span>
         </button>
 
         <button
@@ -257,11 +261,12 @@ export const HRAdministrationWorkspace: React.FC<HRAdministrationWorkspaceProps>
           }`}
         >
           <ClipboardList className="w-3.5 h-3.5" />
-          <span>Forms & Surveys ({forms.length})</span>
+          <span>Forms & Surveys ({sharedCounts?.forms ?? forms.length})</span>
         </button>
       </div>
 
       {/* TAB 1: DIRECTORY */}
+      {sharedSection ? sharedSection(activeTab) : <>
       {activeTab === "directory" && (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -455,6 +460,7 @@ export const HRAdministrationWorkspace: React.FC<HRAdministrationWorkspaceProps>
       )}
 
       {/* MODAL: PUBLISH POLICY */}
+      </>}
       {isPolicyModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-card border border-border rounded-xl shadow-xl max-w-md w-full p-5 space-y-3 text-xs">

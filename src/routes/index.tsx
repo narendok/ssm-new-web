@@ -15,6 +15,7 @@ import { DocumentUploadPilotDialog, type UploadDraft } from "@/components/Docume
 import { assertUploadContextCurrent, sourceGerberPackages, type UploadScope, type UploadType, type SourcePackage } from "@/lib/document-upload-pilot";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
 import { SharedOperationalWorkspace } from "@/components/SharedOperationalWorkspace";
+import { SharedDocumentVault } from "@/components/SharedDocumentVault";
 import { getSharedTestWorkspace, mutateSharedTestWorkspace } from "@/lib/shared-test.functions";
 import { mutateProjectInputs } from "@/lib/project-inputs.functions";
 import { PROJECT_INPUT_PARAMETERS } from "@/lib/project-inputs";
@@ -2351,6 +2352,8 @@ function Portal() {
   });
   const [clientDeliverablesFocus, setClientDeliverablesFocus] = useState(0);
   const openDocuments = () => {
+    setVaultDocumentId(undefined);
+    setVaultProjectId(undefined);
     setModal(null);
     setShowSharedTestWorkspace(false);
     if (persona.kind === "client") {
@@ -2405,6 +2408,8 @@ function Portal() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [globalSorOpen, setGlobalSorOpen] = useState(false);
   const [analysisSourceId, setAnalysisSourceId] = useState<string | undefined>();
+  const [vaultDocumentId,setVaultDocumentId]=useState<string|undefined>();
+  const [vaultProjectId,setVaultProjectId]=useState<string|undefined>();
   const [notice, setNotice] = useState<string | null>(null);
   const [departmentContext, setDepartmentContext] = useState<string | null>(() => {
     if ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId) {
@@ -3377,7 +3382,7 @@ function Portal() {
     setModal("document");
   };
   if (!testAuthReady) return <main className="grid min-h-screen place-items-center bg-background text-foreground">Checking authenticated session…</main>;
-  if (testMembership && showSharedTestWorkspace) return <div className={darkMode ? "dark" : ""}>
+  if (testMembership?.role === "admin" && showSharedTestWorkspace) return <div className={darkMode ? "dark" : ""}>
     <div className="border-b border-border bg-card px-4 py-2 text-foreground">
       <button type="button" onClick={() => setShowSharedTestWorkspace(false)} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-secondary">Back to portal</button>
     </div>
@@ -3536,7 +3541,7 @@ function Portal() {
           {persona.kind === "client" ? (
             <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
           ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","index"].includes(view) ? (
- <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} initialProjectScope={view === "project" ? selectedProjectId : undefined} recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)} onOpenInputs={sourceId => {setAnalysisSourceId(sourceId);setView("analysis");}} darkMode={darkMode} onLogout={handleLogout}/>
+ <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} initialProjectScope={view === "project" ? selectedProjectId : undefined} recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)} onOpenTasks={() => setView("assignee")} onOpenInputs={sourceId => {setAnalysisSourceId(sourceId);setView("analysis");}} onOpenVault={(documentId,projectId)=>{setShowSharedTestWorkspace(false);setVaultDocumentId(documentId);setVaultProjectId(projectId);setView("vault");}} darkMode={darkMode} onLogout={handleLogout}/>
           ) : view === "departments" ? (
             <CommonDepartmentSearchView
               currentDepartment={adminDepartment}
@@ -3636,6 +3641,8 @@ function Portal() {
                 )}
                 onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}}
               />
+          ) : view === "vault" && testMembership ? (
+            <SharedDocumentVault key={`${testMembership.membershipId}:${vaultDocumentId || ""}:${vaultProjectId || ""}`} membership={testMembership} departmentCode={departmentCode(active.short)} initialDocumentId={vaultDocumentId} initialProjectId={vaultProjectId} onBack={()=>navigate(effectiveArea)} renderLibrary={library=><HardwareDeliverablesDrive documents={library.documents} departments={portal.departments} departmentContext={library.departmentContext} persona={persona} onSelectDocument={document=>library.onSelectDocument(document as typeof library.documents[number])} onExternalUpload={library.onUploadFile} uploadReadOnlyReason={library.readOnlyReason} sharedStorage hideProjectFilter/>}/>
           ) : view === "vault" ? (
             <><div className="flex items-center justify-between"><div><h1 className="text-lg font-semibold">Documents & Vault</h1><p className="text-xs text-muted-foreground">Original documents and project-linked files within your department access.</p></div><div className="flex gap-2">{testMembership && <Action label="Shared documents & uploads" primary onClick={() => {setSharedTestInitialTab("Documents"); setShowSharedTestWorkspace(true);}} />}<Action label="Back to workspace" onClick={() => navigate(effectiveArea)} /></div></div><HardwareDeliverablesDrive documents={scopedDocuments} departments={portal.departments} departmentContext={departmentContext} persona={persona} portal={portal} onSelectDocument={openDocument} onOpenCustomerRegister={() => setCustomerRegisterOpen(true)} uploadReadOnlyReason={testMembership ? "This view is browser-local. Shared TEST uploads remain in Shared TEST records until the shared document contract is verified." : undefined} onDocumentCreated={async document => update(state => { const ownWork = state.records.filter(r=>!r.archived && r.area === persona.departmentId); const keys = new Set([...ownWork.flatMap(projectReferences),...state.documents.filter(d=>canDepartmentAccessDocument(d,persona,departmentContext)).flatMap(d=>d.linkedRecordRefs ?? [])]); const projects = state.records.filter(r => r.type === "Project" && (persona.kind === "admin" || keys.has(r.id) || keys.has(r.reference))); const selected = projects.find(p => p.id === document.projectId); assertUploadContextCurrent(document, projects, state.departments, sourceGerberPackages(state.documents.filter(d => canDepartmentAccessDocument(d, persona, departmentContext)), selected)); return { ...state, documents:[document,...state.documents], audit:[{id:createId(),at:now(),action:"Draft document uploaded",detail:`${document.title} · Browser-local`},...state.audit].slice(0,100) }; })} /></>
           ) : view === "index" ? (
@@ -4260,7 +4267,7 @@ function Portal() {
           onResetDemo={resetDemo}
         />
       )}{" "}
-      {searchOpen && persona.kind !== "client" && <Dialog open onOpenChange={setSearchOpen}><DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Search</DialogTitle><DialogDescription>Search permitted documents, projects, tasks and process records. Your workspace stays open behind this popup.</DialogDescription></DialogHeader>{testMembership ? <SharedPortalSearch membership={testMembership} query={globalSearchQuery} onQueryChange={setGlobalSearchQuery} onOpen={destination=>{setSearchOpen(false);if(["Projects","Records","Tasks","Approvals","Documents"].includes(destination)){setSharedTestInitialTab(destination as "Projects"|"Records"|"Tasks"|"Approvals"|"Documents");setShowSharedTestWorkspace(true);}else setView(destination as "budgets"|"tickets"|"communication");}}/> : <SharedIndex compact queryValue={globalSearchQuery} onQueryChange={setGlobalSearchQuery} records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeRecords} documents={scopedDocuments} allowedProjectIds={(persona.kind === "lead" || persona.kind === "member") ? leadProjects.map(project => project.id) : []} departments={portal.departments} departmentContext={departmentContext} onSelect={record => { setSearchOpen(false); if (record.type === "Project") { setSelectedProjectId(record.reference); if (persona.kind === "admin") setSelectedId(record.id); else setProjectScopes(current => ({ ...current, [effectiveArea]: record.reference })); setView("project"); } else openRecord(record); }} onSelectDocument={document => { setSearchOpen(false); openDocument(document); }} />}</DialogContent></Dialog>}
+      {searchOpen && persona.kind !== "client" && <Dialog open onOpenChange={setSearchOpen}><DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Search</DialogTitle><DialogDescription>Search permitted documents, projects, tasks and process records. Your workspace stays open behind this popup.</DialogDescription></DialogHeader>{testMembership ? <SharedPortalSearch membership={testMembership} query={globalSearchQuery} onQueryChange={setGlobalSearchQuery} onOpen={destination=>{setSearchOpen(false);setShowSharedTestWorkspace(false);if(destination==="Documents"){openDocuments();}else if(destination==="Projects"){setView("project");}else if(destination==="Records"){setView("records");}else if(destination==="Tasks"){setView("assignee");}else if(destination==="Approvals"){setView("approvals");}else setView(destination as "budgets"|"tickets"|"communication");}}/> : <SharedIndex compact queryValue={globalSearchQuery} onQueryChange={setGlobalSearchQuery} records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeRecords} documents={scopedDocuments} allowedProjectIds={(persona.kind === "lead" || persona.kind === "member") ? leadProjects.map(project => project.id) : []} departments={portal.departments} departmentContext={departmentContext} onSelect={record => { setSearchOpen(false); if (record.type === "Project") { setSelectedProjectId(record.reference); if (persona.kind === "admin") setSelectedId(record.id); else setProjectScopes(current => ({ ...current, [effectiveArea]: record.reference })); setView("project"); } else openRecord(record); }} onSelectDocument={document => { setSearchOpen(false); openDocument(document); }} />}</DialogContent></Dialog>}
       <DepartmentLeadLoginModal isOpen={loginModalOpen} demoMode={false} testMode onClose={() => setLoginModalOpen(false)} currentPersonaId={testMembership?.role === "member" ? "" : persona.id} onLoginSuccess={handleDemoLogin} onTestLogin={handleTestLogin} onLogout={handleLogout} />
       {customerRegisterOpen && (
         <CustomerRegisterModal
@@ -10006,6 +10013,9 @@ function HardwareDeliverablesDrive({
   onDocumentCreated,
   uploadReadOnlyReason,
   onDocumentUpdated,
+  onExternalUpload,
+  sharedStorage=false,
+  hideProjectFilter=false,
 }: {
   documents: ControlledDocument[];
   departments: Department[];
@@ -10017,6 +10027,9 @@ function HardwareDeliverablesDrive({
   onDocumentCreated?: ((document: ControlledDocument) => Promise<boolean>) | undefined;
   uploadReadOnlyReason?: string | undefined;
   onDocumentUpdated?: ((document: ControlledDocument, event: string) => void) | undefined;
+  onExternalUpload?: ((file:File|null)=>void) | undefined;
+  sharedStorage?: boolean;
+  hideProjectFilter?: boolean;
 }) {
   const [driveGroup, setDriveGroup] = useState<DriveGroup>("All Deliverables");
   const [folder, setFolder] = useState("00_Root_Audit_Repository");
@@ -10032,7 +10045,7 @@ function HardwareDeliverablesDrive({
   const permittedProjectKeys = new Set([...ownWork.flatMap(projectReferences), ...documents.filter(canDepartmentAccessForChoice).flatMap(d => d.linkedRecordRefs ?? [])]);
   function canDepartmentAccessForChoice(document: ControlledDocument) { return Boolean(persona && canDepartmentAccessDocument(document, persona, departmentContext)); }
   const uploadProjects = (portal?.records ?? []).filter(r => r.type === "Project" && !r.archived && (persona?.kind === "admin" && !departmentContext || permittedProjectKeys.has(r.id) || permittedProjectKeys.has(r.reference)));
-  const uploadDisabled = Boolean(uploadReadOnlyReason || !onDocumentCreated || !persona || persona.kind === "client" || !uploadDepartments.length);
+  const uploadDisabled = Boolean(uploadReadOnlyReason || (!onExternalUpload && (!onDocumentCreated || !uploadDepartments.length)) || !persona || persona.kind === "client");
 
   const canSee = (document: ControlledDocument) =>
     canDepartmentAccessDocument(
@@ -10059,6 +10072,7 @@ function HardwareDeliverablesDrive({
 
   const openUploadDraft = (file: File | null) => {
     if (uploadDisabled) { setUploadNotice(uploadReadOnlyReason ?? "Select an authorized department before uploading."); return; }
+    if(onExternalUpload){onExternalUpload(file);return;}
     setPendingFile(file); setUploadDialogOpen(true);
   };
   const saveUploadDraft = async (document: UploadDraft) => {
@@ -10084,7 +10098,7 @@ function HardwareDeliverablesDrive({
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-md border border-moss/25 bg-accent px-2 py-1 font-mono text-[10px] font-semibold uppercase text-accent-foreground">
-              Browser-local files
+              {sharedStorage ? "Shared controlled files" : "Browser-local files"}
             </span>
           </div>
         </div>
@@ -10169,7 +10183,7 @@ function HardwareDeliverablesDrive({
                 Upload original document · Draft only
               </p>
               <p className="text-[11px] text-muted-foreground">
-                Choose a file, then confirm its project, type and revision. Stored in this browser · up to 25 MB.
+                Choose a file, then confirm its project, type and revision. {sharedStorage ? "Stored privately in your company account" : "Stored in this browser"} · up to 25 MB.
               </p>
             </div>
           </div>
@@ -10193,7 +10207,7 @@ function HardwareDeliverablesDrive({
               Project Artifact Register ({visible.length} Deliverables)
             </p>
           </div>
-          <ResponsiveFilterBar label="Document filters"><div className="filter-search"><Search/><input aria-label="Search deliverables" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search deliverables or ID…"/></div><CompactFilterSelect label="Filter documents by project" shortLabel="Project" icon={Layers} value={projectFilter} onChange={setProjectFilter} options={[{value:"all",label:"All projects / common documents"},...uploadProjects.map(p=>({value:p.id,label:`${p.reference} · ${p.title}`}))]}/></ResponsiveFilterBar>
+          <ResponsiveFilterBar label="Document filters"><div className="filter-search"><Search/><input aria-label="Search deliverables" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search deliverables or ID…"/></div>{!hideProjectFilter&&<CompactFilterSelect label="Filter documents by project" shortLabel="Project" icon={Layers} value={projectFilter} onChange={setProjectFilter} options={[{value:"all",label:"All projects / common documents"},...uploadProjects.map(p=>({value:p.id,label:`${p.reference} · ${p.title}`}))]}/>}</ResponsiveFilterBar>
         </div>
 
         <div className="divide-y divide-border">
@@ -10545,7 +10559,7 @@ function DocumentDetail({
                   {document.uploadType ? "This pilot original is stored in this browser. It is not a shared or approved release." : "Lovable Cloud is the active backend. Google Drive is optional and not connected."}
                 </p>
               </div>
-              <Status status={isCloudDocument ? "Approved" : "Draft"} />
+              <span className="rounded border border-border px-2 py-1 text-xs">{document.lifecycle ?? "Draft"}</span>
             </div>
             <div className="p-4">
               {isHardwareDeliverable && <section className="mb-4 rounded-lg border border-steel/35 bg-accent p-3"><p className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-steel">Hardware engineering deliverable</p><p className="mt-1 text-sm font-semibold">{document.title.includes("Gerber") ? "Gerber & PCB release · ZIP archive" : document.title.includes("STEP") || document.title.includes("CAD") ? "3D STEP enclosure · ZIP package" : "Schematic package · PDF deliverable"}</p><p className="mt-1 text-xs text-muted-foreground">Include revision notes and designer attribution with each verified release package. Human approval remains required.</p></section>}

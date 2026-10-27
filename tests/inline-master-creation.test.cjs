@@ -86,6 +86,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261025152001_link_approved_input_baseline",
     "20261026090000_preproject_sales_intake",
     "20261026100000_atomic_sales_intake",
+    "20261026110000_shared_document_registration",
   ];
 
   for (const name of initialMigrations) {
@@ -185,6 +186,37 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     })
   ).id;
   assert.ok(project, "Project must be created");
+
+  const registerDoc=(user,payload,key=crypto.randomUUID())=>asUser(user,async()=> (await db.query('SELECT register_controlled_document($1::jsonb,$2) result',[JSON.stringify(payload),key])).rows[0].result);
+  const docPayload={title:'TEST Gerber source',documentType:'Gerber ZIP',scope:'client',departmentId:dEhw,projectId:project};
+  const docKey=crypto.randomUUID(),gerber=await registerDoc(hwLead,docPayload,docKey);
+  assert.equal((await registerDoc(hwLead,docPayload,docKey)).id,gerber.id);
+  await assert.rejects(registerDoc(hwLead,{...docPayload,title:'Changed retry'},docKey),/REQUEST_ID_REUSED/);
+  await assert.rejects(registerDoc(emp,docPayload),/DOCUMENT_REGISTER_DENIED/);
+  await assert.rejects(registerDoc(null,docPayload),/DOCUMENT_REGISTER_DENIED/);
+  await assert.rejects(registerDoc(hwLead,{...docPayload,scope:'common',projectId:undefined,recordId:project}),/DOCUMENT_NONPROJECT_SCOPE/);
+  await assert.rejects(registerDoc(hwLead,{...docPayload,projectId:crypto.randomUUID()}),/DOCUMENT_PROJECT_REQUIRED/);
+  const commonDoc=await registerDoc(hwLead,{title:'TEST common procedure',documentType:'Policy / procedure',scope:'common',departmentId:dQa,status:'Approved',visibility:'client'});
+  const commonRow=(await db.query('SELECT * FROM documents WHERE id=$1',[commonDoc.id])).rows[0];
+  assert.equal(commonRow.department_id,dEhw);assert.equal(commonRow.record_id,null);assert.equal(commonRow.metadata.status,'Draft');assert.equal(commonRow.visibility,'internal');
+  const fileId=crypto.randomUUID(),storagePath=`${org}/${dEhw}/${gerber.id}/01/test.zip`;
+  await db.query("INSERT INTO controlled_document_files(id,organization_id,department_id,document_id,revision,storage_path,original_name,content_type,size_bytes,checksum,uploaded_by) VALUES($1,$2,$3,$4,'01',$5,'test.zip','application/zip',4,$6,$7)",[fileId,org,dEhw,gerber.id,storagePath,'a'.repeat(64),hwLead]);
+  await assert.rejects(registerDoc(hwLead,{...docPayload,title:'Panel',documentType:'Panel ZIP',sourceFileId:fileId}),/GERBER_SOURCE_UPLOAD_INCOMPLETE/);
+  await db.query("INSERT INTO storage.objects(bucket_id,name) VALUES('controlled-documents',$1)",[storagePath]);
+  const panel=await registerDoc(hwLead,{...docPayload,title:'Panel',documentType:'Panel ZIP',sourceFileId:fileId});
+  const panelMeta=(await db.query('SELECT metadata FROM documents WHERE id=$1',[panel.id])).rows[0].metadata;
+  assert.equal(panelMeta.sourceFileId,fileId);assert.equal(panelMeta.sourceRevision,'01');assert.equal(panelMeta.sourceChecksum,'a'.repeat(64));
+  const access=user=>asUser(user,()=>db.query('SELECT * FROM get_controlled_file_access($1)',[fileId]));
+  assert.equal((await access(hwLead)).rows[0].file_id,fileId);
+  assert.equal((await access(admin)).rows[0].file_id,fileId);
+  await assert.rejects(access(qaLead),/FILE_ACCESS_DENIED/);
+  await assert.rejects(access(emp),/FILE_ACCESS_DENIED/);
+  await assert.rejects(access(null),/AUTH_REQUIRED/);
+  await db.query('UPDATE organization_members SET active=false WHERE id=$1',[mids[hwLead]]);
+  await assert.rejects(access(hwLead),/FILE_ACCESS_DENIED/);
+  await db.query('UPDATE organization_members SET active=true WHERE id=$1',[mids[hwLead]]);
+  const otherProject=(await call(salLead,'create_project',{title:'Other Vault project',reference:'HLPL-VAULT-OTHER-01'})).id;
+  await assert.rejects(registerDoc(hwLead,{...docPayload,projectId:otherProject,title:'Wrong project panel',documentType:'Panel ZIP',sourceFileId:fileId}),/GERBER_SOURCE_PROJECT_OR_TYPE_MISMATCH/);
 
   // Pre-project intake must remain independent of project creation, with Sales authority enforced.
   const preProjectPayload = {record_type:"Opportunity",title:"Pre-project feasibility intake",reference:"HLPL-GEN-SAL-OPP-PREPROJECT-01",project_id:null,fields:{revision:"01"}};

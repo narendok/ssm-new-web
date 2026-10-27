@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 
 export type ServiceTicketsWorkspaceProps = {
+  sharedActions?: {onCreate:()=>void;onStatus:(id:string)=>void;onReply:(id:string,text:string,internal:boolean)=>Promise<boolean>} | undefined;
   tickets: ServiceTicket[];
   currentUser: {
     role: string;
@@ -41,6 +42,7 @@ export type ServiceTicketsWorkspaceProps = {
 };
 
 export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = ({
+  sharedActions,
   tickets,
   currentUser,
   onUpdateTickets,
@@ -55,7 +57,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
     currentUser.department?.toLowerCase() === "sit";
 
   // Filter visible tickets strictly according to role boundaries
-  const authorizedTickets = filterAuthorizedTickets(tickets, {
+  const authorizedTickets = sharedActions ? tickets : filterAuthorizedTickets(tickets, {
     role: currentUser.role,
     email: currentUser.email,
     organization: currentUser.organization,
@@ -97,7 +99,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
     return matchesSearch && matchesStatus && matchesCategory;
   });
 
-  const activeTicket = authorizedTickets.find((t) => t.id === selectedTicketId);
+  const activeTicket = authorizedTickets.find((t) => t.id === selectedTicketId) || (sharedActions ? authorizedTickets[0] : undefined);
 
   const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,9 +143,10 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
     setNewAssetId("");
   };
 
-  const handleAddReply = (e: React.FormEvent) => {
+  const handleAddReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!replyText.trim() || !activeTicket) return;
+    if(sharedActions){if(await sharedActions.onReply(activeTicket.id,replyText.trim(),!isClient&&isInternalNote)){setReplyText("");setIsInternalNote(false);}return;}
 
     const newReply: TicketReply = {
       id: `rep-${Date.now()}`,
@@ -283,7 +286,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
             </button>
           )}
           <button
-            onClick={() => setIsCreateOpen(true)}
+            onClick={() => sharedActions ? sharedActions.onCreate() : setIsCreateOpen(true)}
             className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -441,7 +444,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
                 </div>
 
                 {/* Status action buttons */}
-                {isServiceOrAdmin && (
+                {isServiceOrAdmin && (sharedActions ? <button className="rounded border border-border px-3 py-1.5 text-xs" onClick={()=>sharedActions.onStatus(activeTicket.id)}>Update status</button> : (
                   <div className="flex items-center gap-1.5 text-xs">
                     {activeTicket.status === "Open" && (
                       <button
@@ -484,7 +487,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
                       </button>
                     )}
                   </div>
-                )}
+                ))}
               </div>
 
               {/* Metadata strip */}

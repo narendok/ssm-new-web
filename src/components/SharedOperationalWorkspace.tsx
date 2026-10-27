@@ -40,6 +40,8 @@ export function SharedOperationalWorkspace({
   recordTypeFilter,
   onClearRecordTypeFilter,
   onOpenInputs,
+  onOpenVault,
+  onOpenTasks,
 }: {
   membership: TestMembership;
   view: string;
@@ -50,6 +52,8 @@ export function SharedOperationalWorkspace({
   recordTypeFilter?: string | null | undefined;
   onClearRecordTypeFilter?: (() => void) | undefined;
   onOpenInputs?: ((sourceId?:string) => void) | undefined;
+  onOpenVault?: ((documentId?:string,projectId?:string)=>void) | undefined;
+  onOpenTasks: () => void;
 }) {
   const load = useServerFn(getSharedTestWorkspace),
     coordination = useServerFn(getCoordination),
@@ -450,7 +454,7 @@ export function SharedOperationalWorkspace({
   function openRecord(id: string) {
     const r = data.records.find((r) => r.id === id);
     if (!r) {
-      setAdvanced("Tasks");
+      setError("This record is unavailable in your current access. Refresh the workspace and try again.");
       return;
     }
     if (r.record_type === "Project") {
@@ -536,7 +540,7 @@ export function SharedOperationalWorkspace({
           TEST · {actor.display_name}
         </span>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setAdvanced("Documents")}>
+          <Button variant="outline" size="sm" onClick={() => onOpenVault ? onOpenVault() : setAdvanced("Documents")}>
             Document files
           </Button>
         </div>
@@ -559,7 +563,7 @@ export function SharedOperationalWorkspace({
           records={records}
           currentUser={actor.display_name}
           userRole={actor.role === "member" ? "Employee" : "Lead"}
-          onBack={() => setAdvanced("Tasks")}
+          onBack={onOpenTasks}
           onApprove={(id, notes) => decide(id, "approved", notes)}
           onReject={(id, reason) => decide(id, "rejected", reason)}
           onReturn={(id, reason) => decide(id, "returned", reason)}
@@ -590,7 +594,7 @@ export function SharedOperationalWorkspace({
           onOpenInputs={onOpenInputs}
           onProjectChange={setScope}
           initialTab={
-            view === "assignee"
+            view === "assignee" || view === "queue"
               ? "tasks"
               : view === "records"
                 ? "records"
@@ -599,7 +603,7 @@ export function SharedOperationalWorkspace({
                   : undefined
           }
           onCreateRecord={() => openCreate("create_record")}
-          onCreateDeliverable={() => setAdvanced("Documents")}
+          onCreateDeliverable={() => onOpenVault ? onOpenVault(undefined,projectRows.find(p=>p.id===scope||p.reference===scope)?.id) : setAdvanced("Documents")}
           onCreateProject={
             actor.role === "admin" ||
             (actor.role === "department_lead" && actor.department_code === "SAL")
@@ -607,7 +611,7 @@ export function SharedOperationalWorkspace({
               : undefined
           }
           onOpenRecord={openRecord}
-          onOpenDocument={() => setAdvanced("Documents")}
+          onOpenDocument={id => onOpenVault ? onOpenVault(id,projectRows.find(p=>p.id===scope||p.reference===scope)?.id) : setAdvanced("Documents")}
           onUpdateTask={(id, patch) => void updateTask(id, patch)}
           onCreateTask={async (task) => {
             const project = projectRows.find((p) => [p.id, p.reference].includes(task.projectId));

@@ -17,8 +17,13 @@ import {
 } from "@/lib/business-workspace.functions";
 import type { TestMembership } from "@/lib/test-auth.functions";
 import { businessDate } from "@/lib/business-date";
-import { User, ShieldCheck, GraduationCap, ClipboardList, Wallet, Receipt } from "lucide-react";
-import { budgetSummaries, personalAssignments } from "@/lib/business-presentation";
+import { SharedBudgetPresentation } from "./SharedBudgetPresentation";
+import { EmployeeSelfServiceWorkspace } from "./EmployeeSelfServiceWorkspace";
+import { TeamCommunicationWorkspace } from "./TeamCommunicationWorkspace";
+import { HRAdministrationWorkspace } from "./HRAdministrationWorkspace";
+import { ServiceTicketsWorkspace } from "./ServiceTicketsWorkspace";
+import type { ServiceTicket } from "@/lib/service-tickets";
+import { personalAssignments } from "@/lib/business-presentation";
 
 type Question = { id: string; label: string; type: string; required: boolean; options?: string[] };
 const input = "rounded-md border border-input bg-background px-2 py-1.5 text-sm w-full";
@@ -52,15 +57,15 @@ export function SharedBusinessWorkspace({
     [search, setSearch] = useState(""),
     [channel, setChannel] = useState("");
   const pending = useRef<{ signature: string; id: string } | null>(null);
-  const [profileTab, setProfileTab] = useState("details");
-  const [budgetTab, setBudgetTab] = useState("requests");
+
   const lock = useRef(false);
+  const [chatDraft,setChatDraft]=useState("");
   async function save(
     kind: BusinessAction,
     item: BusinessItem | null,
     data: Record<string, unknown>,
   ) {
-    if (lock.current) return;
+    if (lock.current) return false;
     lock.current = true;
     setBusy(true);
     setError("");
@@ -75,9 +80,11 @@ export function SharedBusinessWorkspace({
       setNotice("Saved to your shared workspace.");
       setAction(null);
       await query.refetch();
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed. Your form is preserved.");
       void query.refetch();
+      return false;
     } finally {
       setBusy(false);
       lock.current = false;
@@ -235,318 +242,38 @@ export function SharedBusinessWorkspace({
   }
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-xs">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">{title[view] || "Workspace"}</h1>
-          <p className="text-xs text-muted-foreground">
-            {actor.display_name}{" "}
-            <span
-              className="rounded border border-border px-1 ml-1"
-              title="Authenticated shared records"
-            >
-              TEST
-            </span>
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {view === "budgets" && actor.role !== "viewer" && (
-            <Button
-              size="sm"
-              onClick={() =>
-                open("request_expense", null, { currency: "INR", requiredDate: businessDate() })
-              }
-            >
-              New request
-            </Button>
-          )}
-          {view === "budgets" && fin && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => open("allocate", null, { currency: "INR", startDate: businessDate() })}
-            >
-              Add allocation
-            </Button>
-          )}
-          {view === "tickets" && (
-            <Button
-              size="sm"
-              onClick={() =>
-                open("ticket_create", null, { priority: "Normal", category: "General" })
-              }
-            >
-              New ticket
-            </Button>
-          )}
-          {view === "hr_admin" && hr && (
-            <Button
-              size="sm"
-              onClick={() =>
-                open("publish_template", null, {
-                  type: "form",
-                  dueDate: businessDate(),
-                  cadenceDays: "0",
-                })
-              }
-            >
-              Create policy / training / form
-            </Button>
-          )}
-          {view === "communication" && (admin || lead) && (
-            <Button size="sm" onClick={() => open("channel_create")}>
-              New channel
-            </Button>
-          )}
-        </div>
-      </header>
-      {!["profile", "budgets"].includes(view) && data.notifications.length > 0 && (
-        <details className="rounded-lg border border-border/60 px-3 py-2 text-xs">
-          <summary className="cursor-pointer">Recent updates ({data.notifications.length})</summary>
-          <ul className="mt-2 space-y-1">
-            {data.notifications.slice(0, 8).map((n) => (
-              <li key={`${n.itemId}:${n.event}`}>
-                {n.kind} · {n.itemId.slice(0, 8)} · {new Date(n.at).toLocaleString("en-IN")}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {notice && (
-        <p
-          role="status"
-          className="rounded border border-emerald-500/30 p-2 text-sm text-emerald-700 dark:text-emerald-400"
-        >
-          {notice}
-        </p>
-      )}
-      {error && !action && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      {view !== "profile" && <input
-        className={`${input} max-w-sm`}
-        aria-label="Search this workspace"
-        placeholder="Search…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
+      {notice&&<p role="status" className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs">{notice}</p>}
+      {error&&!action&&<p role="alert" className="text-sm text-destructive">{error}</p>}
+      {view==="budgets"&&<SharedBudgetPresentation data={data} membership={membership} onAction={open}/>}
+          {view === "tickets" && <ServiceTicketsWorkspace
+        currentUser={{role:admin?"admin":actor.role==="viewer"?"client":actor.role,name:actor.display_name,email:"",department:actor.department_code||undefined}}
+        tickets={by("ticket").map(i=>({id:i.id,reference:`TKT-${i.id.slice(0,8)}`,source:str(i.data["source"]),requesterName:str(i.data["requesterName"]),requesterEmail:"",requesterDepartment:str(i.data["requesterDept"]),subject:str(i.data["subject"]),description:str(i.data["description"]),category:str(i.data["category"]),priority:str(i.data["priority"]),status:str(i.data["status"]),projectId:i.projectId||undefined,assetId:str(i.data["assetId"])||undefined,assignedOwner:str(i.data["assignedOwner"])||undefined,slaDueHours:0,createdAt:str(i.data["createdAt"]),updatedAt:str(i.data["updatedAt"]),replies:Array.isArray(i.data["replies"])?i.data["replies"]:[],history:Array.isArray(i.data["history"])?i.data["history"]:[]} as ServiceTicket))}
+        onUpdateTickets={()=>{}}
+        sharedActions={{onCreate:()=>open("ticket_create",null,{priority:"Normal",category:"General"}),onStatus:id=>{const ticket=by("ticket").find(i=>i.id===id);if(ticket)open("ticket_status",ticket);},onReply:async(id,text,internal)=>{const ticket=by("ticket").find(i=>i.id===id);return ticket?await save("ticket_reply",ticket,{message:text,isInternalNote:service&&internal}):false;}}}
       />}
-      {view === "budgets" && (
-        <>
-          {budgetSummaries(items).map(summary => <section key={summary.currency} aria-label={`Budget summary ${summary.currency}`} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {[["Allocated", summary.allocated], ["Committed", summary.committed], ["Spent", summary.spent], ["Available", summary.available]].map(([label, value]) => <article key={String(label)} className={`${card} border-l-4 ${label === "Available" ? "border-l-emerald-500" : label === "Committed" ? "border-l-amber-500" : "border-l-primary/60"}`}><p className="text-xs text-muted-foreground">{String(label)}</p><p className="mt-1 text-lg font-semibold">{summary.currency} {money(value)}</p></article>)}
-          </section>)}
-          <nav aria-label="Budget sections" className="flex gap-1 rounded-lg border border-border/50 bg-muted p-1">
-            {[["requests", "Expense Requests", Receipt], ["allocations", "Budget Allocations", Wallet]].map(([key, label, Icon]) => {
-              const Symbol = Icon as typeof Wallet;
-              return <button key={String(key)} type="button" aria-pressed={budgetTab === key} onClick={() => setBudgetTab(String(key))} className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium ${budgetTab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}><Symbol className="size-4" />{String(label)}</button>;
-            })}
-          </nav>
-          <div hidden={budgetTab !== "allocations"}>
-          <section className="grid gap-3 md:grid-cols-3">
-            {by("allocation").map((i) => (
-              <article key={i.id} className={card}>
-                <h2 className="text-sm font-semibold">
-                  {deptName(i.departmentId)} · {str(i.data["category"])}
-                </h2>
-                <p className="text-xs text-muted-foreground">
-                  {str(i.data["periodId"])} · {str(i.data["currency"])}
-                </p>
-                <dl className="grid grid-cols-2 gap-2 text-xs mt-3">
-                  {[
-                    ["Allocated", i.data["allocatedAmount"]],
-                    ["Committed", i.data["committedAmount"]],
-                    ["Spent", i.data["spentAmount"]],
-                    [
-                      "Available",
-                      Number(i.data["allocatedAmount"]) -
-                        Number(i.data["committedAmount"]) -
-                        Number(i.data["spentAmount"]),
-                    ],
-                  ].map(([label, value]) => (
-                    <div key={String(label)}>
-                      <dt className="text-muted-foreground">{String(label)}</dt>
-                      <dd>{money(value)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </article>
-            ))}
-          </section>
-          {!by("allocation").length && <p className="text-sm text-muted-foreground">No permitted budget allocations.</p>}
-          </div>
-          <div hidden={budgetTab !== "requests"}>
-          <section className="space-y-2">
-            {filter(by("expense")).map((i) => (
-              <article
-                key={i.id}
-                className={`${card} flex flex-wrap items-center justify-between gap-3`}
-              >
-                <div>
-                  <p className="font-mono text-xs text-primary">EXP-{i.id.slice(0, 8)}</p>
-                  <h2 className="text-sm font-medium">{str(i.data["purpose"])}</h2>
-                  <p className="text-xs text-muted-foreground">
-                    {str(i.data["requesterName"])} · {deptName(i.departmentId)} ·{" "}
-                    {str(i.data["category"])} · {str(i.data["currency"])} {money(i.data["amount"])}
-                  </p>
-                  <p className="mt-2 inline-flex rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs font-medium">{str(i.data["status"]).replaceAll("_", " ")}</p>
-                </div>
-                <div className="flex gap-2">
-                  {i.ownerId !== actor.membership_id &&
-                    ((i.data["status"] === "Pending_Dept_Review" && (admin || lead)) ||
-                      (i.data["status"] === "Pending_Finance" && fin) ||
-                      (i.data["status"] === "Pending_Admin" && admin)) && (
-                      <>
-                        <Button size="sm" onClick={() => open("approve_expense", i)}>
-                          Review / approve
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => open("reject_expense", i)}
-                        >
-                          Reject
-                        </Button>
-                      </>
-                    )}
-                  {i.data["status"] === "Approved" && fin && i.ownerId !== actor.membership_id && (
-                    <Button
-                      size="sm"
-                      onClick={() =>
-                        open("post_expense", i, { actualAmount: String(i.data["amount"]) })
-                      }
-                    >
-                      Post actuals
-                    </Button>
-                  )}
-                </div>
-              </article>
-            ))}
-          </section>
-          {!by("expense").length && (
-            <p className="text-sm text-muted-foreground">
-              No permitted expense requests. Requests do not require a project.
-            </p>
-          )}
-          </div>
-        </>
-      )}
-      {view === "tickets" && (
-        <section className="space-y-3">
-          {filter(by("ticket")).map((i) => (
-            <article key={i.id} className={card}>
-              <p className="font-mono text-xs text-primary">
-                TKT-{i.id.slice(0, 8)} · {str(i.data["source"])}
-              </p>
-              <div className="flex justify-between gap-3">
-                <h2 className="text-sm font-semibold">{str(i.data["subject"])}</h2>
-                <span className="text-xs">{str(i.data["status"])}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {str(i.data["requesterName"])} · {str(i.data["priority"])}
-              </p>
-              <p className="text-sm whitespace-pre-wrap my-2">{str(i.data["description"])}</p>
-              <details className="text-xs">
-                <summary className="cursor-pointer">Discussion & history</summary>
-                {(Array.isArray(i.data["replies"]) ? i.data["replies"] : []).map((r, index) => {
-                  const reply = r as Record<string, unknown>;
-                  return (
-                    <div className="border-l-2 border-border pl-3 my-2" key={index}>
-                      <strong>{str(reply["authorName"])}</strong>
-                      {reply["isInternalNote"] === true && <span> · Internal</span>}
-                      <p className="whitespace-pre-wrap">{str(reply["message"])}</p>
-                    </div>
-                  );
-                })}
-              </details>
-              <div className="flex gap-2 mt-3">
-                <Button size="sm" variant="outline" onClick={() => open("ticket_reply", i)}>
-                  Reply
-                </Button>
-                {service && (
-                  <Button size="sm" onClick={() => open("ticket_status", i)}>
-                    Update status
-                  </Button>
-                )}
-              </div>
-            </article>
-          ))}
-          {!by("ticket").length && (
-            <p className="text-sm text-muted-foreground">No permitted tickets.</p>
-          )}
-        </section>
-      )}
-      {view === "profile" && (
-        <>
-          <p className="text-xs text-muted-foreground">Personal employment details, assigned policies, training and feedback forms.</p>
-          <nav aria-label="My Profile sections" className="flex gap-1 overflow-x-auto rounded-lg border border-border/50 bg-muted p-1">
-            {[["details", "My Details", User], ["policy", "Policies", ShieldCheck], ["training", "Training", GraduationCap], ["form", "Forms & Surveys", ClipboardList]].map(([key, label, Icon]) => {
-              const Symbol = Icon as typeof User;
-              return <button key={String(key)} type="button" aria-pressed={profileTab === key} onClick={() => setProfileTab(String(key))} className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs font-medium ${profileTab === key ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}><Symbol className="size-4" />{String(label)}</button>;
-            })}
-          </nav>
-          <div hidden={profileTab !== "details"}>
-          <section className={`${card} border-t-4 border-t-emerald-500`}>
-            <h2 className="font-semibold text-sm">{actor.display_name}</h2>
-            <p className="text-xs text-muted-foreground">
-              {actor.department_code || "Department not recorded"} ·{" "}
-              {actor.role.replaceAll("_", " ")}
-            </p>
-            <dl className="grid md:grid-cols-3 gap-3 text-sm mt-3">
-              {[
-                "employeeCode",
-                "email",
-                "phone",
-                "roleTitle",
-                "joiningDate",
-                "facilityLocation",
-                "emergencyContact",
-              ].map((key) => (
-                <div key={key}>
-                  <dt className="text-xs text-muted-foreground">
-                    {({ employeeCode: "Employee Code", email: "Email", phone: "Phone", roleTitle: "Role", joiningDate: "Joining Date", facilityLocation: "Location", emergencyContact: "Emergency Contact" } as Record<string,string>)[key]}
-                  </dt>
-                  <dd>{str(own?.data[key]) || "Not recorded"}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-          </div>
-          {profileTab !== "details" && <>
-          {personalAssignments(items, actor.membership_id, profileTab)
-            .map((i) => {
-              const template = items.find((t) => t.id === i.data["templateId"]);
-              return (
-                <article key={i.id} className={`${card} flex items-center justify-between gap-3`}>
-                  <div>
-                    <h3 className="text-sm font-medium">
-                      {str(template?.data["title"]) || "Published assignment"}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {str(template?.data["type"])} · due {str(i.data["dueDate"])} ·{" "}
-                      {str(i.data["status"])}
-                    </p>
-                  </div>
-                  {!["Completed", "Submitted"].includes(str(i.data["status"])) && (
-                    <Button size="sm" onClick={() => open("submit_assignment", i)}>
-                      Open
-                    </Button>
-                  )}
-                </article>
-              );
-            })}
-          {!personalAssignments(items, actor.membership_id, profileTab).length && <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No assigned {profileTab === "form" ? "forms or surveys" : profileTab === "policy" ? "policies" : "training"}.</p>}
-          </>}
-          <p className="text-xs text-muted-foreground">
-            Issued letters and equipment remain in their original controlled document and asset
-            registers. No sample personnel records are substituted.
-          </p>
-        </>
-      )}
+      {view === "profile" && <EmployeeSelfServiceWorkspace
+        persona={{id:actor.membership_id,label:actor.display_name,person:actor.display_name,kind:admin?"admin":lead?"lead":"member"}}
+        testMembership={membership}
+        sharedProfile={{id:actor.membership_id,name:actor.display_name,employeeCode:str(own?.data["employeeCode"])||"Not recorded",email:str(own?.data["email"])||"Not recorded",phone:str(own?.data["phone"])||"Not recorded",departmentCode:actor.department_code||"Not recorded",departmentName:data.departments.find(d=>d.code===actor.department_code)?.name||"Not recorded",roleTitle:str(own?.data["roleTitle"])||"Not recorded",securityClearance:str(own?.data["securityClearance"])||"Not recorded",facilityLocation:str(own?.data["facilityLocation"])||"Not recorded",emergencyContact:str(own?.data["emergencyContact"])||"Not recorded",joiningDate:str(own?.data["joiningDate"])||"Not recorded",status:"Not recorded"}}
+        letters={[]} policies={[]} trainings={[]} forms={[]} assets={[]}
+        sharedCounts={{policies:personalAssignments(items,actor.membership_id,"policy").filter(i=>!["Completed","Submitted"].includes(str(i.data["status"]))).length,training:personalAssignments(items,actor.membership_id,"training").length,forms:personalAssignments(items,actor.membership_id,"form").length}}
+        sharedSection={section=>{
+          if(section==="letters"||section==="assets")return <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">{section==="letters"?"Issued letters remain in the controlled personnel document register. No linked personal letters are available in this view yet.":"Assigned equipment remains in the original asset register. No linked personal equipment is available in this view yet."}</div>;
+          const type=section==="policies"?"policy":section==="forms"?"form":section;
+          const assignments=personalAssignments(items,actor.membership_id,type);
+          return <div className="space-y-3">{assignments.map(i=>{
+            const template=items.find(t=>t.id===i.data["templateId"]);
+            return <article key={i.id} className={`${card} flex items-center justify-between gap-3`}><div><h3 className="text-sm font-semibold">{str(template?.data["title"])||"Published assignment"}</h3><p className="mt-1 text-xs text-muted-foreground">{str(template?.data["type"])} · {str(i.data["status"])}{i.data["dueDate"]?` · Due ${str(i.data["dueDate"])}`:""}</p></div>{!["Completed","Submitted"].includes(str(i.data["status"]))&&<Button size="sm" onClick={()=>open("submit_assignment",i)}>Open</Button>}</article>;
+          })}{!assignments.length&&<p className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">No {section==="forms"?"forms or surveys":section} assigned to your account.</p>}</div>;
+        }}
+      />}
       {view === "hr_admin" &&
         (hr ? (
-          <>
-            <section className={card}>
+          <HRAdministrationWorkspace currentUser={{role:actor.role,name:actor.display_name,department:actor.department_code||undefined}} policies={[]} trainings={[]} forms={[]} onUpdatePolicies={()=>{}} onUpdateTrainings={()=>{}} onUpdateForms={()=>{}}
+            sharedCounts={{employees:data.members.length,policies:by("template").filter(i=>i.data["type"]==="policy").length,trainings:by("template").filter(i=>i.data["type"]==="training").length,forms:by("template").filter(i=>["form","survey"].includes(str(i.data["type"]))).length}}
+            sharedSection={section=><>
+            <div className="flex justify-end"><Button size="sm" onClick={()=>open("publish_template",null,{type:section==="policies"?"policy":section==="trainings"?"training":"form",dueDate:businessDate(),cadenceDays:"0"})}>Create policy / training / form</Button></div>
+            <section hidden={section!=="directory"} className={card}>
               <h2 className="text-sm font-semibold mb-3">Team directory</h2>
               <div className="space-y-2">
                 {data.members.map((m) => {
@@ -581,7 +308,7 @@ export function SharedBusinessWorkspace({
                 })}
               </div>
             </section>
-            <section className="space-y-2">
+            <section hidden={section!=="trainings"} className="space-y-2">
               <h2 className="font-semibold text-sm">Training review</h2>
               {by("assignment")
                 .filter((i) => i.data["status"] === "Submitted")
@@ -599,9 +326,9 @@ export function SharedBusinessWorkspace({
                   </article>
                 ))}
             </section>
-            <section className="space-y-2">
+            <section hidden={section==="directory"} className="space-y-2">
               <h2 className="font-semibold text-sm">Published activities</h2>
-              {filter(by("template")).map((i) => (
+              {filter(by("template")).filter(i=>section==="policies"?i.data["type"]==="policy":section==="trainings"?i.data["type"]==="training":["form","survey"].includes(str(i.data["type"]))).map((i) => (
                 <article key={i.id} className={card}>
                   <h3 className="text-sm font-semibold">{str(i.data["title"])}</h3>
                   <p className="text-xs text-muted-foreground">
@@ -657,13 +384,15 @@ export function SharedBusinessWorkspace({
                 </article>
               ))}
             </section>
-          </>
+          </>}/>
         ) : (
           <p role="alert">HR administration access is restricted.</p>
         ))}
-      {view === "communication" && (
-        <div className="grid md:grid-cols-[200px_1fr] gap-3">
-          <aside className={card}>
+      {view === "communication" && <TeamCommunicationWorkspace persona={{id:actor.membership_id,label:actor.display_name,person:actor.display_name,kind:admin?"admin":lead?"lead":"member"}} sharedContent={
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4 min-h-[580px]">
+          <aside className={`${card} md:col-span-1`}>
+            <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Channels</h3>
+            {(admin||lead)&&<Button size="sm" variant="outline" className="mb-3 w-full" onClick={()=>open("channel_create")}>New channel</Button>}
             {by("channel").map((i) => (
               <button
                 className={`w-full text-left text-sm rounded p-2 ${channel === i.id ? "bg-primary/10 text-primary" : ""}`}
@@ -674,7 +403,7 @@ export function SharedBusinessWorkspace({
               </button>
             ))}
           </aside>
-          <section className={`${card} space-y-3`}>
+          <section className={`${card} flex flex-col gap-3 md:col-span-3`}>
             {!channel ? (
               <p className="text-sm text-muted-foreground">Select a permitted channel.</p>
             ) : (
@@ -724,11 +453,15 @@ export function SharedBusinessWorkspace({
                       )}
                   </article>
                 ))}
+                <form className="mt-auto flex gap-2 border-t border-border pt-3" onSubmit={async e=>{e.preventDefault();if(!chatDraft.trim()||busy)return;const text=chatDraft;if(await save("send_message",null,{channelId:channel,text,type:"update",tags:[]}))setChatDraft(current=>current===text?"":current);}}>
+                  <input aria-label="Message to selected channel" className={input} value={chatDraft} disabled={busy} placeholder="Message your team…" onChange={e=>setChatDraft(e.target.value)}/>
+                  <Button disabled={busy||!chatDraft.trim()} type="submit">Send</Button>
+                </form>
               </>
             )}
           </section>
         </div>
-      )}
+      }/>}
       <Dialog
         open={Boolean(action)}
         onOpenChange={(value) => {
