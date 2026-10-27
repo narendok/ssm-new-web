@@ -31,6 +31,7 @@ export function OfficialDecisionLogModal({
   canApproveEntry,
   onReject,
   sourceOptions = [],
+  initialQuery = "",
 }: {
   onClose: () => void;
   activeProject?: string | undefined;
@@ -48,8 +49,9 @@ export function OfficialDecisionLogModal({
   canApproveEntry?:((entry:DecisionRecord)=>boolean)|undefined;
   onReject?:((id:string,reason:string)=>Promise<boolean>)|undefined;
   sourceOptions?:{value:string;label:string}[];
+  initialQuery?:string;
 }) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [projectFilter, setProjectFilter] = useState(
     activeProject && projects.some((p) => p.reference === activeProject) ? activeProject : "all",
   );

@@ -2445,6 +2445,7 @@ function Portal() {
   const [feasibilityDispatchEnquiry, setFeasibilityDispatchEnquiry] = useState<EnquiryOpportunity | null>(null);
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const [decisionLogOpen, setDecisionLogOpen] = useState(false);
+  const [decisionInitialQuery, setDecisionInitialQuery] = useState("");
   const [legalHubOpen, setLegalHubOpen] = useState(false);
   const [assetCatalogOpen, setAssetCatalogOpen] = useState(false);
   const [assetLinkerProjectId, setAssetLinkerProjectId] = useState<string | null>(null);
@@ -3369,6 +3370,13 @@ function Portal() {
     setView("detail");
   };
   const openDocument = (document: ControlledDocument) => {
+    if (testMembership && persona.kind !== "client") {
+      openDocuments();
+      const canonicalId = document.cloudDocumentId || document.id;
+      setVaultDocumentId(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canonicalId) ? canonicalId : undefined);
+      setModal(null);
+      return;
+    }
     if (!canDepartmentAccessDocument(document, persona, departmentContext)) { announce("This document is outside your department scope."); return; }
     if (persona.kind === "client") {
       const isAllowed = /sor|nda|quotation|quo|invoice|inv|pdi|tac|milestone/i.test(
@@ -4268,7 +4276,7 @@ function Portal() {
           onResetDemo={resetDemo}
         />
       )}{" "}
-      {searchOpen && persona.kind !== "client" && <Dialog open onOpenChange={setSearchOpen}><DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Search</DialogTitle><DialogDescription>Search permitted documents, projects, tasks and process records. Your workspace stays open behind this popup.</DialogDescription></DialogHeader>{testMembership ? <SharedPortalSearch membership={testMembership} query={globalSearchQuery} onQueryChange={setGlobalSearchQuery} onOpen={destination=>{setSearchOpen(false);setShowSharedTestWorkspace(false);if(destination==="Documents"){openDocuments();}else if(destination==="Projects"){setView("project");}else if(destination==="Records"){setView("records");}else if(destination==="Tasks"){setView("assignee");}else if(destination==="Approvals"){setView("approvals");}else setView(destination as "budgets"|"tickets"|"communication");}}/> : <SharedIndex compact queryValue={globalSearchQuery} onQueryChange={setGlobalSearchQuery} records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeRecords} documents={scopedDocuments} allowedProjectIds={(persona.kind === "lead" || persona.kind === "member") ? leadProjects.map(project => project.id) : []} departments={portal.departments} departmentContext={departmentContext} onSelect={record => { setSearchOpen(false); if (record.type === "Project") { setSelectedProjectId(record.reference); if (persona.kind === "admin") setSelectedId(record.id); else setProjectScopes(current => ({ ...current, [effectiveArea]: record.reference })); setView("project"); } else openRecord(record); }} onSelectDocument={document => { setSearchOpen(false); openDocument(document); }} />}</DialogContent></Dialog>}
+      {searchOpen && persona.kind !== "client" && <Dialog open onOpenChange={setSearchOpen}><DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Search</DialogTitle><DialogDescription>Search permitted documents, projects, tasks and process records. Your workspace stays open behind this popup.</DialogDescription></DialogHeader>{testMembership ? <SharedPortalSearch membership={testMembership} query={globalSearchQuery} onQueryChange={setGlobalSearchQuery} onOpen={(destination,id,title)=>{setSearchOpen(false);setShowSharedTestWorkspace(false);if(destination==="Documents"){openDocuments();setVaultDocumentId(id);}else if(destination==="Projects"){setSelectedProjectId(id);setView("project");}else if(destination==="decisions"){setDecisionInitialQuery(title);setDecisionLogOpen(true);}else if(destination==="Records"){setView("records");}else if(destination==="Tasks"){setView("assignee");}else if(destination==="Approvals"){setView("approvals");}else setView(destination as "budgets"|"tickets"|"communication");}}/> : <SharedIndex compact queryValue={globalSearchQuery} onQueryChange={setGlobalSearchQuery} records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeRecords} documents={scopedDocuments} allowedProjectIds={(persona.kind === "lead" || persona.kind === "member") ? leadProjects.map(project => project.id) : []} departments={portal.departments} departmentContext={departmentContext} onSelect={record => { setSearchOpen(false); if (record.type === "Project") { setSelectedProjectId(record.reference); if (persona.kind === "admin") setSelectedId(record.id); else setProjectScopes(current => ({ ...current, [effectiveArea]: record.reference })); setView("project"); } else openRecord(record); }} onSelectDocument={document => { setSearchOpen(false); openDocument(document); }} />}</DialogContent></Dialog>}
       <DepartmentLeadLoginModal isOpen={loginModalOpen} demoMode={false} testMode onClose={() => setLoginModalOpen(false)} currentPersonaId={testMembership?.role === "member" ? "" : persona.id} onLoginSuccess={handleDemoLogin} onTestLogin={handleTestLogin} onLogout={handleLogout} />
       {customerRegisterOpen && (
         <CustomerRegisterModal
@@ -4632,7 +4640,7 @@ function Portal() {
       {directoryOpen && persona.kind !== "client" && (
         <CompanyDirectoryModal key={persona.id} onClose={() => setDirectoryOpen(false)} initialDepartment={(persona.kind === "lead" || persona.kind === "member") ? departmentCode(persona.departmentId) : undefined} lockedDepartment={(persona.kind === "lead" || persona.kind === "member") ? departmentCode(persona.departmentId) : undefined} contacts={(persona.kind === "lead" || persona.kind === "member") ? allTeamMembers.filter(member => member.area === persona.departmentId).map((member, index) => ({ id: String(index), name: member.name, departmentCode: departmentCode(member.area), departmentName: areaById(member.area).name, designation: member.role, reportingManager: "Department lead", workEmail: "", deskExtension: "Not provided", facilityLocation: "Not provided", primarySkills: member.skills, avatarInitial: member.name.split(" ").map(part => part[0]).join("").slice(0,2) })) : undefined} />
       )}
-      {decisionLogOpen && persona.kind !== "client" && testMembership && <SharedDecisionLog membership={testMembership} departmentCode={effectiveArea} activeProject={view === "project" ? selectedProjectId : undefined} onClose={()=>setDecisionLogOpen(false)}/>}
+      {decisionLogOpen && persona.kind !== "client" && testMembership && <SharedDecisionLog membership={testMembership} departmentCode={effectiveArea} activeProject={view === "project" ? selectedProjectId : undefined} initialQuery={decisionInitialQuery} onClose={()=>{setDecisionLogOpen(false);setDecisionInitialQuery("");}}/>}
       {decisionLogOpen && persona.kind !== "client" && !testMembership && (
         <OfficialDecisionLogModal key={persona.id} onClose={() => setDecisionLogOpen(false)} activeProject={view === "project" ? selectedProjectId : undefined} persona={persona} authorId={persona.id} decisions={portal.decisionLogs ?? (portal.demoLoaded ? defaultDecisionLogs : [])} projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")} stageOptions={Array.from(new Set((portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES).filter(c=>persona.kind === "admin" || departmentCode(c.departmentCode) === departmentCode(persona.departmentId)).sort((a,b)=>a.stageIndex-b.stageIndex).map(c=>c.stageName)))} onSave={async entry => update(state => {
           const actorId=persona.id;

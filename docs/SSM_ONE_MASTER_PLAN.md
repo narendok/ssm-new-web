@@ -86,3 +86,5 @@ Read [the consolidated implementation and verification handoff](ANTIGRAVITY_READ
 ## 26 October implementation checkpoint
 
 Read section 15 of [the consolidated handoff](ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md) for the complete latest requirement/evidence ledger and remaining gates. The October 19 delivery gate above is historical, not the current build or deployment status. This handoff is one work package with one final execution prompt.
+
+Latest lifecycle hierarchy refinement (27 October 2026): see consolidated handoff section 16.7, authoritative track → phase → stage → task plan and legacy migration/acceptance rules. Section 16.6 records the search checkpoint and remaining inventory-source decision. Preserve the existing original layouts and shared account contracts.

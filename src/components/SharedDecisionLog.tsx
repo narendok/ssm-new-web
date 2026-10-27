@@ -8,7 +8,7 @@ import { getCoordination } from "./SharedProjectAnalysis";
 import { CANONICAL_STAGES } from "@/lib/department-chronicles";
 import type { TestMembership } from "@/lib/test-auth.functions";
 import type { DecisionRecord } from "./CompanyDirectoryAndLegalHub";
-export function SharedDecisionLog({membership,departmentCode,activeProject,onClose}:{membership:TestMembership;departmentCode?:string|undefined;activeProject?:string|undefined;onClose:()=>void}){
+export function SharedDecisionLog({membership,departmentCode,activeProject,initialQuery,onClose}:{membership:TestMembership;departmentCode?:string|undefined;activeProject?:string|undefined;initialQuery?:string|undefined;onClose:()=>void}){
   const load=useServerFn(getSharedDecisions),snapshot=useServerFn(getSharedTestWorkspace),coordination=useServerFn(getCoordination),mutate=useServerFn(mutateSharedDecision);
   const query=useQuery({queryKey:["shared-decisions",membership.organizationId,membership.membershipId],queryFn:()=>load(),refetchInterval:15000});
   const workspace=useQuery({queryKey:["shared-test-workspace",membership.organizationId,membership.membershipId],queryFn:()=>snapshot()});
@@ -26,7 +26,7 @@ export function SharedDecisionLog({membership,departmentCode,activeProject,onClo
   }
   const canReview=(entry:DecisionRecord)=>!!actor&&entry.authorId!==actor.membership_id&&(actor.role==="admin"||(actor.role==="department_lead"&&entry.departmentCode===actor.department_code));
   const failure=query.error||workspace.error||common.error;
-  return <OfficialDecisionLogModal shared loading={query.isPending||workspace.isPending||common.isPending} onClose={onClose} activeProject={projects.find(p=>p.id===activeProject||p.reference===activeProject)?.reference}
+  return <OfficialDecisionLogModal shared initialQuery={initialQuery||""} loading={query.isPending||workspace.isPending||common.isPending} onClose={onClose} activeProject={projects.find(p=>p.id===activeProject||p.reference===activeProject)?.reference}
     persona={{id:membership.membershipId,label:membership.role.replaceAll("_"," "),person:actor?.display_name||membership.displayName,kind:membership.role==="admin"?"admin":membership.role==="department_lead"?"lead":membership.isClient?"client":"member"}}
     authorId={membership.membershipId} projects={projects} stageOptions={CANONICAL_STAGES.map(s=>`${s[0]}: ${s[1]}`)} decisions={entries}
     sourceOptions={(workspace.data?.records||[]).map(r=>({value:r.reference,label:`${r.reference} · ${r.title}`}))}
