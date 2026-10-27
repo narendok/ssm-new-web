@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   MessageSquare,
   Hash,
@@ -29,15 +29,23 @@ import {
 } from "@/lib/team-communication";
 import type { Persona } from "@/components/RoleAwareSidebar";
 
+export type TeamChatDraftCache={channelId:string;channels:Record<string,{text:string;urgent:boolean;type:string;tags:string}>;replyId:string|null;replyText:string};
 interface TeamCommunicationWorkspaceProps {
-  sharedContent?: React.ReactNode;
+  sharedChat?: {
+    channels: TeamChannel[]; messages: SharedChatMessage[]; busy: boolean;
+    draftCache: {current:TeamChatDraftCache};
+    onSend: (channelId:string,text:string,isUrgent:boolean,replyToId?:string,meta?:{type:string;tags:string[]})=>Promise<boolean>;
+    onVote: (messageId:string,optionId:string)=>Promise<boolean>;
+    onPoll: (channelId:string,question:string,options:string[],closesAt:string)=>Promise<boolean>;
+    onCreateChannel?: (()=>void)|undefined;
+  };
   persona: Persona;
   onOpenProjectDetail?: (projectId: string) => void;
   onOpenDocument?: (docId: string) => void;
 }
 
 export function TeamCommunicationWorkspace({
-  sharedContent,
+  sharedChat,
   persona,
   onOpenProjectDetail,
   onOpenDocument,
@@ -55,29 +63,51 @@ export function TeamCommunicationWorkspace({
   }
 
   // Scope channels by authenticated persona membership
-  const accessibleChannels = sharedContent ? [] : DEFAULT_CHANNELS.filter((c) => canUserAccessChannel(c, persona));
-  const [activeChannelId, setActiveChannelId] = useState<string>(() => accessibleChannels[0]?.id || "chan-general");
-  const [messages, setMessages] = useState<SharedChatMessage[]>(sharedContent ? [] : DEFAULT_CHAT_MESSAGES);
-  const [inputText, setInputText] = useState("");
-  const [isUrgent, setIsUrgent] = useState(false);
-  const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState("");
+  const accessibleChannels = sharedChat ? sharedChat.channels : DEFAULT_CHANNELS.filter((c) => canUserAccessChannel(c, persona));
+  const cache=sharedChat?.draftCache;
+  const initialChannel=cache?.current.channelId||accessibleChannels[0]?.id||"chan-general";
+  const initialDraft=cache?.current.channels[initialChannel];
+  const [activeChannelId, setActiveChannelId] = useState<string>(initialChannel);
+  const [messages, setMessages] = useState<SharedChatMessage[]>(sharedChat ? [] : DEFAULT_CHAT_MESSAGES);
+  const [inputText, setInputText] = useState(initialDraft?.text||"");
+  const channelDrafts=useRef<Record<string,{text:string;urgent:boolean;type:string;tags:string}>>(cache?.current.channels||{});
+  const [isUrgent, setIsUrgent] = useState(initialDraft?.urgent||false);
+  const [conversationType,setConversationType]=useState(initialDraft?.type||"update"),[tags,setTags]=useState(initialDraft?.tags||"");
+  const [replyingToMessageId, setReplyingToMessageId] = useState<string | null>(cache?.current.replyId||null);
+  const [replyText, setReplyText] = useState(cache?.current.replyText||"");
+
+  // Parent-owned, memory-only recovery survives a failed account-data refresh.
+  // Membership-keyed parent remounts clear it; drafts never become shared saves.
+  useEffect(()=>{
+    channelDrafts.current[activeChannelId]={text:inputText,urgent:isUrgent,type:conversationType,tags};
+    if(cache){cache.current.channelId=activeChannelId;cache.current.replyId=replyingToMessageId;cache.current.replyText=replyText;}
+  },[activeChannelId,inputText,isUrgent,conversationType,tags,replyingToMessageId,replyText,cache]);
 
   // Poll Creation Modal
   const [isPollModalOpen, setIsPollModalOpen] = useState(false);
+  const [pollClosesAt,setPollClosesAt]=useState("");
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOpt1, setPollOpt1] = useState("");
   const [pollOpt2, setPollOpt2] = useState("");
   const [pollOpt3, setPollOpt3] = useState("");
 
-  const activeChannel = accessibleChannels.find((c) => c.id === activeChannelId) || accessibleChannels[0];
-  const channelMessages = messages.filter((m) => m.channelId === (activeChannel?.id || activeChannelId));
+  const activeChannel = accessibleChannels.find((c) => c.id === activeChannelId) || (sharedChat ? undefined : accessibleChannels[0]);
+  const channelMessages = (sharedChat?.messages || messages).filter((m) => m.channelId === (activeChannel?.id || activeChannelId));
 
   // Send Message
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !activeChannel) return;
 
+    if(sharedChat){
+      const draft=inputText;
+      if(await sharedChat.onSend(activeChannel.id,draft.trim(),isUrgent,undefined,{type:conversationType,tags:tags.split(",").map(t=>t.trim()).filter(Boolean)})){
+        const stored=channelDrafts.current[activeChannel.id];
+        if(stored?.text===draft){stored.text="";stored.urgent=false;}
+        setInputText(current=>current===draft?"":current);setIsUrgent(false);
+      }
+      return;
+    }
     const newMsg: SharedChatMessage = {
       id: `MSG-${Date.now().toString().slice(-4)}`,
       channelId: activeChannel.id,
@@ -97,8 +127,17 @@ export function TeamCommunicationWorkspace({
   };
 
   // Send Reply
-  const handleSendReply = (messageId: string) => {
+  const handleSendReply = async (messageId: string) => {
     if (!replyText.trim()) return;
+    if(sharedChat){
+      if(!activeChannel)return;
+      const draft=replyText;
+      if(await sharedChat.onSend(activeChannel.id,draft.trim(),false,messageId)){
+        if(cache?.current.replyText===draft){cache.current.replyText="";cache.current.replyId=null;}
+        setReplyText(current=>current===draft?"":current);setReplyingToMessageId(null);
+      }
+      return;
+    }
 
     setMessages((prev) =>
       prev.map((m) => {
@@ -126,6 +165,7 @@ export function TeamCommunicationWorkspace({
 
   // Vote on Poll with strict closed-poll guard
   const handleVote = (messageId: string, optionId: string) => {
+    if(sharedChat){void sharedChat.onVote(messageId,optionId);return;}
     const userId = persona.id || persona.person;
 
     setMessages((prev) =>
@@ -144,7 +184,7 @@ export function TeamCommunicationWorkspace({
   };
 
   // Create Poll
-  const handleCreatePoll = (e: React.FormEvent) => {
+  const handleCreatePoll = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pollQuestion.trim() || !pollOpt1.trim() || !pollOpt2.trim()) return;
 
@@ -156,6 +196,13 @@ export function TeamCommunicationWorkspace({
       options.push({ id: "OPT-3", text: pollOpt3.trim(), votes: 0 });
     }
 
+    if(sharedChat){
+      if(!activeChannel||!pollClosesAt)return;
+      if(await sharedChat.onPoll(activeChannel.id,pollQuestion.trim(),options.map(o=>o.text),pollClosesAt)){
+        setIsPollModalOpen(false);setPollQuestion("");setPollOpt1("");setPollOpt2("");setPollOpt3("");setPollClosesAt("");
+      }
+      return;
+    }
     const pollMsg: SharedChatMessage = {
       id: `MSG-POLL-${Date.now().toString().slice(-4)}`,
       channelId: activeChannelId,
@@ -189,7 +236,7 @@ export function TeamCommunicationWorkspace({
 
   return (
     <div className="space-y-4">
-      {!sharedContent && <span className="inline-flex rounded border border-amber-500/30 px-2 py-1 text-[10px] text-amber-600" title="Browser-local examples. Shared account communication is separate.">DEMO</span>}
+      {!sharedChat && <span className="inline-flex rounded border border-amber-500/30 px-2 py-1 text-[10px] text-amber-600" title="Browser-local examples. Shared account communication is separate.">DEMO</span>}
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-3 border-b border-border/40">
         <div>
@@ -214,20 +261,22 @@ export function TeamCommunicationWorkspace({
       </div>
 
       {/* Main Grid: Channels Sidebar + Chat Stream */}
-      {sharedContent ?? <>
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 min-h-[580px]">
         {/* Left: Channels List */}
         <div className="p-3 rounded-xl bg-card border border-border shadow-sm space-y-3">
           <div className="flex items-center justify-between text-xs font-bold text-muted-foreground uppercase tracking-wider px-2">
             <span>Channels ({accessibleChannels.length})</span>
             <Users className="w-3.5 h-3.5" />
+            {sharedChat?.onCreateChannel&&<Button size="sm" variant="ghost" title="New channel" aria-label="New channel" onClick={sharedChat.onCreateChannel}><Plus className="size-3.5"/></Button>}
           </div>
 
           <div className="space-y-1">
             {accessibleChannels.map((chan) => (
               <button
                 key={chan.id}
-                onClick={() => setActiveChannelId(chan.id)}
+                disabled={sharedChat?.busy}
+                onClick={() => {if(activeChannel)channelDrafts.current[activeChannel.id]={text:inputText,urgent:isUrgent,type:conversationType,tags};setActiveChannelId(chan.id);setInputText(channelDrafts.current[chan.id]?.text||"");setIsUrgent(channelDrafts.current[chan.id]?.urgent||false);setConversationType(channelDrafts.current[chan.id]?.type||"update");setTags(channelDrafts.current[chan.id]?.tags||"");setReplyingToMessageId(null);setReplyText("");}}
                 className={`w-full text-left px-2.5 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-between ${
                   activeChannelId === chan.id
                     ? "bg-primary text-primary-foreground font-semibold shadow-sm"
@@ -255,7 +304,7 @@ export function TeamCommunicationWorkspace({
             <div>
               <div className="flex items-center gap-1.5 font-bold text-sm text-foreground">
                 <Hash className="w-4 h-4 text-primary" />
-                <span>{activeChannel?.name ?? "General"}</span>
+                <span>{activeChannel?.name ?? "Select a channel"}</span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">{activeChannel?.topic ?? ""}</p>
             </div>
@@ -264,7 +313,7 @@ export function TeamCommunicationWorkspace({
               size="sm"
               variant="outline"
               onClick={() => setIsPollModalOpen(true)}
-              disabled={!activeChannel}
+              disabled={!activeChannel || sharedChat?.busy}
               className="h-7 text-xs gap-1.5 font-semibold text-primary"
             >
               <BarChart2 className="w-3.5 h-3.5" />
@@ -274,8 +323,9 @@ export function TeamCommunicationWorkspace({
 
           {/* Messages Feed */}
           <div className="flex-1 p-4 space-y-4 overflow-y-auto max-h-[460px]">
+            {!channelMessages.length&&<p className="text-xs text-muted-foreground">{activeChannel?"No messages yet. Start the conversation below.":"Select a permitted channel to start."}</p>}
             {channelMessages.map((msg) => {
-              const isMe = msg.senderName.toLowerCase().includes(persona.person.toLowerCase());
+
 
               return (
                 <div key={msg.id} className="space-y-2 p-3 rounded-lg bg-muted/20 border border-border/60">
@@ -298,6 +348,7 @@ export function TeamCommunicationWorkspace({
                   {/* Message Body */}
                   <p className="text-xs text-foreground leading-relaxed">{msg.text}</p>
 
+                  {(msg.conversationType||msg.tags?.length)?<p className="text-[10px] text-muted-foreground">{[msg.conversationType,...(msg.tags||[]).map(t=>"#"+t)].filter(Boolean).join(" · ")}</p>:null}
                   {/* Record Link (if present) */}
                   {msg.recordLink && (
                     <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-secondary/80 text-secondary-foreground text-xs font-mono border border-border/50">
@@ -312,7 +363,7 @@ export function TeamCommunicationWorkspace({
                     <div className="p-3 rounded-lg bg-card border border-border/80 space-y-2.5 mt-2">
                       <div className="flex items-center gap-2 text-xs font-bold text-foreground">
                         <BarChart2 className="w-4 h-4 text-primary" />
-                        <span>{msg.poll.question}</span>
+                        <span>{msg.poll.question}</span>{msg.poll.isClosed&&<span className="text-[10px] text-muted-foreground">CLOSED</span>}
                       </div>
 
                       <div className="space-y-1.5">
@@ -324,6 +375,7 @@ export function TeamCommunicationWorkspace({
                           return (
                             <button
                               key={opt.id}
+                              disabled={msg.poll?.isClosed || sharedChat?.busy}
                               onClick={() => handleVote(msg.id, opt.id)}
                               className={`w-full text-left p-2 rounded border text-xs transition-all relative overflow-hidden ${
                                 hasVoted
@@ -374,7 +426,8 @@ export function TeamCommunicationWorkspace({
                         />
                         <Button
                           size="sm"
-                          onClick={() => handleSendReply(msg.id)}
+                          disabled={sharedChat?.busy || !replyText.trim()}
+                          onClick={() => void handleSendReply(msg.id)}
                           className="h-7 text-xs px-2.5 bg-primary text-primary-foreground font-semibold"
                         >
                           Reply
@@ -390,6 +443,7 @@ export function TeamCommunicationWorkspace({
                       </div>
                     ) : (
                       <button
+                        disabled={sharedChat?.busy}
                         onClick={() => setReplyingToMessageId(msg.id)}
                         className="text-[11px] text-primary hover:underline flex items-center gap-1"
                       >
@@ -410,16 +464,18 @@ export function TeamCommunicationWorkspace({
                 type="text"
                 placeholder={`Message in ${activeChannel?.name ?? "channel"}...`}
                 value={inputText}
+                aria-label="Message to selected channel"
                 onChange={(e) => setInputText(e.target.value)}
-                disabled={!activeChannel}
+                disabled={!activeChannel || sharedChat?.busy}
                 className="flex-1 h-9 px-3 text-xs rounded-lg border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <Button type="submit" size="sm" disabled={!activeChannel} className="h-9 px-3.5 bg-primary text-primary-foreground font-semibold gap-1.5">
+              <Button type="submit" size="sm" disabled={!activeChannel || sharedChat?.busy} className="h-9 px-3.5 bg-primary text-primary-foreground font-semibold gap-1.5">
                 <Send className="w-3.5 h-3.5" />
                 Send
               </Button>
             </div>
 
+            {sharedChat&&<div className="flex gap-2"><select aria-label="Conversation type" className="rounded border border-input bg-background px-2 text-xs" value={conversationType} onChange={e=>setConversationType(e.target.value)}><option value="update">Update</option><option value="question">Question</option><option value="discussion">Discussion</option></select><input aria-label="Message tags" placeholder="Tags, comma separated (optional)" className="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 text-xs" value={tags} onChange={e=>setTags(e.target.value)}/></div>}
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
@@ -437,7 +493,6 @@ export function TeamCommunicationWorkspace({
       </div>
 
       {/* Create Poll Modal */}
-      </>}
       <Dialog open={isPollModalOpen} onOpenChange={setIsPollModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -495,11 +550,12 @@ export function TeamCommunicationWorkspace({
               />
             </div>
 
+            {sharedChat&&<label className="grid gap-1">Poll closes at<input required type="datetime-local" value={pollClosesAt} onChange={e=>setPollClosesAt(e.target.value)} className="w-full h-8 px-2 rounded border border-input bg-background"/></label>}
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsPollModalOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" size="sm" className="bg-primary text-primary-foreground font-semibold">
+              <Button disabled={sharedChat?.busy} type="submit" size="sm" className="bg-primary text-primary-foreground font-semibold">
                 Launch Poll
               </Button>
             </div>

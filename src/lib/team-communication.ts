@@ -52,6 +52,8 @@ export interface SharedChatMessage {
   text: string;
   timestamp: string;
   isUrgent: boolean;
+  conversationType?: string;
+  tags?: string[];
   mentions: string[]; // e.g. ["@Avery", "@Jordan"]
   replies: ChatThreadReply[];
   recordLink?: ChatRecordLink | undefined;

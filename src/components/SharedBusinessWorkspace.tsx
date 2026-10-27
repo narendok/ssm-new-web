@@ -19,7 +19,8 @@ import type { TestMembership } from "@/lib/test-auth.functions";
 import { businessDate } from "@/lib/business-date";
 import { SharedBudgetPresentation } from "./SharedBudgetPresentation";
 import { EmployeeSelfServiceWorkspace } from "./EmployeeSelfServiceWorkspace";
-import { TeamCommunicationWorkspace } from "./TeamCommunicationWorkspace";
+import { sharedChatPresentation } from "@/lib/shared-chat-presentation";
+import { TeamCommunicationWorkspace, type TeamChatDraftCache } from "./TeamCommunicationWorkspace";
 import { HRAdministrationWorkspace } from "./HRAdministrationWorkspace";
 import { ServiceTicketsWorkspace } from "./ServiceTicketsWorkspace";
 import type { ServiceTicket } from "@/lib/service-tickets";
@@ -54,12 +55,11 @@ export function SharedBusinessWorkspace({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
-    [search, setSearch] = useState(""),
-    [channel, setChannel] = useState("");
+    [search, setSearch] = useState("");
   const pending = useRef<{ signature: string; id: string } | null>(null);
 
   const lock = useRef(false);
-  const [chatDraft,setChatDraft]=useState("");
+  const chatDraftCache=useRef<TeamChatDraftCache>({channelId:"",channels:{},replyId:null,replyText:""});
   async function save(
     kind: BusinessAction,
     item: BusinessItem | null,
@@ -388,80 +388,13 @@ export function SharedBusinessWorkspace({
         ) : (
           <p role="alert">HR administration access is restricted.</p>
         ))}
-      {view === "communication" && <TeamCommunicationWorkspace persona={{id:actor.membership_id,label:actor.display_name,person:actor.display_name,kind:admin?"admin":lead?"lead":"member"}} sharedContent={
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4 min-h-[580px]">
-          <aside className={`${card} md:col-span-1`}>
-            <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Channels</h3>
-            {(admin||lead)&&<Button size="sm" variant="outline" className="mb-3 w-full" onClick={()=>open("channel_create")}>New channel</Button>}
-            {by("channel").map((i) => (
-              <button
-                className={`w-full text-left text-sm rounded p-2 ${channel === i.id ? "bg-primary/10 text-primary" : ""}`}
-                key={i.id}
-                onClick={() => setChannel(i.id)}
-              >
-                #{str(i.data["name"])}
-              </button>
-            ))}
-          </aside>
-          <section className={`${card} flex flex-col gap-3 md:col-span-3`}>
-            {!channel ? (
-              <p className="text-sm text-muted-foreground">Select a permitted channel.</p>
-            ) : (
-              <>
-                <Button
-                  size="sm"
-                  onClick={() => open("send_message", null, { channelId: channel, type: "update" })}
-                >
-                  New message / poll
-                </Button>
-                {filter(by("message").filter((i) => i.data["channelId"] === channel)).map((i) => (
-                  <article className="border-b border-border/50 pb-3" key={i.id}>
-                    <p className="text-xs text-muted-foreground">
-                      {str(i.data["senderName"])} · {str(i.data["senderDept"])} ·{" "}
-                      {str(i.data["createdAt"])}
-                    </p>
-                    <p className="text-sm whitespace-pre-wrap">{str(i.data["text"])}</p>
-                    {i.data["poll"] &&
-                      typeof i.data["poll"] === "object" &&
-                      !Array.isArray(i.data["poll"]) && (
-                        <div className="mt-2 space-y-2">
-                          <p className="text-xs font-medium">{str(i.data["poll"]["question"])}</p>
-                          {(Array.isArray(i.data["poll"]["options"])
-                            ? i.data["poll"]["options"]
-                            : []
-                          ).map((option, index) => {
-                            const vote = data.votes.find(
-                              (v) => v.message_id === i.id && v.choice === index,
-                            );
-                            const closeTime = Date.parse(
-                              str((i.data["poll"] as Record<string, unknown>)["closesAt"]),
-                            );
-                            const closed = !Number.isFinite(closeTime) || closeTime <= Date.now();
-                            return (
-                              <button
-                                key={index}
-                                disabled={busy || closed}
-                                className={`block rounded-lg border border-border px-3 py-2 text-xs disabled:opacity-50 ${vote?.my_vote ? "bg-primary/10" : ""}`}
-                                onClick={() => void save("poll_vote", i, { choice: index })}
-                              >
-                                {str(option)} · {vote?.total || 0}
-                                {closed ? " · Closed" : ""}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                  </article>
-                ))}
-                <form className="mt-auto flex gap-2 border-t border-border pt-3" onSubmit={async e=>{e.preventDefault();if(!chatDraft.trim()||busy)return;const text=chatDraft;if(await save("send_message",null,{channelId:channel,text,type:"update",tags:[]}))setChatDraft(current=>current===text?"":current);}}>
-                  <input aria-label="Message to selected channel" className={input} value={chatDraft} disabled={busy} placeholder="Message your team…" onChange={e=>setChatDraft(e.target.value)}/>
-                  <Button disabled={busy||!chatDraft.trim()} type="submit">Send</Button>
-                </form>
-              </>
-            )}
-          </section>
-        </div>
-      }/>}
+      {view === "communication" && <TeamCommunicationWorkspace persona={{id:actor.membership_id,label:actor.display_name,person:actor.display_name,kind:admin?"admin":lead?"lead":"member"}} sharedChat={{
+        ...sharedChatPresentation(data),busy,draftCache:chatDraftCache,
+        onCreateChannel:admin||lead?()=>open("channel_create"):undefined,
+        onSend:(channelId,text,isUrgent,replyToId,meta)=>save("send_message",null,{channelId,text,isUrgent,...(replyToId?{replyToId}:{}),type:meta?.type||"update",tags:meta?.tags||[]}),
+        onVote:(messageId,optionId)=>{const message=items.find(i=>i.id===messageId&&i.kind==="message");return message?save("poll_vote",message,{choice:Number(optionId)}):Promise.resolve(false);},
+        onPoll:(channelId,question,options,closesAt)=>save("send_message",null,{channelId,text:question,type:"poll",tags:[],poll:{question,options,closesAt:new Date(closesAt).toISOString()}}),
+      }}/>}
       <Dialog
         open={Boolean(action)}
         onOpenChange={(value) => {

@@ -88,6 +88,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261026100000_atomic_sales_intake",
     "20261026110000_shared_document_registration",
     "20261027010000_shared_decision_log",
+    "20261027155020_shared_chat_threads",
   ];
 
   for (const name of initialMigrations) {
@@ -178,6 +179,37 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
       return res.rows[0].result;
     });
   }
+
+  // Original chat UI now consumes actual shared messages, threads and poll votes.
+  async function chatCall(user,action,data,key=crypto.randomUUID(),target){return asUser(user,async()=> (await db.query('SELECT mutate_business_workspace($1,$2::jsonb,$3) result',[action,JSON.stringify({...target,data}),key])).rows[0].result);}
+  const chatChannel=(await chatCall(hwLead,'channel_create',{name:'TEST thread channel',memberIds:[mids[hwLead],mids[emp]]})).id;
+  const otherChat=(await chatCall(purLead,'channel_create',{name:'Other channel',memberIds:[mids[purLead],mids[emp]]})).id;
+  const chatKey=crypto.randomUUID(),chatData={channelId:chatChannel,text:'Synthetic urgent root',isUrgent:true};
+  const rootMessage=(await chatCall(hwLead,'send_message',chatData,chatKey)).id;
+  assert.equal((await chatCall(hwLead,'send_message',chatData,chatKey)).id,rootMessage);
+  await assert.rejects(chatCall(hwLead,'send_message',{...chatData,isUrgent:false},chatKey),/RETRY_PAYLOAD_CHANGED/);
+  const replyMessage=(await chatCall(emp,'send_message',{channelId:chatChannel,text:'Synthetic reply',replyToId:rootMessage})).id;
+  const replyRow=(await db.query('SELECT payload FROM business_items WHERE id=$1',[replyMessage])).rows[0].payload;
+  assert.equal(replyRow.replyToId,rootMessage);
+  assert.equal((await db.query('SELECT payload FROM business_items WHERE id=$1',[rootMessage])).rows[0].payload.isUrgent,true);
+  await assert.rejects(chatCall(emp,'send_message',{channelId:otherChat,text:'Wrong parent',replyToId:rootMessage}),/REPLY_PARENT_DENIED/);
+  await assert.rejects(chatCall(emp,'send_message',{channelId:chatChannel,text:'Nested invalid parent',replyToId:replyMessage}),/REPLY_PARENT_DENIED/);
+  await assert.rejects(chatCall(purLead,'send_message',{channelId:chatChannel,text:'Unauthorized'}),/CHANNEL_OR_MESSAGE_DENIED/);
+  await assert.rejects(chatCall(hwLead,'send_message',{channelId:chatChannel,text:'Invalid urgency',isUrgent:'yes'}),/INVALID_URGENCY/);
+  const pollId=(await chatCall(hwLead,'send_message',{channelId:chatChannel,text:'Choose',poll:{question:'Test poll',options:['A','B'],closesAt:new Date(Date.now()+3600000).toISOString()}})).id;
+  await chatCall(emp,'poll_vote',{choice:0},crypto.randomUUID(),{id:pollId,version:1});
+  await chatCall(emp,'poll_vote',{choice:1},crypto.randomUUID(),{id:pollId,version:1});
+  assert.equal((await db.query('SELECT choice FROM private.business_votes WHERE message_id=$1',[pollId])).rows[0].choice,1);
+  assert.equal((await db.query('SELECT count(*)::int n FROM private.business_votes WHERE message_id=$1',[pollId])).rows[0].n,1);
+  await db.query("UPDATE business_items SET payload=jsonb_set(payload,'{poll,closesAt}',to_jsonb((now()-interval '1 hour')::text)) WHERE id=$1",[pollId]);
+  await assert.rejects(chatCall(emp,'poll_vote',{choice:0},crypto.randomUUID(),{id:pollId,version:1}),/POLL_CLOSED_OR_UNAVAILABLE/);
+  await db.query('UPDATE organization_members SET active=false WHERE id=$1',[mids[emp]]);
+  await assert.rejects(chatCall(emp,'send_message',{channelId:chatChannel,text:'Inactive'}),/AUTHENTICATED_MEMBERSHIP_REQUIRED/);
+  await db.query('UPDATE organization_members SET active=true WHERE id=$1',[mids[emp]]);
+  const savedChannel=(await db.query('SELECT payload FROM business_items WHERE id=$1',[chatChannel])).rows[0].payload;
+  await db.query("UPDATE business_items SET payload=jsonb_set(payload,'{memberIds}',$2::jsonb) WHERE id=$1",[chatChannel,JSON.stringify([mids[hwLead]])]);
+  await assert.rejects(chatCall(emp,'send_message',{channelId:chatChannel,text:'Revoked'}),/CHANNEL_OR_MESSAGE_DENIED/);
+  await db.query('UPDATE business_items SET payload=$2 WHERE id=$1',[chatChannel,JSON.stringify(savedChannel)]);
 
   // 1. Setup shared project for downstream orders
   const project = (
