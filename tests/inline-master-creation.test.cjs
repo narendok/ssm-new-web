@@ -87,6 +87,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261026090000_preproject_sales_intake",
     "20261026100000_atomic_sales_intake",
     "20261026110000_shared_document_registration",
+    "20261027010000_shared_decision_log",
   ];
 
   for (const name of initialMigrations) {
@@ -186,6 +187,54 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     })
   ).id;
   assert.ok(project, "Project must be created");
+
+  // Shared decision register: author identity, review authority and visibility are server-owned.
+  const decisionAuthor=uuid(1401),decisionOther=uuid(1402),decisionClient=uuid(1403);
+  for(const [id,role] of [[decisionAuthor,'member'],[decisionOther,'member'],[decisionClient,'viewer']]){
+    await db.query('INSERT INTO auth.users VALUES($1,$2)',[id,`${id}@example.test`]);
+    const member=(await db.query('INSERT INTO organization_members(organization_id,user_id,role,display_name) VALUES($1,$2,$3,$4) RETURNING id',[org,id,role,'Decision TEST user'])).rows[0].id;mids[id]=member;
+    if(role==='member'){
+      const r=(await db.query("INSERT INTO department_roles(organization_id,department_id,name,role_key) VALUES($1,$2,$3,$4) RETURNING id",[org,dEhw,`Decision ${id}`,id])).rows[0].id;
+      await db.query('INSERT INTO department_role_assignments(role_id,member_id,assigned_by) VALUES($1,$2,$3)',[r,member,admin]);
+    }
+  }
+  const decisionCall=(user,action,payload,key=crypto.randomUUID())=>asUser(user,async()=> (await db.query('SELECT mutate_shared_decision($1,$2::jsonb,$3) result',[action,JSON.stringify(payload),key])).rows[0].result);
+  const readDecisions=user=>asUser(user,async()=> (await db.query('SELECT get_shared_decisions() result')).rows[0].result);
+  const decisionPayload={title:'TEST shared exception',rationale:'Document the actual exception',scope:'common',departmentId:dQa,authorId:mids[admin],status:'Approved'},decisionKey=crypto.randomUUID();
+  const savedDecision=await decisionCall(decisionAuthor,'create',decisionPayload,decisionKey);
+  assert.equal((await decisionCall(decisionAuthor,'create',decisionPayload,decisionKey)).id,savedDecision.id);
+  await assert.rejects(decisionCall(decisionAuthor,'create',{...decisionPayload,title:'Altered retry'},decisionKey),/REQUEST_ID_REUSED/);
+  let decisionRow=(await db.query('SELECT * FROM decision_entries WHERE id=$1',[savedDecision.id])).rows[0];
+  assert.equal(decisionRow.department_id,dEhw);assert.equal(decisionRow.author_id,mids[decisionAuthor]);assert.equal(decisionRow.status,'Pending lead review');
+  assert.equal((await readDecisions(decisionOther)).entries.length,0);
+  assert.equal((await readDecisions(qaLead)).entries.length,0);
+  await assert.rejects(readDecisions(decisionClient),/DECISION_ACCESS_DENIED/);
+  await assert.rejects(decisionCall(null,'create',decisionPayload),/DECISION_ACCESS_DENIED/);
+  await assert.rejects(decisionCall(decisionAuthor,'create',{...decisionPayload,projectId:project}),/COMMON_DECISION_HAS_NO_PROJECT_STAGE/);
+  await assert.rejects(decisionCall(decisionAuthor,'create',{...decisionPayload,scope:'client',projectId:crypto.randomUUID(),stage:'Stage 2'}),/DECISION_PROJECT_REQUIRED/);
+  await assert.rejects(decisionCall(qaLead,'approve',{id:savedDecision.id,expectedVersion:1}),/DECISION_REVIEW_DENIED/);
+  await assert.rejects(decisionCall(hwLead,'visibility',{departmentId:dEhw,viewerDepartmentId:dQa,enabled:true}),/DECISION_VISIBILITY_ADMIN_REQUIRED/);
+  await decisionCall(admin,'visibility',{departmentId:dEhw,viewerDepartmentId:dQa,enabled:true});
+  assert.equal((await readDecisions(qaLead)).entries[0].id,savedDecision.id);
+  await assert.rejects(decisionCall(qaLead,'approve',{id:savedDecision.id,expectedVersion:1}),/DECISION_REVIEW_DENIED/);
+  await decisionCall(admin,'visibility',{departmentId:dEhw,viewerDepartmentId:dQa,enabled:false});
+  assert.equal((await readDecisions(qaLead)).entries.length,0);
+  await db.query("UPDATE organization_members SET role='department_lead' WHERE id=$1",[mids[decisionAuthor]]);
+  await assert.rejects(decisionCall(decisionAuthor,'approve',{id:savedDecision.id,expectedVersion:1}),/DECISION_SELF_APPROVAL_DENIED/);
+  await db.query("UPDATE organization_members SET role='member' WHERE id=$1",[mids[decisionAuthor]]);
+  await assert.rejects(decisionCall(hwLead,'approve',{id:savedDecision.id,expectedVersion:99}),/STALE_DECISION/);
+  await decisionCall(hwLead,'approve',{id:savedDecision.id,expectedVersion:1});
+  decisionRow=(await db.query('SELECT * FROM decision_entries WHERE id=$1',[savedDecision.id])).rows[0];assert.equal(decisionRow.status,'Approved');assert.equal(decisionRow.reviewed_by,mids[hwLead]);
+  await assert.rejects(asUser(decisionAuthor,()=>db.query("UPDATE decision_entries SET status='Approved' WHERE id=$1",[savedDecision.id])),/permission denied/);
+  assert.equal((await asUser(decisionOther,()=>db.query('SELECT id FROM decision_entries'))).rows.length,0,'Direct table access obeys own-submission RLS');
+  const projectDecision=await decisionCall(decisionAuthor,'create',{title:'Project exception',rationale:'Review a project exception',scope:'client',projectId:project,stage:'Stage 2: Feasibility & Contract Review'});
+  await assert.rejects(decisionCall(hwLead,'reject',{id:projectDecision.id,expectedVersion:1,reason:''}),/REJECTION_REASON_REQUIRED/);
+  await decisionCall(hwLead,'reject',{id:projectDecision.id,expectedVersion:1,reason:'Evidence needs correction'});
+  assert.equal((await db.query('SELECT status FROM decision_entries WHERE id=$1',[projectDecision.id])).rows[0].status,'Rejected');
+  await db.query('UPDATE organization_members SET active=false WHERE id=$1',[mids[decisionAuthor]]);
+  await assert.rejects(readDecisions(decisionAuthor),/DECISION_ACCESS_DENIED/);
+  await db.query('UPDATE organization_members SET active=true WHERE id=$1',[mids[decisionAuthor]]);
+  assert.equal((await db.query("SELECT has_function_privilege('anon','public.mutate_shared_decision(text,jsonb,uuid)','EXECUTE') allowed")).rows[0].allowed,false);
 
   const registerDoc=(user,payload,key=crypto.randomUUID())=>asUser(user,async()=> (await db.query('SELECT register_controlled_document($1::jsonb,$2) result',[JSON.stringify(payload),key])).rows[0].result);
   const docPayload={title:'TEST Gerber source',documentType:'Gerber ZIP',scope:'client',departmentId:dEhw,projectId:project};

@@ -1,5 +1,5 @@
 import { isDecisionVisible } from "@/lib/decision-log-policy";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { BookOpen, Briefcase, Building2, FolderKanban, Layers, Search } from "lucide-react";
 import {
   Dialog,
@@ -12,6 +12,7 @@ import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/Responsiv
 import { departmentCode } from "@/lib/department-scope";
 import type { Persona } from "@/components/RoleAwareSidebar";
 import type { DecisionRecord } from "@/components/CompanyDirectoryAndLegalHub";
+import { SharedMasterSelect } from "./SharedMasterSelect";
 type Scope = "common" | "internal" | "client";
 export function OfficialDecisionLogModal({
   onClose,
@@ -24,6 +25,12 @@ export function OfficialDecisionLogModal({
   readOnlyReason,
   onSave,
   onApprove,
+  shared = false,
+  loading = false,
+  headerContent,
+  canApproveEntry,
+  onReject,
+  sourceOptions = [],
 }: {
   onClose: () => void;
   activeProject?: string | undefined;
@@ -35,6 +42,12 @@ export function OfficialDecisionLogModal({
   readOnlyReason?: string | undefined;
   onSave?: (record: DecisionRecord) => Promise<boolean>;
   onApprove?: (id: string) => Promise<boolean>;
+  shared?:boolean;
+  loading?:boolean;
+  headerContent?:ReactNode;
+  canApproveEntry?:((entry:DecisionRecord)=>boolean)|undefined;
+  onReject?:((id:string,reason:string)=>Promise<boolean>)|undefined;
+  sourceOptions?:{value:string;label:string}[];
 }) {
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState(
@@ -50,10 +63,12 @@ export function OfficialDecisionLogModal({
   const [conditions, setConditions] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const requestId=useRef(crypto.randomUUID());
+  const [rejectId,setRejectId]=useState(""),[rejectReason,setRejectReason]=useState("");
   const own = departmentCode(persona?.departmentId);
   const kind = persona?.kind ?? "client";
   const internal = kind === "admin" || kind === "lead" || kind === "member";
-  const canSave = internal && Boolean(authorId && onSave) && !readOnlyReason;
+  const canSave = internal && Boolean(authorId && onSave) && !readOnlyReason && !loading;
   const canSee = (decision: DecisionRecord) =>
     isDecisionVisible(decision, {
       id: authorId ?? "",
@@ -62,7 +77,7 @@ export function OfficialDecisionLogModal({
       role: persona?.label ?? "",
       department: own,
     });
-  const permitted = decisions.filter(canSee);
+  const permitted = shared ? decisions : decisions.filter(canSee);
   const filtered = permitted.filter(
     (d) =>
       (projectFilter === "all" ||
@@ -75,6 +90,7 @@ export function OfficialDecisionLogModal({
         .includes(query.toLowerCase()),
   );
   function open(next: Scope) {
+    requestId.current=crypto.randomUUID();
     setScope(next);
     setProject(next === "common" ? "" : (activeProject ?? ""));
     setStage("");
@@ -99,7 +115,7 @@ export function OfficialDecisionLogModal({
     setError("");
     try {
       const saved = await onSave!({
-        id: crypto.randomUUID(),
+        id: requestId.current,
         projectCode: scope === "common" ? "" : project,
         timestamp: new Date().toISOString(),
         actor: persona.person,
@@ -128,7 +144,7 @@ export function OfficialDecisionLogModal({
   return (
     <>
       <Dialog
-        open
+        open={!scope}
         onOpenChange={(open) => {
           if (!open && !scope) onClose();
         }}
@@ -141,9 +157,11 @@ export function OfficialDecisionLogModal({
             </DialogTitle>
             <DialogDescription>
               Significant exceptions and decisions, linked to their original departmental records.
-              These entries are browser-local; they are not an immutable shared ledger.
+              {shared ? "Saved to your company account with author and review history." : "Demonstration entries are stored in this browser."}
             </DialogDescription>
           </DialogHeader>
+          {headerContent}
+          {loading&&<p className="text-xs text-muted-foreground">Loading decisions…</p>}
           {readOnlyReason && (
             <p className="rounded-lg border border-border bg-secondary/40 p-2 text-xs text-muted-foreground">
               {readOnlyReason}
@@ -257,6 +275,7 @@ export function OfficialDecisionLogModal({
                   onApprove &&
                   (kind === "admin" || kind === "lead") &&
                   entry.status === "Pending lead review" && (
+                    (!canApproveEntry || canApproveEntry(entry)) &&
                     <button
                       type="button"
                       disabled={busy}
@@ -277,6 +296,7 @@ export function OfficialDecisionLogModal({
                       Approve department submission
                     </button>
                   )}
+                {onReject&&canApproveEntry?.(entry)&&entry.status==="Pending lead review"&&<div className="mt-2 space-y-2">{rejectId===entry.id?<><input aria-label="Decision rejection reason" className="w-full rounded border bg-background px-3 py-2 text-xs" value={rejectReason} onChange={e=>setRejectReason(e.target.value)} placeholder="Reason for returning this submission"/><button type="button" disabled={busy||rejectReason.trim().length<3} className="rounded border px-3 py-1.5 text-xs" onClick={async()=>{setBusy(true);setError("");try{if(await onReject(entry.id,rejectReason)){setRejectId("");setRejectReason("");}}catch(e){setError(e instanceof Error?e.message:"Review failed");}finally{setBusy(false);}}}>Reject submission</button></>:<button type="button" className="text-xs text-muted-foreground underline" onClick={()=>{setRejectId(entry.id);setRejectReason("");}}>Reject with reason</button>}</div>}
               </article>
             ))}
             {!filtered.length && (
@@ -383,6 +403,7 @@ export function OfficialDecisionLogModal({
                     className="mt-1 h-9 w-full rounded-lg border border-input bg-background px-2"
                   />
                 </label>
+                {sourceOptions.length>0&&<SharedMasterSelect label="Find existing source record" value="" options={sourceOptions} onChange={value=>{if(value)setSource(current=>[...new Set([...current.split(",").map(s=>s.trim()).filter(Boolean),value])].join(", "));}}/>}
                 <label className="block text-xs">
                   Conditions / validity / next action
                   <textarea
