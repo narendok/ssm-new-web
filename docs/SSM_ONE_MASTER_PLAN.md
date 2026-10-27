@@ -1,6 +1,6 @@
 # SSM One Cross-Platform Master Plan
 
-Last reconciled: 26 October 2026 — latest decisions/evidence in consolidated handoff section 15
+Last reconciled: 27 October 2026 — current execution/status table and latest lifecycle decisions in consolidated handoff §§16.6–16.7
 Status: Active planning baseline. This file is the shared authority for the SSM-new project. Detailed platform documents below implement this plan and must not redefine its cross-platform decisions.
 
 ## Scope and authority
@@ -42,6 +42,33 @@ HR/OPS, Finance, Service/IT, QA, and other shared functions can contribute horiz
 
 Governance rules: normally one Accountable owner per decision/work package; Responsible, Consulted, and Informed assignments may be multiple. Every required gate must have an accountable owner and authorized signer or be explicitly marked not applicable with rationale. Configuration changes require an authorized admin, effective date, impact preview, audit record, and tests for old-project stability and new-project routing. New departments receive no inherited project, document, team, or approval access by default. Web and Android consume the same backend-owned registry and matrix contract.
 
+## Master lifecycle data table — 27 October 2026
+
+Latest user decision: **project track (lifecycle) → phases → stages → tasks**. This extends the existing Chronicles, responsibility matrix and task/record models; it does not authorize another independent lifecycle system. Detailed defaults and acceptance are in [consolidated handoff §16.7](ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md). This table is the intended shared data contract, not evidence of deployed schema.
+
+| Entity | Minimum governed data / relationship | Preservation and automation rule |
+| --- | --- | --- |
+| Lifecycle / track template | Stable ID, code/name, version, effective state, development-scope combination, applicable phase IDs | Explicit scopes: firmware only; hardware + firmware; hardware + firmware + software; software only; hardware only. Preserve ready-made/catalog and legacy mappings. Internal/client and PoC/pilot/bulk purpose are independent dimensions; Purchasing procurement track is separate. |
+| Phase template | Stable ID, track version, name/order, applicability and stage template links | Fixed defaults per track, configurable through governed template changes. Broad legacy nine-stage labels need explicit mapping; do not blindly rename/reindex existing stage history as phases. |
+| Stage template | Stable ID, phase version/link, order, inputs, expected outputs, dependencies, responsible department/owner rules and existing gate policy | Predefined defaults; authorized project-specific stages may be added at any time. Not-applicable stages need explicit applicability handling; adding a stage does not grant approval authority or unlock existing gates. |
+| Task template | Stable ID, stage link, task type/title, applicability, assignee rule, required evidence, dependency and configured scheduling rule | Auto-create applicable draft/pending tasks once. Users may modify/add project tasks within existing permissions. No invented due dates, finished work, approvals or sample specifications. |
+| Project lifecycle instance | Actual project ID, pinned template/matrix version, actual phase/stage instances, development scope and approved purpose | Prefill from approved intake where deterministic; generate only missing applicable work idempotently. Pre-project feasibility can exist without a project; declined enquiries remain no-project. |
+| Project stage/task overrides | Instance ID, actual owner, additions/changes, dependency links, reason, author/time/version | Own-department lead edits only authorized responsibilities. Preserve completed work, document references and prior approvals. Shared common view does not imply cross-department editing rights. |
+| Connected input / deliverable | Existing parameter/record/document/master IDs, actual value/status/evidence and owning department | Reuse the canonical input sheet and records; searchable selection and authorized inline creation preserve draft and return actual IDs. No second copy of project specifications. |
+| Configuration / audit | Template change version, impact preview, effective date, authorized decision, project adoption event | New defaults affect new projects; active projects require explicit reviewed adoption. Track changes retain all history and require dependency/applicability impact review. Never silently regenerate or delete existing work. |
+
+| Development scope | Primary engineering responsibility | Typical default progression (not invented mandatory gates) |
+| --- | --- | --- |
+| Firmware only | FW; EHW consulted only for actual board/interface dependencies | Requirements/feasibility → baseline → firmware development → integration/verification → release/support |
+| Hardware + firmware | EHW + FW | Requirements/feasibility → baseline → parallel development → prototype/bring-up → integration/verification → applicable pilot/release |
+| Hardware + firmware + software | EHW + FW + SW | Requirements/feasibility → baseline → parallel development → system integration → verification → applicable customer pilot/release |
+| Software only | SW | Requirements/feasibility → baseline → software development → integration/verification → deployment/release/support |
+| Hardware only | EHW | Requirements/feasibility → baseline → hardware development → prototype/verification → applicable pilot/production release |
+
+QA, MECH, PUR, EMF, MMF and shared departments participate only when applicable through requirements, dependencies and the approved matrix. These defaults do not impose automotive tests/certification or manufacturing tasks on software-only, firmware-only, internal or ready-made work. Existing specification examples below are potential fields/topics, not prefilled company requirements or mandatory technical choices for every project. Exact standards, values and gates must come from the project's approved requirements.
+
+Execution ownership: Antigravity works on repository code/tests and additive migration artifacts; an authorized operator handles Lovable-only application and runtime verification. Read the current execution/status table at the top of the consolidated handoff before any implementation. Completed features are preserved; pending acceptance is verified before changing code. Source push, cloud migration deployment, preview behaviour and Android parity are separate evidence gates.
+
 ## Departmental Requirement Sheets & Feasibility Freeze (Stage 2 Gate)
 
 Each department that is applicable to the project prepares its domain-specific requirement sheet during Stage 2 Feasibility analysis before downstream engineering work begins. The responsibility matrix decides applicability and the accountable owner; shared-service contributions are included when relevant:
@@ -58,7 +85,7 @@ Each department that is applicable to the project prepares its domain-specific r
 11. **SIT — Service & IT Infrastructure Feasibility**: Defines server hosting capacity, network security/ISMS, telemetry database backup, and field RMA diagnostic procedures.
 12. **HR/OPS — Human Resources & Operational Competency Feasibility**: Assesses technician IPC-A-610 workmanship training, ESD certification, and staffing requirements.
 
-All 12 departmental requirement points compile into the unified **Contract Review & Feasibility Report (`HLPL/F/MKT/01`)**. Formal sign-off and requirement freeze are mandatory before engineering kickoff.
+Applicable departmental requirement points compile into the unified **Contract Review & Feasibility Report (`HLPL/F/MKT/01`)**. Record applicability and explicit rationale for excluded contributions; do not require all 12 departments for every track. Required sign-off and requirement freeze follow the approved project gate policy before the corresponding engineering kickoff.
 
 ## User-confirmed workflow and UX requirements
 
