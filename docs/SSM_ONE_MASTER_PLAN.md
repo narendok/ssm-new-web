@@ -116,4 +116,4 @@ Read section 15 of [the consolidated handoff](ANTIGRAVITY_READY_TO_USE_CONSOLIDA
 
 Latest lifecycle hierarchy refinement (27 October 2026): see consolidated handoff section 16.7, authoritative track → phase → stage → task plan and legacy migration/acceptance rules. Section 16.6 records the search checkpoint and remaining inventory-source decision. Preserve the existing original layouts and shared account contracts.
 
-Connected sample-data placement and latest sidebar/SOR/document refinements: consolidated handoff §16.8 and [SAMPLE_DATA_PLAN.md](SAMPLE_DATA_PLAN.md). Samples belong to canonical TEST registers with provenance; this planning update does not authorize new users, visibility grants, production fixtures or a database reset.
+Connected sample-data placement and latest sidebar/SOR/document refinements: consolidated handoff §16.8 and [Sample Data and Test Plan](https://github.com/narendok/SSM-new/blob/main/Feature%20Roadmap/Sample%20Data%20and%20Test%20Plan.md). Samples belong to canonical TEST registers with provenance; this planning update does not authorize new users, visibility grants, production fixtures or a database reset.

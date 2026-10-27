@@ -1163,7 +1163,7 @@ Deliver this in patches: (1) confirm catalogue and legacy mapping against curren
 - Compact the common top overview so the selected sidebar destination is the main page focus. Sidebar icons navigate directly; expand/collapse is a separate deliberate control. Verify each department's sidebar and active-item state without replacing working layouts.
 - Sidebar SOR destination should be a full-page working view; keep only necessary creation/small-edit popups. Do not confuse this with removing all modal record forms.
 - Original Documents & Vault stays full page, grouped by Department/Common, Internal Project and Client Project with actual canonical links, not duplicated files or access inferred from grouping.
-- [Connected sample-data plan](SAMPLE_DATA_PLAN.md) specifies actual TEST record placement, six outcome cases plus six-track coverage, file-source distinctions and preservation/idempotency acceptance. This is a focused subplan, not another execution prompt. No new samples were imported by this planning update.
+- [Canonical Sample Data and Test Plan](https://github.com/narendok/SSM-new/blob/main/Feature%20Roadmap/Sample%20Data%20and%20Test%20Plan.md) specifies actual TEST record placement, six outcome cases plus six-track coverage, file-source distinctions and preservation/idempotency acceptance. This is the existing reusable planning-library specification, not another execution prompt; the temporary SAMPLE_DATA_PLAN.md now only redirects there. No new samples were imported by this planning update.
 
 ## 16.9 Team Chat original component restoration — 27 October 2026
 
