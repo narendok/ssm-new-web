@@ -29,6 +29,10 @@ const {
   getApplicableStagesForTrack,
   computeProgressiveStageAndTaskState,
   verifyTentativeBomCostingContract,
+  resolveStagePrerequisites,
+  createCustomTaskInstance,
+  validateTaskDeletion,
+  cancelTaskInstance,
 } = loadTsModule('../src/lib/canonical-lifecycle.ts');
 
 const {
@@ -152,6 +156,111 @@ test('SECTION 5: Progressive Task Generation Logic', () => {
 
   // Future stages must have planned previews
   assert.ok(plannedTaskPreviews.some(t => t.id === 'PRJ-TEST-PROG:CM_03:T01'), 'CM_03 tasks must appear in planned previews');
+});
+
+test('SECTION 5B: Strict Prerequisite Gating & Fresh Project Invariants', () => {
+  // A fresh project with ZERO completed stages
+  const fresh = computeProgressiveStageAndTaskState({
+    projectId: 'PRJ-FRESH-001',
+    track: 'hardware_firmware_software',
+    completedStageCodes: [],
+    inProgressStageCodes: [],
+  });
+
+  const readyStages = fresh.stages.filter(s => s.status === 'ready');
+  assert.equal(readyStages.length, 1, 'Only ONE stage must be ready on a fresh project');
+  assert.equal(readyStages[0].stageCode, 'CM_01', 'Fresh project must ONLY mark CM_01 ready');
+
+  // Integration and release stages MUST remain planned
+  const int01 = fresh.stages.find(s => s.stageCode === 'INT_01');
+  const int02 = fresh.stages.find(s => s.stageCode === 'INT_02');
+  const cl01 = fresh.stages.find(s => s.stageCode === 'CL_01');
+  assert.equal(int01.status, 'planned', 'INT_01 must be planned on fresh project');
+  assert.equal(int02.status, 'planned', 'INT_02 must be planned on fresh project');
+  assert.equal(cl01.status, 'planned', 'CL_01 must be planned on fresh project');
+
+  // Supplying in_progress stage NEVER bypasses prerequisite checks
+  const attemptBypass = computeProgressiveStageAndTaskState({
+    projectId: 'PRJ-BYPASS-001',
+    track: 'hardware_firmware_software',
+    completedStageCodes: [],
+    inProgressStageCodes: ['CL_01', 'INT_02'], // caller attempts to force in_progress without prerequisites
+  });
+
+  const cl01Bypass = attemptBypass.stages.find(s => s.stageCode === 'CL_01');
+  const int02Bypass = attemptBypass.stages.find(s => s.stageCode === 'INT_02');
+  assert.equal(cl01Bypass.status, 'planned', 'CL_01 must remain planned when prerequisites are unmet');
+  assert.equal(int02Bypass.status, 'planned', 'INT_02 must remain planned when prerequisites are unmet');
+});
+
+test('SECTION 5C: Dependency Graph Integrity across all 7 Tracks', () => {
+  // 1. Pre-project feasibility: HW_01, FW_01, SW_01 require only CM_01, never waiting for CM_03 or CM_04
+  const hw01Prereqs = resolveStagePrerequisites('HW_01', 'hardware_only');
+  const fw01Prereqs = resolveStagePrerequisites('FW_01', 'firmware_only');
+  const sw01Prereqs = resolveStagePrerequisites('SW_01', 'software_only');
+  assert.deepEqual(hw01Prereqs, ['CM_01'], 'HW_01 technical feasibility must require only CM_01');
+  assert.deepEqual(fw01Prereqs, ['CM_01'], 'FW_01 technical feasibility must require only CM_01');
+  assert.deepEqual(sw01Prereqs, ['CM_01'], 'SW_01 technical feasibility must require only CM_01');
+
+  // 2. Cross-track integration prerequisites
+  assert.deepEqual(resolveStagePrerequisites('INT_01', 'hardware_firmware'), ['HW_09', 'FW_02']);
+  assert.deepEqual(resolveStagePrerequisites('INT_01', 'firmware_software_existing_hardware'), ['FW_02', 'SW_02']);
+  assert.deepEqual(resolveStagePrerequisites('INT_01', 'hardware_firmware_software'), ['HW_09', 'FW_02', 'SW_02']);
+
+  // 3. Release readiness CL_01: depends on validation evidence, NOT post-release stages (RM_03, HW_37, INT_03)
+  assert.deepEqual(resolveStagePrerequisites('CL_01', 'ready_made'), ['RM_02']);
+  assert.deepEqual(resolveStagePrerequisites('CL_01', 'software_only'), ['SW_09']);
+  assert.deepEqual(resolveStagePrerequisites('CL_01', 'firmware_only'), ['FW_11']);
+  assert.deepEqual(resolveStagePrerequisites('CL_01', 'hardware_only'), ['HW_32']);
+  assert.deepEqual(resolveStagePrerequisites('CL_01', 'hardware_firmware'), ['INT_02']);
+  assert.deepEqual(resolveStagePrerequisites('CL_01', 'hardware_firmware_software'), ['INT_02']);
+});
+
+test('SECTION 5D: Custom Task Management & Safeguards', () => {
+  // 1. Create custom task
+  const customTask = createCustomTaskInstance({
+    projectId: 'PRJ-CUST-001',
+    stageCode: 'HW_05',
+    title: 'Custom Signal Integrity Simulation on DDR3 Bus',
+    description: 'High-frequency simulation with HyperLynx',
+    department: 'EHW',
+    priority: 'High',
+  });
+  assert.equal(customTask.isCustom, true);
+  assert.equal(customTask.status, 'todo');
+  assert.equal(customTask.stageCode, 'HW_05');
+
+  // 2. Safe deletion of unstarted, unassigned custom task
+  const canDeleteUnused = validateTaskDeletion(customTask, [customTask]);
+  assert.equal(canDeleteUnused.canDelete, true);
+
+  // 3. Default template task cannot be deleted
+  const defaultTask = {
+    id: 'PRJ-CUST-001:HW_05:T01',
+    projectId: 'PRJ-CUST-001',
+    stageCode: 'HW_05',
+    stageKey: 'LC2-2026-10-28:HW_05',
+    title: 'Hardware schematic review',
+    description: '',
+    department: 'EHW',
+    status: 'todo',
+    priority: 'Normal',
+    order: 1,
+    isCustom: false,
+  };
+  const canDeleteDefault = validateTaskDeletion(defaultTask, [defaultTask]);
+  assert.equal(canDeleteDefault.canDelete, false);
+
+  // 4. Task in progress cannot be deleted (must be cancelled)
+  const taskInProgress = { ...customTask, status: 'in_progress' };
+  const canDeleteInProgress = validateTaskDeletion(taskInProgress, [taskInProgress]);
+  assert.equal(canDeleteInProgress.canDelete, false);
+
+  // 5. Cancel task with reason
+  const cancelled = cancelTaskInstance(taskInProgress, 'Simulation scope replaced by vendor test report');
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.cancellationReason, 'Simulation scope replaced by vendor test report');
+  assert.ok(cancelled.cancelledAt);
 });
 
 test('SECTION 6: 8 Sample Projects + 1 Declined Enquiry (Patch 5)', () => {

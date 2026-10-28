@@ -17,10 +17,16 @@ export const sharedTestActionSchema = z.enum([
   "create_record",
   "update_record",
   "create_task",
+  "create_custom_task",
   "update_task",
+  "cancel_task",
+  "delete_task",
+  "advance_stage",
   "request_approval",
   "decide_approval",
   "create_document",
+  "sync_canonical_sample_pack",
+  "sync_scenario_test_fixtures",
 ]);
 export const sharedTestMutationSchema = z.object({
   action: sharedTestActionSchema,

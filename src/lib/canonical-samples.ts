@@ -158,7 +158,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
   // ==========================================
   {
     fixtureKey: "LC2-E02",
-    projectCode: undefined, // strictly undefined per §14.14 S02 invariant: NO project created
+    // projectCode omitted per §14.14 S02 invariant: strictly NO project created
     enquiryCode: "ENQ-DECL-001",
     title: "Declined Extended-Temperature Tracker Enquiry",
     track: "hardware_firmware" as CanonicalProjectTrack,

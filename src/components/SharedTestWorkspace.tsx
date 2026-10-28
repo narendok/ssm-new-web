@@ -378,13 +378,26 @@ export function SharedTestWorkspace({
           <>
             {tab === "Projects" && (
               <section className="space-y-3">
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center gap-2">
                   <h2 className="font-semibold">Shared projects</h2>
-                  {(admin || (lead && actor.department_code === "SAL")) && (
-                    <button className={button} onClick={() => open("create_project")}>
-                      New project
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {admin && (
+                      <button
+                        className={button}
+                        disabled={busy}
+                        onClick={async () => {
+                          await run("sync_canonical_sample_pack", { p_run_id: "LC2-2026-10-28" });
+                        }}
+                      >
+                        Load Canonical Samples (LC2-2026-10-28)
+                      </button>
+                    )}
+                    {(admin || (lead && actor.department_code === "SAL")) && (
+                      <button className={button} onClick={() => open("create_project")}>
+                        New project
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="overflow-auto">
                   <table className="w-full text-left text-sm">
@@ -654,23 +667,63 @@ export function SharedTestWorkspace({
                             </td>
                             <td className="text-xs">{date(task.due_at)}</td>
                             <td>
-                              <select
-                                aria-label={`Status ${task.title}`}
-                                className={input}
-                                disabled={busy || !canEdit}
-                                value={task.status}
-                                onChange={(e) =>
-                                  void run("update_task", {
-                                    id: task.id,
-                                    status: e.target.value,
-                                    expected_updated_at: task.updated_at,
-                                  })
-                                }
-                              >
-                                {taskStatuses.map((s) => (
-                                  <option key={s}>{s}</option>
-                                ))}
-                              </select>
+                              <div className="flex items-center gap-1">
+                                <select
+                                  aria-label={`Status ${task.title}`}
+                                  className={input}
+                                  disabled={busy || !canEdit}
+                                  value={task.status}
+                                  onChange={(e) =>
+                                    void run("update_task", {
+                                      id: task.id,
+                                      status: e.target.value,
+                                      expected_updated_at: task.updated_at,
+                                    })
+                                  }
+                                >
+                                  {taskStatuses.map((s) => (
+                                    <option key={s}>{s}</option>
+                                  ))}
+                                </select>
+                                {(admin || (lead && task.department_id === ownDepartment)) && task.status !== "Cancelled" && (
+                                  <button
+                                    type="button"
+                                    className="px-1.5 py-0.5 text-xs text-amber-600 hover:underline border border-amber-300 rounded"
+                                    disabled={busy}
+                                    title="Cancel task with reason"
+                                    onClick={async () => {
+                                      const reason = window.prompt("Reason for cancellation:", "Superseded or deselected by scope change");
+                                      if (reason) {
+                                        await run("cancel_task", {
+                                          id: task.id,
+                                          reason: reason.trim(),
+                                          expected_updated_at: task.updated_at,
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    Cancel
+                                  </button>
+                                )}
+                                {(admin || (lead && task.department_id === ownDepartment)) && !task.assignee_id && task.status === "Open" && (
+                                  <button
+                                    type="button"
+                                    className="px-1.5 py-0.5 text-xs text-red-600 hover:underline border border-red-300 rounded"
+                                    disabled={busy}
+                                    title="Safely delete unassigned, unused custom task"
+                                    onClick={async () => {
+                                      if (window.confirm(`Safely delete unassigned task "${task.title}"?`)) {
+                                        await run("delete_task", {
+                                          id: task.id,
+                                          expected_updated_at: task.updated_at,
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    Del
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );

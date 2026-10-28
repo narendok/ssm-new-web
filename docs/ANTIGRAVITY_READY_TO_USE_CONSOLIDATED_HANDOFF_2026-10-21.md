@@ -1231,11 +1231,15 @@ Lovable/cloud execution remains with an authorized operator when Antigravity lac
   - S06 mathematical reconciliation verified: 150 accepted + 5 held + 45 pending = 200 lot units; 500 - 200 = 300 remaining.
   - Idempotent loader `getAllCanonicalSampleData()` verified; calling loader repeatedly returns identical counts with zero duplicate records.
   - Short testing guide provided for each scenario/lifecycle.
-- **Verification & Parity (§16.11 Patch 6):**
-  - Web: 203/203 unit tests passing (`npm run test:department` in `tests/canonical-lifecycle-and-samples.test.cjs` and all existing suites).
-  - Web: Production Vite build passing with zero errors (`npm run build`).
-  - Android: `.\gradlew.bat testDebugUnitTest` executed with `BUILD SUCCESSFUL in 13s` (26 actionable tasks up to date).
-  - All existing working features, layouts, colors, navigation, controls, tabs, and record modals preserved.
+- **Verification & Parity (§16.11 Patch 6 and Defect Resolution):**
+  - Web TypeScript Check: `npx tsc --noEmit` passing with 0 errors (`canonical-samples.ts:159` fixed by omitting absent optional fields under `exactOptionalPropertyTypes: true`).
+  - Web Unit & Database Tests: `npm run test:department` passing 207/207 tests (`canonical-lifecycle-and-samples.test.cjs` with Sections 5B, 5C, 5D, and `canonical-database-lifecycle.test.cjs` running against transactional PGlite).
+  - Web Production Build: `npm run build` passing both Vite client and Nitro SSR bundles with zero errors.
+  - Server-Side Transaction Persistence: Migration `20261028120000_lifecycle_and_sample_pack_sync.sql` providing atomic, advisory-locked `sync_canonical_sample_pack`, custom task lifecycle (`create_custom_task`, `update_task` with optimistic locking `expected_updated_at`, `cancel_task` with audit reason, safe `delete_task` strictly for unassigned/unused custom tasks, `advance_stage`).
+  - Pre-Project Feasibility & Non-Circular Release: `HW_01`, `FW_01`, `SW_01` require only `CM_01`; `CL_01` depends strictly on verification evidence (`RM_02`, `SW_09`, `FW_11`, `HW_32`, `INT_02`) without blocking on later deployment or closure stages.
+  - UI Integration: "Load Canonical Samples (LC2-2026-10-28)" button added to `SharedTestWorkspace.tsx` under Projects tab for authorized admin; task Cancel and Del actions available on task row.
+  - Android Parity (`SSM-new-app`): Added `CanonicalProjectTrack` (7 tracks), `CanonicalProgressiveStage`, `CanonicalProgressiveTask`, and `CanonicalLifecycleEngine` to `ScmsDataModels.kt`; updated `SharedTestScreen.kt` with sample loader and task Cancel/Del; added `CanonicalLifecycleTest.kt` verifying 7 tracks, fresh project invariants (`CM_01` only ready), pre-project feasibility, non-circular release, 9 canonical samples (8 projects + 1 declined enquiry with no project created), and S06 production lot reconciliation ($150 + 5 + 45 = 200$; $500 - 200 = 300$). All Android tests pass (`BUILD SUCCESSFUL in 42s`).
+  - All original working layouts, navigation, controls, tabs, and record modals preserved.
 
 ## Single execution prompt — use this file once
 

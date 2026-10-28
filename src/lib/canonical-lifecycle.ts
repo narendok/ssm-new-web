@@ -1753,7 +1753,7 @@ export const CANONICAL_STAGE_TEMPLATES: CanonicalStageTemplate[] = [
     phaseTitle: "Coupled Integration",
     name: "Cross-track baseline handshake",
     defaultOwner: "EHW", // EHW for HW-FW; FW for FW-SW
-    prerequisites: [],
+    prerequisites: ["HW_09", "FW_02"],
     applicabilityNote: "HW_09 and FW_02 for HW-FW; FW_02 and SW_02 for FW-SW",
     t01: {
       taskKey: `${TEMPLATE_NAMESPACE}:INT_01:T01`,
@@ -1777,7 +1777,7 @@ export const CANONICAL_STAGE_TEMPLATES: CanonicalStageTemplate[] = [
     phaseTitle: "Coupled Integration",
     name: "Integrated system verification",
     defaultOwner: "QA",
-    prerequisites: [],
+    prerequisites: ["INT_01"],
     applicabilityNote: "Selected from applicable HW_32, FW_11, SW_08",
     t01: {
       taskKey: `${TEMPLATE_NAMESPACE}:INT_02:T01`,
@@ -1901,8 +1901,8 @@ export const CANONICAL_STAGE_TEMPLATES: CanonicalStageTemplate[] = [
     phaseTitle: "Project Closure & Handover",
     name: "Release decision readiness",
     defaultOwner: "QA",
-    prerequisites: [],
-    applicabilityNote: "Ready-made: RM_02; SW: SW_09; FW: FW_11; HW: HW_32 + change readiness",
+    prerequisites: ["HW_32"],
+    applicabilityNote: "Ready-made: RM_02; SW: SW_09; FW: FW_11; HW: HW_32 + change readiness; Coupled: INT_02",
     t01: {
       taskKey: `${TEMPLATE_NAMESPACE}:CL_01:T01`,
       taskNumber: "T01",
@@ -2429,10 +2429,191 @@ export interface ProjectTaskInstance {
 }
 
 /**
+ * Resolves track-specific prerequisites for a canonical stage.
+ * Invariants (§16.10, §16.11, Master Plan & User Amendments):
+ * 1. CM_01 is the single entry stage with empty prerequisites ([]).
+ * 2. Pre-project technical feasibility: HW_01, FW_01, SW_01 require only CM_01 (or CM_02),
+ *    never waiting for project approval or kickoff (CM_03 / CM_04).
+ * 3. Cross-track integration:
+ *    - INT_01 requires joint baseline interfaces:
+ *      - HW+FW: ["HW_09", "FW_02"]
+ *      - FW+SW: ["FW_02", "SW_02"]
+ *      - HW+FW+SW: ["HW_09", "FW_02", "SW_02"]
+ *    - INT_02 requires INT_01 plus applicable domain verification:
+ *      - HW+FW: ["INT_01", "HW_32", "FW_11"]
+ *      - FW+SW: ["INT_01", "FW_11", "SW_08"]
+ *      - HW+FW+SW: ["INT_01", "HW_32", "FW_11", "SW_08"]
+ *    - INT_03 requires ["INT_02"].
+ * 4. Release Readiness (CL_01):
+ *    - Ready-made: ["RM_02"] (Configuration ready; RM_03 is deployment verification which follows release).
+ *    - Pure Software: ["SW_09"] (Software release readiness; SW_10 deployment & SW_11 monitoring follow release).
+ *    - Pure Firmware: ["FW_11"] (System verification; FW_12 distribution & FW_13 factory staging follow release).
+ *    - Hardware: ["HW_32"] (Environmental & functional verification + change readiness; HW_37 handover follows release).
+ *    - Coupled tracks: ["INT_02"] (Integrated system verification; INT_03 pilot acceptance follows baseline integration).
+ *    - Post-release stages (RM_03, SW_10, FW_12, HW_37, INT_03) do NOT block CL_01.
+ * 5. CL_02 depends on ["CL_01"]; CL_03 depends on ["CL_02"].
+ */
+export function resolveStagePrerequisites(stageCode: string, track: ProjectTrack): string[] {
+  const normTrack = normalizeCanonicalTrack(track);
+  const code = stageCode.toUpperCase();
+
+  // CM_01 is strictly the only entry stage with zero prerequisites
+  if (code === "CM_01") {
+    return [];
+  }
+
+  // Cross-track baseline handshake
+  if (code === "INT_01") {
+    if (normTrack === "hardware_firmware") return ["HW_09", "FW_02"];
+    if (normTrack === "firmware_software_existing_hardware") return ["FW_02", "SW_02"];
+    if (normTrack === "hardware_firmware_software") return ["HW_09", "FW_02", "SW_02"];
+    return ["CM_04"];
+  }
+
+  // Integrated system verification
+  if (code === "INT_02") {
+    if (normTrack === "hardware_firmware") return ["INT_01", "HW_32", "FW_11"];
+    if (normTrack === "firmware_software_existing_hardware") return ["INT_01", "FW_11", "SW_08"];
+    if (normTrack === "hardware_firmware_software") return ["INT_01", "HW_32", "FW_11", "SW_08"];
+    return ["INT_01"];
+  }
+
+  // Coordinated pilot acceptance
+  if (code === "INT_03") {
+    return ["INT_02"];
+  }
+
+  // Release decision readiness: strictly depends on verification evidence, NOT post-release stages
+  if (code === "CL_01") {
+    if (normTrack === "ready_made") return ["RM_02"];
+    if (normTrack === "software_only") return ["SW_09"];
+    if (normTrack === "firmware_only") return ["FW_11"];
+    if (normTrack === "hardware_only") return ["HW_32"];
+    if (
+      normTrack === "hardware_firmware" ||
+      normTrack === "firmware_software_existing_hardware" ||
+      normTrack === "hardware_firmware_software"
+    ) {
+      return ["INT_02"];
+    }
+    return ["CM_04"];
+  }
+
+  if (code === "CL_02") {
+    return ["CL_01"];
+  }
+
+  if (code === "CL_03") {
+    return ["CL_02"];
+  }
+
+  // Fallback to static template prerequisites
+  const template = CANONICAL_STAGE_TEMPLATES.find((t) => t.stageCode.toUpperCase() === code);
+  return template ? template.prerequisites : [];
+}
+
+/**
+ * Validates whether a custom task can be deleted rather than cancelled.
+ * Safe deletion rules:
+ * - Only custom tasks can be deleted (default template tasks can only be cancelled).
+ * - Only tasks with zero recorded progress (status 'todo', unstarted) and not assigned can be deleted.
+ * - Tasks with dependent tasks cannot be deleted until dependencies are resolved.
+ * If deletion is not permitted, the caller must use cancellation.
+ */
+export function validateTaskDeletion(
+  task: ProjectTaskInstance,
+  allTasks: ProjectTaskInstance[] = [],
+): { canDelete: boolean; reason?: string } {
+  if (!task.isCustom) {
+    return { canDelete: false, reason: "Default template tasks cannot be deleted; they may only be cancelled." };
+  }
+  if (task.status === "in_progress" || task.status === "completed") {
+    return { canDelete: false, reason: "Tasks with recorded progress cannot be deleted; cancel them instead." };
+  }
+  if (task.assignee && task.assignee !== "Unassigned") {
+    return { canDelete: false, reason: "Assigned tasks cannot be deleted; cancel them instead to preserve audit history." };
+  }
+  const hasDependents = allTasks.some(
+    (t) => t.id !== task.id && t.description.includes(task.id),
+  );
+  if (hasDependents) {
+    return { canDelete: false, reason: "Other tasks depend on this task; resolve dependencies or cancel instead." };
+  }
+  return { canDelete: true };
+}
+
+/**
+ * Creates a project-specific custom task instance.
+ */
+export function createCustomTaskInstance(params: {
+  projectId: string;
+  stageCode: string;
+  title: string;
+  description?: string;
+  department: string;
+  priority?: "Critical" | "High" | "Normal" | "Low";
+  assignee?: string;
+  order?: number;
+}): ProjectTaskInstance {
+  const customId = `${params.projectId}:${params.stageCode}:C_${Date.now()}`;
+  const task: ProjectTaskInstance = {
+    id: customId,
+    projectId: params.projectId,
+    stageCode: params.stageCode,
+    stageKey: `${TEMPLATE_NAMESPACE}:${params.stageCode}`,
+    taskNumber: "CUSTOM",
+    title: params.title.trim(),
+    description: params.description || "",
+    department: params.department,
+    status: "todo",
+    priority: params.priority || "Normal",
+    order: params.order ?? 99,
+    isCustom: true,
+  };
+  if (params.assignee) {
+    task.assignee = params.assignee;
+  }
+  return task;
+}
+
+/**
+ * Cancels a project task instance, recording reason and timestamp.
+ */
+export function cancelTaskInstance(
+  task: ProjectTaskInstance,
+  reason: string,
+): ProjectTaskInstance {
+  return {
+    ...task,
+    status: "cancelled",
+    cancellationReason: reason.trim(),
+    cancelledAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Updates a task instance with permitted patches.
+ */
+export function updateTaskInstance(
+  task: ProjectTaskInstance,
+  patch: Partial<Pick<ProjectTaskInstance, "title" | "description" | "priority" | "assignee" | "order" | "dueDate">>,
+): ProjectTaskInstance {
+  return {
+    ...task,
+    ...patch,
+  };
+}
+
+/**
  * Progressive Task Generation:
  * Evaluates stage prerequisites. Only stages whose prerequisites are all completed
  * become "ready" or "in_progress" and generate active assigned tasks.
  * Future stages keep their planned task previews visible without cluttering active To Do / Today boards.
+ *
+ * Invariants:
+ * 1. Fresh project with zero completed stages marks ONLY CM_01 as ready.
+ * 2. Supplying an in_progress stage NEVER bypasses prerequisite checks.
+ * 3. Cancelled tasks are preserved and never regenerated from templates.
  */
 export function computeProgressiveStageAndTaskState(params: {
   projectId: string;
@@ -2468,15 +2649,22 @@ export function computeProgressiveStageAndTaskState(params: {
 
   for (const tpl of applicableStageTemplates) {
     const code = tpl.stageCode.toUpperCase();
+    const prereqs = resolveStagePrerequisites(tpl.stageCode, track);
+    const prereqsMet = prereqs.length === 0 || prereqs.every((p) => completedSet.has(p.toUpperCase()));
+
     let status: StageProgressionStatus = "planned";
 
     if (completedSet.has(code)) {
       status = "completed";
     } else if (inProgressSet.has(code)) {
-      status = "in_progress";
+      // STRICT GATING: A stage cannot legally be in_progress unless its prerequisites are completed
+      if (prereqsMet) {
+        status = "in_progress";
+      } else {
+        // Prerequisite not met - must remain planned
+        status = "planned";
+      }
     } else {
-      // Check if all prerequisites are completed
-      const prereqsMet = tpl.prerequisites.every((p) => completedSet.has(p.toUpperCase()));
       if (prereqsMet) {
         status = "ready";
       } else {
@@ -2491,7 +2679,7 @@ export function computeProgressiveStageAndTaskState(params: {
       phaseCode: tpl.phaseCode,
       status,
       ownerDepartment: tpl.defaultOwner,
-      prerequisites: tpl.prerequisites,
+      prerequisites: prereqs,
     });
   }
 
