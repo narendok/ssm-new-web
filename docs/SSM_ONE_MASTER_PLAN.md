@@ -1,7 +1,7 @@
-# SSM One Cross-Platform Master Plan
+# SSM Portal Implementation Reference
 
 Last reconciled: 27 October 2026 — current execution/status table and latest lifecycle decisions in consolidated handoff §§16.6–16.7
-Status: Active planning baseline. This file is the shared authority for the SSM-new project. Detailed platform documents below implement this plan and must not redefine its cross-platform decisions.
+Status: Portal implementation reference. The canonical cross-platform authority is [the planning-library master](https://github.com/narendok/SSM-new/blob/main/SSM_ONE_MASTER_PLAN.md); this retained portal reference must not redefine it. Detailed platform documents below implement this plan and must not redefine its cross-platform decisions.
 
 ## Scope and authority
 
@@ -48,7 +48,7 @@ Latest user decision: **project track (lifecycle) → phases → stages → task
 
 | Entity | Minimum governed data / relationship | Preservation and automation rule |
 | --- | --- | --- |
-| Lifecycle / track template | Stable ID, code/name, version, effective state, development-scope combination, applicable phase IDs | Explicit scopes: firmware only; hardware + firmware; hardware + firmware + software; software only; hardware only. Preserve ready-made/catalog and legacy mappings. Internal/client and PoC/pilot/bulk purpose are independent dimensions; Purchasing procurement track is separate. |
+| Lifecycle / track template | Stable ID, code/name, version, effective state, development-scope combination, applicable phase IDs | Explicit scopes: firmware only; firmware + software on existing hardware; hardware + firmware; hardware + firmware + software; software only; hardware only. Preserve ready-made/catalog and legacy mappings. Internal/client and PoC/pilot/bulk purpose are independent dimensions; Purchasing procurement track is separate. |
 | Phase template | Stable ID, track version, name/order, applicability and stage template links | Fixed defaults per track, configurable through governed template changes. Broad legacy nine-stage labels need explicit mapping; do not blindly rename/reindex existing stage history as phases. |
 | Stage template | Stable ID, phase version/link, order, inputs, expected outputs, dependencies, responsible department/owner rules and existing gate policy | Predefined defaults; authorized project-specific stages may be added at any time. Not-applicable stages need explicit applicability handling; adding a stage does not grant approval authority or unlock existing gates. |
 | Task template | Stable ID, stage link, task type/title, applicability, assignee rule, required evidence, dependency and configured scheduling rule | Auto-create applicable draft/pending tasks once. Users may modify/add project tasks within existing permissions. No invented due dates, finished work, approvals or sample specifications. |
@@ -60,6 +60,7 @@ Latest user decision: **project track (lifecycle) → phases → stages → task
 | Development scope | Primary engineering responsibility | Typical default progression (not invented mandatory gates) |
 | --- | --- | --- |
 | Firmware only | FW; EHW consulted only for actual board/interface dependencies | Requirements/feasibility → baseline → firmware development → integration/verification → release/support |
+| Firmware + software | FW + SW; existing target hardware reference | Requirements/feasibility → baseline → firmware/software development → interface integration/verification → coordinated release/support |
 | Hardware + firmware | EHW + FW | Requirements/feasibility → baseline → parallel development → prototype/bring-up → integration/verification → applicable pilot/release |
 | Hardware + firmware + software | EHW + FW + SW | Requirements/feasibility → baseline → parallel development → system integration → verification → applicable customer pilot/release |
 | Software only | SW | Requirements/feasibility → baseline → software development → integration/verification → deployment/release/support |
@@ -117,3 +118,5 @@ Read section 15 of [the consolidated handoff](ANTIGRAVITY_READY_TO_USE_CONSOLIDA
 Latest lifecycle hierarchy refinement (27 October 2026): see consolidated handoff section 16.7, authoritative track → phase → stage → task plan and legacy migration/acceptance rules. Section 16.6 records the search checkpoint and remaining inventory-source decision. Preserve the existing original layouts and shared account contracts.
 
 Connected sample-data placement and latest sidebar/SOR/document refinements: consolidated handoff §16.8 and [Sample Data and Test Plan](https://github.com/narendok/SSM-new/blob/main/Feature%20Roadmap/Sample%20Data%20and%20Test%20Plan.md). Samples belong to canonical TEST registers with provenance; this planning update does not authorize new users, visibility grants, production fixtures or a database reset.
+
+28 October source of truth: use the [compact planning master](https://github.com/narendok/SSM-new/blob/main/SSM_ONE_MASTER_PLAN.md) and [single sample catalogue](https://github.com/narendok/SSM-new/blob/main/Feature%20Roadmap/Sample%20Data%20and%20Test%20Plan.md) for seven tracks, progressive tasks, complete phase/stage/task templates and milestone applicability. Older six-track/nine-stage wording here is a retained prior checkpoint, not a reason to rebuild existing projects or force irrelevant stages.
