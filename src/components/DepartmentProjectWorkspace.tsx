@@ -12,6 +12,7 @@ import type { ApprovalRecord } from "./ApprovalsFullPageView";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
 import {
   getRecordedProjectTrack,
+  CANONICAL_STAGE_TEMPLATES,
   recordedCompletedStageCodes,
   computeProgressiveStageAndTaskState,
 } from "@/lib/canonical-lifecycle";
@@ -143,7 +144,7 @@ export function DepartmentProjectWorkspace(props: Props) {
   }, [project]);
 
   const eligibleStages = React.useMemo(() => {
-    if (!project || !track) return [];
+    if (!project || !track || !CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === currentStageCode)) return [];
     const effectiveCompleted = completedStageCodes;
     const progressiveState = computeProgressiveStageAndTaskState({
       projectId: project.id,
@@ -788,7 +789,7 @@ export function DepartmentProjectWorkspace(props: Props) {
                 </div>
               </div>
 
-              {props.onRequestStageReview && (
+              {props.onRequestStageReview && track && CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === currentStageCode) && (
                 <div className="rounded-lg border border-border p-3 space-y-2">
                   <p className="text-xs text-muted-foreground">Finish all tasks for {currentStageCode}, then submit its evidence to the existing Approvals queue. Another authorized reviewer must approve before dependent stages can start.</p>
                   <button type="button" className="text-xs font-semibold text-primary disabled:opacity-50"
@@ -807,7 +808,10 @@ export function DepartmentProjectWorkspace(props: Props) {
                 </div>
               )}
 
-                            <div>
+                            {!CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === currentStageCode) && (
+                <p role="note" className="text-xs text-muted-foreground">Legacy stage history is retained. Review and adopt a canonical lifecycle plan before using these new stage controls.</p>
+              )}
+              <div>
                 <label className="text-xs font-semibold text-muted-foreground block mb-1">
                   Target Stage ({eligibleStages.length} eligible transitions)
                 </label>

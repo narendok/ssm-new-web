@@ -40,6 +40,7 @@ test('Stage completion requires finished work and an independent evidence-bound 
     '20261025091500_harden_downstream_master_guards',
     '20261028120000_lifecycle_and_sample_pack_sync',
     '20261028120001_canonical_stage_completion_reviews',
+    '20261028120002_preserve_legacy_lifecycle_boundary',
   ];
 
   for (const name of migrationNames) {
@@ -188,4 +189,8 @@ test('Stage completion requires finished work and an independent evidence-bound 
   await assert.rejects(asUser(salLead,()=>db.query('SELECT private.ensure_canonical_stage_tasks($1,$2)',[projectId,'CL_03'])),/permission denied/);
   assert.equal((await db.query("SELECT has_table_privilege('authenticated','public.canonical_stage_templates','UPDATE') AS allowed")).rows[0].allowed,false);
   assert.equal((await db.query("SELECT relrowsecurity FROM pg_class WHERE oid='public.canonical_stage_templates'::regclass")).rows[0].relrowsecurity,true);
+  const legacy=(await db.query("INSERT INTO operational_records(organization_id,department_id,area,record_type,reference,title,stage,fields,is_demo,created_by,updated_by) VALUES($1,$2,'sal','Project','HLPL-LEGACY-KEEP-01','Retain legacy history','Stage 4','{\"track\":\"hardware_firmware\",\"revision\":\"01\"}',true,$3,$3) RETURNING *",[org,dSal,admin])).rows[0];
+  await assert.rejects(call(salLead,'advance_stage',{project_id:legacy.id,target_stage:'CM_01',expected_updated_at:legacy.updated_at.toISOString()}),/LEGACY_LIFECYCLE_REVIEW_REQUIRED/);
+  await assert.rejects(call(salLead,'request_stage_completion',{project_id:legacy.id,stage_code:'CM_01',expected_updated_at:legacy.updated_at.toISOString()}),/LEGACY_LIFECYCLE_REVIEW_REQUIRED/);
+  assert.equal((await db.query('SELECT stage FROM operational_records WHERE id=$1',[legacy.id])).rows[0].stage,'Stage 4');
 });

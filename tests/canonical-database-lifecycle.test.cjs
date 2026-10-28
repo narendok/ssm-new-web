@@ -40,6 +40,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261025091500_harden_downstream_master_guards',
     '20261028120000_lifecycle_and_sample_pack_sync',
     '20261028120001_canonical_stage_completion_reviews',
+    '20261028120002_preserve_legacy_lifecycle_boundary',
   ];
 
   for (const name of migrationNames) {
