@@ -10,6 +10,7 @@ import React, { useState, useEffect } from "react";
 import { DepartmentLeadCoordinationCenter, type TaskRecord, type TeamMember } from "./DepartmentLeadCoordinationCenter";
 import type { ApprovalRecord } from "./ApprovalsFullPageView";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
+import { getApplicableStagesForTrack, type ProjectTrack } from "@/lib/canonical-lifecycle";
 import {
   FolderKanban,
   Plus,
@@ -70,6 +71,7 @@ type Props = {
     dueDate: string;
     notes: string;
   }) => boolean | void | Promise<boolean | void>;
+  onAdvanceStage?: ((projectId: string, targetStage: string, notes?: string) => Promise<boolean | void>) | undefined;
 };
 
 export function DepartmentProjectWorkspace(props: Props) {
@@ -104,8 +106,15 @@ export function DepartmentProjectWorkspace(props: Props) {
     }
   }, [props.initialTab]);
   const [recordSearch, setRecordSearch] = useState("");
+  const [advanceModalOpen, setAdvanceModalOpen] = useState(false);
+  const [selectedTargetStage, setSelectedTargetStage] = useState("");
+  const [advanceNotes, setAdvanceNotes] = useState("");
+  const [advanceBusy, setAdvanceBusy] = useState(false);
+  const [advanceError, setAdvanceError] = useState("");
 
   const project = projects.find((item) => item.reference === projectScope || item.id === projectScope);
+  const track = (project?.fields?.["track"] || "hardware_firmware") as ProjectTrack;
+  const applicableStages = project ? getApplicableStagesForTrack(track) : [];
   const all = projectScope === "all";
   const records = all ? props.records : recordsForProject(props.records, project);
   const documents = (all ? workspaceDocuments : project ? documentsForProject(workspaceDocuments, records, project) : []).filter(document => matchesWorkspaceDocument(document, props.recordTypeFilter));
@@ -212,7 +221,25 @@ export function DepartmentProjectWorkspace(props: Props) {
             </div>
             <div>
               <dt className="text-[10px] uppercase font-mono text-muted-foreground">Lifecycle Stage</dt>
-              <dd className="mt-0.5 font-medium text-foreground">{project.fields["lifecycleStage"] || "Not recorded"}</dd>
+              <dd className="mt-0.5 flex items-center gap-1.5 font-medium text-foreground">
+                <span className="font-mono font-semibold text-primary bg-primary/10 px-1.5 py-0.5 rounded text-[11px]">
+                  {project.fields["currentStage"] || project.fields["lifecycleStage"] || project.fields["stage"] || "Not recorded"}
+                </span>
+                {props.onAdvanceStage && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTargetStage("");
+                      setAdvanceNotes("");
+                      setAdvanceError("");
+                      setAdvanceModalOpen(true);
+                    }}
+                    className="rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                  >
+                    Advance
+                  </button>
+                )}
+              </dd>
             </div>
             <div>
               <dt className="text-[10px] uppercase font-mono text-muted-foreground">Target Date</dt>
@@ -695,6 +722,100 @@ export function DepartmentProjectWorkspace(props: Props) {
             )}
           </div>
         </section>
+      )}
+      {advanceModalOpen && project && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-border/60 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-foreground">Advance Lifecycle Stage</h3>
+                <p className="text-xs text-muted-foreground">{project.reference} · {project.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdvanceModalOpen(false)}
+                className="text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">Current Stage</label>
+                <div className="font-mono text-xs font-bold bg-muted/40 p-2 rounded border border-border">
+                  {project.fields["currentStage"] || project.fields["lifecycleStage"] || project.fields["stage"] || "CM_01"}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">Target Stage</label>
+                <select
+                  value={selectedTargetStage}
+                  onChange={(e) => setSelectedTargetStage(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs font-medium outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                >
+                  <option value="">Select Target Stage...</option>
+                  {applicableStages.map((stg) => (
+                    <option key={stg.stageCode} value={stg.stageCode}>
+                      {stg.stageCode} · {stg.name} ({stg.defaultOwner})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">Stage Notes / Evidence Reference (Optional)</label>
+                <textarea
+                  value={advanceNotes}
+                  onChange={(e) => setAdvanceNotes(e.target.value)}
+                  placeholder="e.g. Design review gate passed, schematic approved"
+                  rows={3}
+                  className="w-full rounded-lg border border-border bg-background p-2 text-xs font-normal outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              {advanceError && (
+                <p role="alert" className="text-xs text-destructive font-medium">
+                  {advanceError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-border/60 pt-3">
+              <button
+                type="button"
+                onClick={() => setAdvanceModalOpen(false)}
+                disabled={advanceBusy}
+                className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={advanceBusy || !selectedTargetStage}
+                onClick={async () => {
+                  if (!selectedTargetStage) return;
+                  setAdvanceBusy(true);
+                  setAdvanceError("");
+                  try {
+                    const res = await props.onAdvanceStage?.(project.id, selectedTargetStage, advanceNotes);
+                    if (res !== false) {
+                      setAdvanceModalOpen(false);
+                    }
+                  } catch (err) {
+                    setAdvanceError(err instanceof Error ? err.message : "Failed to advance stage.");
+                  } finally {
+                    setAdvanceBusy(false);
+                  }
+                }}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer"
+              >
+                {advanceBusy ? "Advancing..." : "Advance Stage"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

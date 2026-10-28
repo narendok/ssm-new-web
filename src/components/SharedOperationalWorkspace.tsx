@@ -476,6 +476,19 @@ export function SharedOperationalWorkspace({
   async function updateTask(id: string, patch: Partial<TaskRecord>) {
     const task = data.tasks.find((t) => t.id === id);
     if (!task) return;
+    if (patch.status === "Cancelled") {
+      const reason = patch.notes || patch.fields?.["cancellation_reason"] || patch.fields?.["reason"];
+      if (!reason || String(reason).trim().length < 5) {
+        setError("A substantive cancellation reason (minimum 5 characters) is required to cancel a task.");
+        return;
+      }
+      await save("cancel_task", {
+        id,
+        reason: String(reason).trim(),
+        expected_updated_at: task.updated_at,
+      });
+      return;
+    }
     const targetStatus =
       patch.status === "Released"
         ? "Complete"
@@ -613,6 +626,13 @@ export function SharedOperationalWorkspace({
           onOpenRecord={openRecord}
           onOpenDocument={id => onOpenVault ? onOpenVault(id,projectRows.find(p=>p.id===scope||p.reference===scope)?.id) : setAdvanced("Documents")}
           onUpdateTask={(id, patch) => void updateTask(id, patch)}
+          onAdvanceStage={async (projectId, targetStage, notes) => {
+            return await save("advance_stage", {
+              project_id: projectId,
+              target_stage: targetStage,
+              notes: notes || "",
+            });
+          }}
           onCreateTask={async (task) => {
             const project = projectRows.find((p) => [p.id, p.reference].includes(task.projectId));
             if (!project) {

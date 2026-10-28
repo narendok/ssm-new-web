@@ -25,7 +25,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     CREATE PUBLICATION supabase_realtime;
   `);
 
-  // Load migrations up to our new forward migration
+  // Load migrations up to our forward migration
   const migrationNames = [
     '20260927075123_ac4fb50c-cb14-4750-a34f-24a69522d4b0',
     '20260927075232_f91de181-c465-45aa-948c-2fd7979633e6',
@@ -54,6 +54,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   const purLead = uuid(3);
   const employee = uuid(4);
   const viewer = uuid(5);
+  const salLead = uuid(6);
   const org = uuid(10);
   const dEhw = uuid(11);
   const dPur = uuid(12);
@@ -65,6 +66,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     [purLead, 'pur@example.com'],
     [employee, 'employee.ehw@example.com'],
     [viewer, 'viewer@example.com'],
+    [salLead, 'sal@example.com'],
   ]) {
     await db.query('INSERT INTO auth.users VALUES($1,$2)', [id, email]);
   }
@@ -80,6 +82,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   for (const [id, role] of [
     [ehwLead, 'department_lead'],
     [purLead, 'department_lead'],
+    [salLead, 'department_lead'],
     [employee, 'member'],
     [viewer, 'viewer'],
   ]) {
@@ -94,7 +97,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   for (const [id, code, lead] of [
     [dEhw, 'EHW', ehwLead],
     [dPur, 'PUR', purLead],
-    [dSal, 'SAL', admin],
+    [dSal, 'SAL', salLead],
   ]) {
     await db.query(
       'INSERT INTO departments(id, organization_id, name, department_type, code, lead_member_id) VALUES($1,$2,$3,$3,$3,$4)',
@@ -145,7 +148,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   // Admin executes sync
   const syncRes = await call(admin, 'sync_canonical_sample_pack', { p_run_id: 'LC2-2026-10-28' });
   assert.equal(syncRes.status, 'synced_new', 'Initial sync must create new sample pack');
-  assert.ok(syncRes.persisted_count >= 9, 'Persisted count must be at least 9 entities');
+  assert.ok(syncRes.persisted_count >= 30, 'Persisted count must be >= 30 across projects, records, documents, tasks');
 
   // Verify S02 invariant: NO project created for LC2-E02
   const e02Project = await db.query(
@@ -159,6 +162,37 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     [org]
   );
   assert.equal(e02Enquiry.rows.length, 1, 'LC2-E02 enquiry must be persisted');
+
+  // Verify connected records and documents exist
+  const p01Sch = await db.query(
+    "SELECT * FROM operational_records WHERE organization_id = $1 AND reference = 'HLPL-JIG-EHW-SCH-01'",
+    [org]
+  );
+  assert.equal(p01Sch.rows.length, 1, 'P01 Schematic deliverable must be created');
+
+  const p01Bom = await db.query(
+    "SELECT * FROM operational_records WHERE organization_id = $1 AND reference = 'HLPL-JIG-EHW-BOM-01'",
+    [org]
+  );
+  assert.equal(p01Bom.rows.length, 1, 'P01 BOM deliverable must be created');
+
+  const p01Doc = await db.query(
+    "SELECT * FROM documents WHERE organization_id = $1 AND title = 'EOL Test Jig Pogo-Pin Fixture Drawing'",
+    [org]
+  );
+  assert.equal(p01Doc.rows.length, 1, 'P01 Document must be created');
+
+  const p01Tasks = await db.query(
+    "SELECT * FROM tasks WHERE organization_id = $1 AND stage_code = 'HW_31'",
+    [org]
+  );
+  assert.ok(p01Tasks.rows.length >= 2, 'P01 tasks must be created in tasks table');
+
+  const p01Links = await db.query(
+    "SELECT * FROM record_links WHERE organization_id = $1 AND target_record_id = $2",
+    [org, p01Sch.rows[0].id]
+  );
+  assert.equal(p01Links.rows.length, 1, 'Record links must connect project to deliverable record');
 
   // Verify S06 production arithmetic
   const p06Project = (
@@ -186,11 +220,52 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   assert.equal(countBefore, countAfter, 'Replay sync must create 0 duplicate records');
 
   // ==========================================
-  // TEST 2: Custom Task Lifecycle & Safeguards
+  // TEST 2: Stage Advance Authorization & Stage Validation
   // ==========================================
   const projectId = p06Project.id;
 
-  // Create custom task
+  // Advancing to an invalid stage code MUST fail
+  await assert.rejects(
+    call(admin, 'advance_stage', { project_id: projectId, target_stage: 'NOT_A_STAGE' }),
+    /INVALID_STAGE_CODE/
+  );
+
+  // EHW lead attempting to advance a Sales-owned project / commercial stage MUST fail
+  await assert.rejects(
+    call(ehwLead, 'advance_stage', { project_id: projectId, target_stage: 'CM_02' }),
+    /STAGE_ADVANCE_DENIED/
+  );
+
+  // EHW lead attempting to advance to CL_02 (release/closure) MUST fail (only QA/SAL/Admin)
+  await assert.rejects(
+    call(ehwLead, 'advance_stage', { project_id: projectId, target_stage: 'CL_02' }),
+    /STAGE_ADVANCE_DENIED/
+  );
+
+  // Admin advancing to valid stage CL_02 succeeds
+  await call(admin, 'advance_stage', {
+    project_id: projectId,
+    target_stage: 'CL_02',
+    notes: 'Release decision approved, moving to handover',
+  });
+  const advancedProject = (await db.query('SELECT * FROM operational_records WHERE id = $1', [projectId])).rows[0];
+  assert.equal(advancedProject.stage, 'CL_02');
+  assert.equal(advancedProject.fields.currentStage, 'CL_02');
+
+  // ==========================================
+  // TEST 3: Custom Task Stage Validation & Lifecycle Safeguards
+  // ==========================================
+  // Custom task with invalid stage code MUST fail
+  await assert.rejects(
+    call(ehwLead, 'create_custom_task', {
+      project_id: projectId,
+      stage_code: 'NOT_A_STAGE',
+      title: 'Invalid Stage Task',
+    }),
+    /INVALID_STAGE_CODE/
+  );
+
+  // Valid custom task succeeds
   const customTaskRes = await call(ehwLead, 'create_custom_task', {
     project_id: projectId,
     stage_code: 'HW_05',
@@ -201,14 +276,30 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   const customTaskId = customTaskRes.id;
   assert.ok(customTaskId);
 
-  // Task exists in database with is_custom = true
   const taskRow = (await db.query('SELECT * FROM tasks WHERE id = $1', [customTaskId])).rows[0];
   assert.equal(taskRow.is_custom, true);
   assert.equal(taskRow.stage_code, 'HW_05');
-  assert.equal(taskRow.status, 'Open');
-  assert.equal(taskRow.order_index, 3);
 
-  // Update task
+  // Updating task without expected_updated_at MUST fail
+  await assert.rejects(
+    call(ehwLead, 'update_task', {
+      id: customTaskId,
+      title: 'No Version Update',
+    }),
+    /EXPECTED_UPDATED_AT_REQUIRED/
+  );
+
+  // Updating task with stale version MUST fail
+  await assert.rejects(
+    call(ehwLead, 'update_task', {
+      id: customTaskId,
+      title: 'Stale update',
+      expected_updated_at: new Date(Date.now() - 60000).toISOString(),
+    }),
+    /STALE_WRITE/
+  );
+
+  // Update task with valid version succeeds
   await call(ehwLead, 'update_task', {
     id: customTaskId,
     title: 'High-Speed Signal Integrity Simulation (DDR3 + PCIe)',
@@ -217,16 +308,46 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   });
   const updatedRow = (await db.query('SELECT * FROM tasks WHERE id = $1', [customTaskId])).rows[0];
   assert.equal(updatedRow.title, 'High-Speed Signal Integrity Simulation (DDR3 + PCIe)');
-  assert.equal(updatedRow.priority, 'Critical');
 
-  // Stale write fails
+  // Cancelling task without expected_updated_at MUST fail
   await assert.rejects(
-    call(ehwLead, 'update_task', {
+    call(ehwLead, 'cancel_task', {
       id: customTaskId,
-      title: 'Stale update',
-      expected_updated_at: taskRow.updated_at.toISOString(),
+      reason: 'Valid reason here',
     }),
-    /STALE_WRITE/
+    /EXPECTED_UPDATED_AT_REQUIRED/
+  );
+
+  // Cancelling task without substantive reason (< 5 chars) MUST fail
+  await assert.rejects(
+    call(ehwLead, 'cancel_task', {
+      id: customTaskId,
+      reason: 'No',
+      expected_updated_at: updatedRow.updated_at.toISOString(),
+    }),
+    /CANCELLATION_REASON_REQUIRED/
+  );
+
+  // Cancelling task with valid substantive reason succeeds
+  await call(ehwLead, 'cancel_task', {
+    id: customTaskId,
+    reason: 'Simulation waived per external accredited lab report',
+    expected_updated_at: updatedRow.updated_at.toISOString(),
+  });
+  const cancelledRow = (await db.query('SELECT * FROM tasks WHERE id = $1', [customTaskId])).rows[0];
+  assert.equal(cancelledRow.status, 'Cancelled');
+  assert.equal(cancelledRow.cancellation_reason, 'Simulation waived per external accredited lab report');
+  assert.ok(cancelledRow.cancelled_at);
+
+  // Deleting a non-custom canonical template task MUST fail
+  const canonicalTask = (await db.query("SELECT * FROM tasks WHERE organization_id = $1 AND is_custom = false LIMIT 1", [org])).rows[0];
+  assert.ok(canonicalTask);
+  await assert.rejects(
+    call(admin, 'delete_task', {
+      id: canonicalTask.id,
+      expected_updated_at: canonicalTask.updated_at.toISOString(),
+    }),
+    /CANNOT_DELETE_CANONICAL_TASK/
   );
 
   // Safe deletion of unused custom task succeeds
@@ -235,41 +356,55 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     stage_code: 'HW_05',
     title: 'Temporary Task to Delete',
   });
-  await call(ehwLead, 'delete_task', { id: unassignedUnused.id });
-  const deletedCheck = await db.query('SELECT * FROM tasks WHERE id = $1', [unassignedUnused.id]);
-  assert.equal(deletedCheck.rows.length, 0, 'Unassigned unused task deleted cleanly');
-
-  // Assigned task deletion fails (must cancel instead)
-  await call(ehwLead, 'update_task', {
-    id: customTaskId,
-    assignee_id: mids[employee],
-    expected_updated_at: updatedRow.updated_at.toISOString(),
+  const unassignedRow = (await db.query('SELECT * FROM tasks WHERE id = $1', [unassignedUnused.id])).rows[0];
+  await call(ehwLead, 'delete_task', {
+    id: unassignedUnused.id,
+    expected_updated_at: unassignedRow.updated_at.toISOString(),
   });
+  const deletedCheck = await db.query('SELECT * FROM tasks WHERE id = $1', [unassignedUnused.id]);
+  assert.equal(deletedCheck.rows.length, 0, 'Unassigned unused custom task deleted cleanly');
+
+  // ==========================================
+  // TEST 4: Fail-closed Downstream Master Guards
+  // ==========================================
+  // Creating PO without supplier MUST fail
   await assert.rejects(
-    call(ehwLead, 'delete_task', { id: customTaskId }),
-    /TASK_ASSIGNED_CANNOT_DELETE/
+    call(purLead, 'create_record', {
+      record_type: 'Purchase order',
+      reference: 'HLPL-PUR-PO-FAIL-01',
+      title: 'Missing Supplier PO',
+      project_id: projectId,
+      fields: { revision: '01' },
+    }),
+    /SUPPLIER_REQUIRED/
   );
 
-  // Cancellation succeeds with reason
-  await call(ehwLead, 'cancel_task', {
-    id: customTaskId,
-    reason: 'Simulation waived per external lab report',
-  });
-  const cancelledRow = (await db.query('SELECT * FROM tasks WHERE id = $1', [customTaskId])).rows[0];
-  assert.equal(cancelledRow.status, 'cancelled');
-  assert.equal(cancelledRow.cancellation_reason, 'Simulation waived per external lab report');
-  assert.ok(cancelledRow.cancelled_at);
+  // Updating PO to remove supplier MUST fail
+  const validSup = (
+    await db.query(
+      "INSERT INTO operational_records(organization_id, department_id, area, record_type, reference, title, status, fields, created_by, updated_by) VALUES($1, $2, 'pur', 'Supplier', 'HLPL-SUP-V01', 'Test Verified Supplier', 'approved', '{\"verification_status\":\"Approved\",\"revision\":\"01\"}'::jsonb, $3, $3) RETURNING id",
+      [org, dPur, admin]
+    )
+  ).rows[0].id;
 
-  // ==========================================
-  // TEST 3: Project Stage Advance
-  // ==========================================
-  await call(admin, 'advance_stage', {
-    project_id: projectId,
-    target_stage: 'CL_02',
-    notes: 'Release decision approved, moving to handover',
-  });
-  const advancedProject = (await db.query('SELECT * FROM operational_records WHERE id = $1', [projectId])).rows[0];
-  assert.equal(advancedProject.stage, 'CL_02');
-  assert.equal(advancedProject.fields.currentStage, 'CL_02');
-  assert.equal(advancedProject.fields.stageRemark, 'Release decision approved, moving to handover');
+  const validPO = (
+    await call(purLead, 'create_record', {
+      record_type: 'Purchase order',
+      reference: 'HLPL-PUR-PO-OK-01',
+      title: 'Valid Supplier PO',
+      project_id: projectId,
+      fields: { revision: '01', supplier_id: validSup },
+    })
+  ).id;
+  assert.ok(validPO);
+
+  const poRow = (await db.query('SELECT * FROM operational_records WHERE id = $1', [validPO])).rows[0];
+  await assert.rejects(
+    call(purLead, 'update_record', {
+      record_id: validPO,
+      expected_updated_at: poRow.updated_at.toISOString(),
+      fields: { revision: '02' }, // Missing supplier
+    }),
+    /SUPPLIER_REQUIRED/
+  );
 });

@@ -3580,10 +3580,11 @@ function Portal() {
                 projectScope={projectScopes[active.id] ?? "all"}
                 onProjectScopeChange={scope => setProjectScopes(current => ({ ...current, [active.id]: scope as ProjectScope }))}
                 onUpdateTaskAssignee={(id, assignee) => { void updateTask(id, { fields: { assignee } }, "Task reassigned"); }}
-                onUpdateTaskStatus={(id, status) => { void updateTask(id, { status, ...(status === "Open" ? { fields: { workStatus: "To do" } } : {}) }, "Task status updated"); }}
+                onUpdateTaskStatus={(id, status) => { const s = status === "Cancelled" ? "Archived" : status; void updateTask(id, { status: s, ...(status === "Open" ? { fields: { workStatus: "To do" } } : status === "Cancelled" ? { fields: { workStatus: "Cancelled" } } : {}) }, "Task status updated"); }}
                 onStartTask={id => { void updateTask(id, { status: "Open", fields: { workStatus: "In progress" } }, "Task started"); }}
                 onOpenTask={task => { const source = leadRecords.find(record => record.id === task.id); if (source) openRecord(source); }}
-                onCreateTask={handleCreateCustomTask} onAddTeamMember={member => handleAddTeamMember({ ...member, area: activeDepartmentScope as TeamMember["area"] })}
+                onCreateTask={handleCreateCustomTask}
+                onAddTeamMember={member => handleAddTeamMember({ ...member, area: activeDepartmentScope as TeamMember["area"] })}
               />
             </section>
           ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") && (view === "project" || view === "queue" || view === "summary" || view === "records" || view === "deliverables") ? (
@@ -3612,8 +3613,14 @@ function Portal() {
               onCreateDeliverable={() => setDraftHubOpen(true)}
               onOpenRecord={id => { const record = leadRecords.find(item => item.id === id); if (record) openRecord(record); }}
               onOpenDocument={id => { const document = scopedDocuments.find(item => item.id === id) || portal.documents.find(item => item.id === id); if (document) openDocument(document); }}
-              onUpdateTask={(id,patch,action) => { void updateTask(id, { ...(patch.fields ? { fields: patch.fields } : {}), ...(patch.status ? { status: patch.status } : {}) }, action); }}
+              onUpdateTask={(id,patch,action) => { const s = patch.status === "Cancelled" ? "Archived" : (patch.status as any); void updateTask(id, { ...(patch.fields ? { fields: patch.fields } : {}), ...(s ? { status: s } : {}) }, action); }}
               onCreateTask={handleCreateCustomTask}
+              onAdvanceStage={async (projectId: string, targetStage: string) => {
+                setPortal(current => current ? ({
+                  ...current,
+                  records: current.records.map(r => r.id === projectId ? { ...r, stage: targetStage, fields: { ...r.fields, currentStage: targetStage, lifecycleStage: targetStage } } : r)
+                }) : current);
+              }}
             />
           ) : view === "pmss" ? (
               <PMSSWorkspace
@@ -7131,9 +7138,10 @@ function DepartmentWorkspace({
       onStartTask={taskId => { onUpdateTask?.(taskId, { status: "Open", fields: { workStatus: "In progress" } }, "Task started"); }}
       onOpenTask={task => onSelect(task.id)}
       onUpdateTaskStatus={(taskId, newStatus) => {
+        const s = newStatus === "Cancelled" ? "Archived" : newStatus;
         onUpdateTask?.(
           taskId,
-          { status: newStatus, ...(newStatus === "Open" ? { fields: { workStatus: "To do" } } : {}) },
+          { status: s, ...(newStatus === "Open" ? { fields: { workStatus: "To do" } } : newStatus === "Cancelled" ? { fields: { workStatus: "Cancelled" } } : {}) },
           `Task status marked ${newStatus}`
         );
       }}

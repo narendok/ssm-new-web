@@ -47,7 +47,7 @@ export interface TaskRecord {
   area: string;
   type: string;
   title: string;
-  status: "Draft" | "Open" | "In review" | "Approved" | "Released" | "Archived";
+  status: "Draft" | "Open" | "In review" | "Approved" | "Released" | "Archived" | "Cancelled";
   priority: "Low" | "Normal" | "High" | "Critical";
   reference: string;
   createdAt: string;
@@ -77,7 +77,7 @@ interface DepartmentLeadCoordinationCenterProps {
   projectScope: string;
   onProjectScopeChange: (scope: string) => void;
   onUpdateTaskAssignee: (taskId: string, newAssignee: string) => void;
-  onUpdateTaskStatus: (taskId: string, newStatus: TaskRecord["status"]) => void;
+  onUpdateTaskStatus: (taskId: string, newStatus: TaskRecord["status"], notes?: string) => void;
   onCreateTask: (task: {
     title: string;
     priority: "Low" | "Normal" | "High" | "Critical";
@@ -611,7 +611,21 @@ export function DepartmentLeadCoordinationCenter({
                           <td className="px-3 py-3 text-right">
                             <select
                               value={task.status === "Open" && task.fields["workStatus"] === "In progress" ? "IN_PROGRESS" : task.status}
-                              onChange={(e) => e.target.value === "IN_PROGRESS" ? onStartTask?.(task.id) : onUpdateTaskStatus(task.id, e.target.value as TaskRecord["status"])}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === "IN_PROGRESS") {
+                                  onStartTask?.(task.id);
+                                } else if (val === "Cancelled") {
+                                  const reason = window.prompt("Enter substantive cancellation reason (minimum 5 characters):");
+                                  if (reason && reason.trim().length >= 5) {
+                                    onUpdateTaskStatus(task.id, "Cancelled", reason.trim());
+                                  } else if (reason !== null) {
+                                    alert("Cancellation reason must be at least 5 characters.");
+                                  }
+                                } else {
+                                  onUpdateTaskStatus(task.id, val as TaskRecord["status"]);
+                                }
+                              }}
                               disabled={readOnly}
                               className="h-7 rounded border border-border bg-background px-2 text-[10px] font-semibold outline-none cursor-pointer"
                             >
@@ -620,6 +634,8 @@ export function DepartmentLeadCoordinationCenter({
                               <option value="IN_PROGRESS">In Progress</option>
                               <option value="In review">Review</option>
                               <option value="Approved" disabled={task.status === "In review"}>Complete</option>
+                            <option value="Cancelled">Cancelled</option>
+                              <option value="Cancelled">Cancelled</option>
                             </select>
                           </td>
                         </tr>
@@ -1095,7 +1111,7 @@ function TaskChecklistView({
   tasks: TaskRecord[];
   teamMembers: TeamMember[];
   onUpdateAssignee: (taskId: string, newAssignee: string) => void;
-  onUpdateStatus: (taskId: string, newStatus: TaskRecord["status"]) => void;
+  onUpdateStatus: (taskId: string, newStatus: TaskRecord["status"], notes?: string) => void;
   onStartTask?: ((taskId: string) => void) | undefined;
   onOpenTask?: ((task: TaskRecord) => void) | undefined;
   departmentLead: string;
@@ -1314,7 +1330,16 @@ function TaskChecklistView({
                             onChange={(e) =>
                               e.target.value === "IN_PROGRESS"
                                 ? onStartTask?.(task.id)
-                                : onUpdateStatus(task.id, e.target.value as TaskRecord["status"])
+                                : e.target.value === "Cancelled"
+                                  ? (() => {
+                                      const reason = window.prompt("Enter substantive cancellation reason (minimum 5 characters):");
+                                      if (reason && reason.trim().length >= 5) {
+                                        onUpdateStatus(task.id, "Cancelled", reason.trim());
+                                      } else if (reason !== null) {
+                                        alert("Cancellation reason must be at least 5 characters.");
+                                      }
+                                    })()
+                                  : onUpdateStatus(task.id, e.target.value as TaskRecord["status"])
                             }
                             disabled={readOnly}
                             className="h-6 rounded border border-border bg-background px-1.5 text-[10px] font-semibold text-foreground outline-none cursor-pointer [&>option]:bg-background [&>option]:text-foreground"
@@ -1324,6 +1349,7 @@ function TaskChecklistView({
                             <option value="IN_PROGRESS">In Progress</option>
                             <option value="In review">Review</option>
                             <option value="Approved" disabled={task.status === "In review"}>Complete</option>
+                            <option value="Cancelled">Cancelled</option>
                           </select>
                         </div>
                       </div>
@@ -1361,7 +1387,7 @@ function KanbanColumn({
   tasks: TaskRecord[];
   teamMembers: TeamMember[];
   onUpdateAssignee: (taskId: string, newAssignee: string) => void;
-  onUpdateStatus: (taskId: string, newStatus: TaskRecord["status"]) => void;
+  onUpdateStatus: (taskId: string, newStatus: TaskRecord["status"], notes?: string) => void;
   onStartTask?: ((taskId: string) => void) | undefined;
   onOpenTask?: ((task: TaskRecord) => void) | undefined;
   departmentLead: string;
@@ -1424,7 +1450,7 @@ function KanbanTaskCard({
   task: TaskRecord;
   teamMembers: TeamMember[];
   onUpdateAssignee: (taskId: string, newAssignee: string) => void;
-  onUpdateStatus: (taskId: string, newStatus: TaskRecord["status"]) => void;
+  onUpdateStatus: (taskId: string, newStatus: TaskRecord["status"], notes?: string) => void;
   onStartTask?: ((taskId: string) => void) | undefined;
   onOpenTask?: ((task: TaskRecord) => void) | undefined;
   departmentLead: string;
