@@ -407,4 +407,140 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     }),
     /SUPPLIER_REQUIRED/
   );
+
+  // ==========================================
+  // TEST 5: Four Blocker Verifications
+  // ==========================================
+  // Blocker 3: Stage catalogue mismatch
+  // Verify 89 canonical stages in table
+  const countRes = await db.query('SELECT count(*) as count FROM public.canonical_stage_templates');
+  assert.equal(Number(countRes.rows[0].count), 89, 'Exact 89 canonical stage templates in public.canonical_stage_templates');
+
+  // is_valid_canonical_stage recognizes valid codes FW_13, SW_11, C01..C15
+  for (const validCode of ['FW_13', 'SW_11', 'C01', 'C02', 'C15']) {
+    const res = await db.query('SELECT public.is_valid_canonical_stage($1) as valid', [validCode]);
+    assert.equal(res.rows[0].valid, true, `Stage ${validCode} must be valid canonical stage`);
+  }
+
+  // is_valid_canonical_stage rejects non-canonical codes MECH_01..14, CL_04, Stage 1..9
+  for (const invalidCode of ['MECH_01', 'MECH_14', 'CL_04', 'Stage 1', 'Stage 9', 'NOT_A_STAGE']) {
+    const res = await db.query('SELECT public.is_valid_canonical_stage($1) as valid', [invalidCode]);
+    assert.equal(res.rows[0].valid, false, `Stage ${invalidCode} must be rejected as non-canonical`);
+  }
+
+  // Attempting to advance to non-canonical stage MUST fail with INVALID_STAGE_CODE
+  await assert.rejects(
+    call(admin, 'advance_stage', { project_id: projectId, target_stage: 'MECH_01' }),
+    /INVALID_STAGE_CODE/
+  );
+  await assert.rejects(
+    call(admin, 'advance_stage', { project_id: projectId, target_stage: 'CL_04' }),
+    /INVALID_STAGE_CODE/
+  );
+
+  // Blocker 1 & 4: Prerequisites bypassed and progressive task generation
+  // Create a fresh project (starts at CM_01)
+  const freshProject = await call(salLead, 'create_project', {
+    reference: 'HLPL-FRESH-PREREQ-01',
+    title: 'Fresh Project for Prerequisite and Task Generation Test',
+    track: 'hardware_firmware_software',
+  });
+  const freshProjectId = freshProject.id;
+  assert.ok(freshProjectId);
+
+  // Verify that fresh project has progressive tasks for CM_01 generated
+  const freshTasks = (
+    await db.query('SELECT * FROM tasks WHERE record_id = $1 AND stage_code = $2 ORDER BY order_index', [
+      freshProjectId,
+      'CM_01',
+    ])
+  ).rows;
+  assert.equal(freshTasks.length, 2, 'Fresh project automatically generates 2 default tasks for CM_01');
+  assert.equal(freshTasks[0].order_index, 1);
+  assert.equal(freshTasks[1].order_index, 2);
+  assert.equal(freshTasks[0].status, 'Open');
+
+  // Blocker 1: Fresh project jumping directly to CL_03 closure MUST fail
+  await assert.rejects(
+    call(admin, 'advance_stage', { project_id: freshProjectId, target_stage: 'CL_03' }),
+    /PREREQUISITES_NOT_MET/
+  );
+
+  // Fresh project jumping to HW_32 or CM_03 MUST also fail
+  await assert.rejects(
+    call(admin, 'advance_stage', { project_id: freshProjectId, target_stage: 'HW_32' }),
+    /PREREQUISITES_NOT_MET/
+  );
+  await assert.rejects(
+    call(admin, 'advance_stage', { project_id: freshProjectId, target_stage: 'CM_03' }),
+    /PREREQUISITES_NOT_MET/
+  );
+
+  // Advancing fresh project from CM_01 to eligible next stage CM_02 succeeds
+  await call(salLead, 'advance_stage', {
+    project_id: freshProjectId,
+    target_stage: 'CM_02',
+    notes: 'Completed CM_01 input capture, proceeding to feasibility review',
+  });
+
+  // Verify that project stage is updated and completedStages contains CM_01
+  const updatedFreshPrj = (await db.query('SELECT * FROM operational_records WHERE id = $1', [freshProjectId])).rows[0];
+  assert.equal(updatedFreshPrj.stage, 'CM_02');
+  assert.deepEqual(updatedFreshPrj.fields.completedStages, ['CM_01']);
+
+  // Blocker 4: Advancing project automatically creates progressive tasks for CM_02 in public.tasks
+  const cm02Tasks = (
+    await db.query('SELECT * FROM tasks WHERE record_id = $1 AND stage_code = $2 ORDER BY order_index', [
+      freshProjectId,
+      'CM_02',
+    ])
+  ).rows;
+  assert.equal(cm02Tasks.length, 2, 'Advancing to CM_02 automatically generates 2 default tasks for CM_02');
+  assert.equal(cm02Tasks[0].title, 'Collect relevant departmental feasibility remarks and risks');
+  assert.equal(cm02Tasks[1].title, 'Record accepted scope or reasoned decline without creating a dummy project');
+  assert.equal(cm02Tasks[0].status, 'Open');
+
+  // Blocker 2: Track restrictions server-side
+  // Create a software_only project
+  const swProject = await call(salLead, 'create_project', {
+    reference: 'HLPL-SW-ONLY-01',
+    title: 'Software Only Dedicated Project',
+    track: 'software_only',
+  });
+  const swProjectId = swProject.id;
+
+  // EHW lead moving software_only project to HW_37 MUST fail
+  await assert.rejects(
+    call(ehwLead, 'advance_stage', { project_id: swProjectId, target_stage: 'HW_37' }),
+    /STAGE_ADVANCE_DENIED|STAGE_NOT_APPLICABLE_TO_TRACK/
+  );
+
+  // Admin moving software_only project to HW_37 MUST fail with STAGE_NOT_APPLICABLE_TO_TRACK
+  await assert.rejects(
+    call(admin, 'advance_stage', { project_id: swProjectId, target_stage: 'HW_37' }),
+    /STAGE_NOT_APPLICABLE_TO_TRACK/
+  );
+
+  // Creating custom task for HW_37 on software_only project MUST fail with STAGE_NOT_APPLICABLE_TO_TRACK
+  await assert.rejects(
+    call(admin, 'create_custom_task', {
+      project_id: swProjectId,
+      department_id: dEhw,
+      stage_code: 'HW_37',
+      title: 'Invalid Hardware Task on Software Project',
+    }),
+    /STAGE_NOT_APPLICABLE_TO_TRACK/
+  );
+
+  // Advancing declined project MUST fail with STAGE_GATE_BLOCKED
+  const declinedProject = await call(salLead, 'create_project', {
+    reference: 'HLPL-DECL-PRJ-01',
+    title: 'Declined Customer Project',
+    track: 'hardware_firmware',
+  });
+  await db.query("UPDATE operational_records SET fields = fields || '{\"declined\": true}'::jsonb WHERE id = $1", [declinedProject.id]);
+  await assert.rejects(
+    call(salLead, 'advance_stage', { project_id: declinedProject.id, target_stage: 'CM_02' }),
+    /STAGE_GATE_BLOCKED/
+  );
 });

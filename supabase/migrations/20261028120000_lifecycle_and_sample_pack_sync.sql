@@ -9,23 +9,188 @@ ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS order_index integer NOT NULL D
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS cancellation_reason text;
 ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
 
--- 2. Canonical Stage Validation Helper
+-- 2. Canonical Stage Catalogue & Templates Table (LC2-2026-10-28, 89 stages)
+CREATE TABLE IF NOT EXISTS public.canonical_stage_templates (
+  stage_code text PRIMARY KEY,
+  phase_code text NOT NULL,
+  name text NOT NULL,
+  default_owner text NOT NULL,
+  prerequisites text[] NOT NULL,
+  applicable_tracks text[] NOT NULL,
+  t01_title text NOT NULL,
+  t01_owner text NOT NULL,
+  t02_title text NOT NULL,
+  t02_owner text NOT NULL
+);
+
+GRANT SELECT ON public.canonical_stage_templates TO authenticated, anon;
+
+INSERT INTO public.canonical_stage_templates(stage_code, phase_code, name, default_owner, prerequisites, applicable_tracks, t01_title, t01_owner, t02_title, t02_owner)
+VALUES
+('CM_01','CM-P1','Request and input capture','SAL',ARRAY[]::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Capture internal request or client source and objective','SAL','Link verified input sources and identify missing values','SAL'),
+('CM_02','CM-P1','Applicable feasibility review','SAL',ARRAY['CM_01']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Collect relevant departmental feasibility remarks and risks','SAL','Record accepted scope or reasoned decline without creating a dummy project','SAL'),
+('CM_03','CM-P2','Requirements baseline','SAL',ARRAY['CM_02']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Resolve required parameters and document exclusions','SAL','Route baseline to existing authorized approvers','SAL'),
+('CM_04','CM-P2','Plan and kickoff','SAL',ARRAY['CM_03']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Assign accountable owners and dependency-aware schedule','SAL','Record kickoff decisions and agreed acceptance criteria','SAL'),
+('HW_01','HW-P1','Hardware requirement capture','EHW',ARRAY['CM_01']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Review electrical and physical requirements with source provenance','EHW','Record clarification queries and missing parameters','EHW'),
+('HW_02','HW-P1','Hardware PRS baseline','EHW',ARRAY['HW_01','CM_03']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Populate the shared electrical and interface parameter table','EHW','Review the hardware requirement baseline through existing authority','EHW'),
+('HW_03','HW-P1','Component feasibility and alternatives','EHW',ARRAY['HW_01']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Search canonical parts and compare supported alternatives','EHW','Link sourcing availability and obsolescence risks from approved sources','EHW'),
+('HW_04','HW-P1','System architecture and power tree','EHW',ARRAY['HW_02','HW_03']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Draft functional blocks and interface boundaries','EHW','Calculate power and thermal budgets from approved requirements','EHW'),
+('HW_05','HW-P1','Initial technical feasibility response','EHW',ARRAY['HW_03','HW_04']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Record architecture and component assumptions without requiring the later tentative BOM','EHW','Submit technical feasibility, risks and unresolved commercial assumptions','EHW'),
+('HW_06','HW-P2','Evaluation setup or breadboard','EHW',ARRAY['HW_04','HW_05']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Select existing evaluation boards and bench setup','EHW','Record configuration and verify the required concept functions','EHW'),
+('HW_07','HW-P2','Prototype component request','EHW',ARRAY['HW_03']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Select canonical part revisions and requested quantities','EHW','Submit linked prototype request with approved alternates where available','EHW'),
+('HW_08','HW-P2','Prototype procurement and acceptance references','PUR',ARRAY['HW_07']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Link authorized supplier order and receipt records','PUR','Obtain QA acceptance or keep held components unavailable','PUR'),
+('HW_09','HW-P2','Pinout and draft hardware-firmware interface','EHW',ARRAY['HW_04']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Review required pin assignments and conflicts','EHW','Record the joint interface baseline or existing-platform reference','EHW'),
+('HW_10','HW-P2','Circuit calculations and simulation','EHW',ARRAY['HW_04']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Calculate selected circuit blocks against source requirements','EHW','Link native simulation evidence and design assumptions','EHW'),
+('HW_11','HW-P2','Symbols footprints and native models','EHW',ARRAY['HW_03']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Validate library pin mappings and package footprints','EHW','Attach authorized native model references and library revision','EHW'),
+('HW_12','HW-P2','Concept peripheral and signal checks','EHW',ARRAY['HW_06','HW_08']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Run approved bench checks using available test tools','EHW','Record interface observations and linked firmware build only where applicable','EHW'),
+('HW_13','HW-P2','Design risk review','EHW',ARRAY['HW_04','HW_10']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Identify circuit failure modes and mitigation actions','EHW','Review risks using the applicable company-approved method','EHW'),
+('HW_14','HW-P2','Verification planning','QA',ARRAY['HW_02','HW_13']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Map requirements to tests criteria units and configurations','QA','Review planned evidence and applicable external testing needs','QA'),
+('HW_15','HW-P2','Schematic preparation','EHW',ARRAY['HW_09','HW_10','HW_11']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Create revisioned schematics in the engineering tool','EHW','Link the native schematic and source requirements','EHW'),
+('HW_16','HW-P2','Schematic review','EHW',ARRAY['HW_15','HW_13']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Run configured electrical checks and peer review','EHW','Resolve findings and record the authorized review decision','EHW'),
+('HW_17','HW-P3','Mechanical interface and board outline','MECH',ARRAY['HW_16']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Confirm outline mounting connector and height constraints','MECH','Link existing or revised drawing STEP and outline files','MECH'),
+('HW_18','HW-P3','Placement and floorplan','EHW',ARRAY['HW_16','HW_17']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Place parts using the approved interface constraints','EHW','Review power signal thermal and accessibility concerns','EHW'),
+('HW_19','HW-P3','Tentative BOM and sourcing analysis','EHW',ARRAY['HW_16']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'EHW submits the tentative revisioned BOM with canonical part links and quantities','EHW','PUR completes one linked BOM-level costing, availability and lead-time analysis without implying production release','PUR'),
+('HW_20','HW-P3','Fit and thermal review','MECH',ARRAY['HW_17','HW_18']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Check populated board fit against enclosure references','MECH','Record clearance thermal findings and required changes','MECH'),
+('HW_21','HW-P3','PCB stackup and routing','EHW',ARRAY['HW_18','HW_20']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Route against approved stackup and electrical constraints','EHW','Review return paths clearances and required impedance targets','EHW'),
+('HW_22','HW-P3','Board marking and fabrication preparation','EHW',ARRAY['HW_21']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Review identifiers polarity revision markings and fiducials','EHW','Define applicable panel constraints with the supplier','EHW'),
+('HW_23','HW-P3','Layout and manufacturability review','EHW',ARRAY['HW_21','HW_22']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Run configured DRC and supplier DFM checks','EHW','Record and close peer-review findings before export','EHW'),
+('HW_24','HW-P3','Prototype fabrication package','EHW',ARRAY['HW_23']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Export native-tool Gerber drill and assembly outputs','EHW','Register original package revision and integrity hash','EHW'),
+('HW_25','HW-P4','Authorized supplier fabrication request','PUR',ARRAY['HW_24']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Link approved supplier request for PCB PCBA and stencil as applicable','PUR','Resolve fabrication questions against the exact package revision','PUR'),
+('HW_26','HW-P4','Prototype enclosure and kitting','MMF',ARRAY['HW_17','HW_19']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Link authorized prototype enclosure drawing or existing case','MMF','Prepare a traceable kit through the agreed inventory source','MMF'),
+('HW_27','HW-P4','Applicable pre-compliance evidence','QA',ARRAY['HW_32']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Coordinate the applicable formal pre-compliance checks','QA','Link QA test evidence rather than duplicate C08 execution tasks','QA'),
+('HW_28','HW-P4','Verified final hardware-firmware interface','EHW',ARRAY['HW_09','HW_31']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Verify actual pin behaviour and electrical scaling','EHW','Record the final joint interface reference where firmware is in scope','EHW'),
+('HW_29','HW-P4','Production test fixture readiness','EMF',ARRAY['HW_14','HW_16']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Link the approved test fixture design and diagnostic interface','EMF','Verify fixture readiness when production testing is required','EMF'),
+('HW_30','HW-P4','Outsourced PCBA receipt and prototype box-build','EMF',ARRAY['HW_25','HW_08']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Link supplier assembly receipt and independent QA disposition','EMF','Perform applicable authorized box-build and inspection checks','EMF'),
+('HW_31','HW-P4','Board bring-up','EHW',ARRAY['HW_30']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Perform approved current-limited power and basic interface checks','EHW','Record measurements against source criteria and log faults','EHW'),
+('HW_32','HW-P4','Bench functional validation','EHW',ARRAY['HW_31','HW_14']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Execute the applicable bench validation plan on pinned revisions','EHW','Link defects corrective iterations and retest evidence','EHW'),
+('HW_33','HW-P5','Pilot or field evaluation','EHW',ARRAY['HW_32','HW_28']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Support the authorized pilot configuration and installation','EHW','Capture user feedback and unresolved acceptance conditions','EHW'),
+('HW_34','HW-P5','Production BOM baseline','EHW',ARRAY['HW_33','HW_36']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Verify released part revisions and approved sourcing references','EHW','Submit the final BOM through the configured release authority','EHW'),
+('HW_35','HW-P5','Final fabrication and panel package','EHW',ARRAY['HW_34','HW_23']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Export the approved native fabrication package and associated panel stencil files','EHW','Pin the source Gerber revision checksum and release evidence','EHW'),
+('HW_36','HW-P5','Relevant design-change closure','EHW',ARRAY['HW_32']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Resolve or formally disposition open design changes','EHW','Preserve the prior revisions and link verified corrective evidence','EHW'),
+('HW_37','HW-P5','Production handover readiness','EMF',ARRAY['HW_34','HW_35']::text[],ARRAY['hardware_only','hardware_firmware','hardware_firmware_software']::text[],'Review applicable design manufacturing and QA handover evidence','EMF','Request authorized production release without auto-approving it','EMF'),
+('FW_01','FW-P1','Firmware feasibility and target sizing','FW',ARRAY['CM_01']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Assess existing target resources and required behaviours','FW','Record firmware risks and implementation assumptions','FW'),
+('FW_02','FW-P1','Firmware requirements and interface proposal','FW',ARRAY['FW_01','CM_03']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Define state behaviour and required peripheral protocol contracts','FW','Review interface proposals against the selected existing or new hardware baseline','FW'),
+('FW_03','FW-P2','Firmware architecture','FW',ARRAY['FW_02']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Design scheduling memory fault handling and persistence','FW','Review resource allocation and testability','FW'),
+('FW_04','FW-P2','Toolchain and evaluation environment','FW',ARRAY['FW_03']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Configure the approved source toolchain and reproducible build','FW','Verify the development target and mock interfaces','FW'),
+('FW_05','FW-P3','Core drivers and protocol implementation','FW',ARRAY['FW_04']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Implement only the required hardware abstraction and protocol behaviours','FW','Link code changes and module checks to requirements','FW'),
+('FW_06','FW-P3','Application security update and power behaviour','FW',ARRAY['FW_05']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Implement applicable application state and power logic','FW','Implement and verify secure update or boot behaviour only where required','FW'),
+('FW_07','FW-P4','Code review and unit verification','FW',ARRAY['FW_05','FW_06']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Run agreed static analysis and unit checks','FW','Record peer review and fix required findings without invented coverage thresholds','FW'),
+('FW_08','FW-P4','Target integration','FW',ARRAY['FW_07']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Integrate against the pinned target and HSI revision','FW','Record timing peripheral and configuration findings','FW'),
+('FW_09','FW-P4','Production diagnostic support','FW',ARRAY['FW_08']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Prepare diagnostic firmware or test interface when required','FW','Verify its controlled handoff to the production test fixture','FW'),
+('FW_10','FW-P4','Recovery and persistence verification','FW',ARRAY['FW_08']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Test applicable communication recovery buffering and retained state','FW','Record failures and corrective tests against approved criteria','FW'),
+('FW_11','FW-P4','Firmware validation','FW',ARRAY['FW_07','FW_08','FW_10']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Execute the agreed functional robustness and environmental plan','FW','Review required defects and evidence before release','FW'),
+('FW_12','FW-P5','Controlled firmware release','FW',ARRAY['FW_11']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Pin the approved source build configuration and binary hash','FW','Obtain configured release authorization and record rollback instructions','FW'),
+('FW_13','FW-P5','Field support and update monitoring','FW',ARRAY['FW_12']::text[],ARRAY['firmware_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Monitor the agreed deployment and diagnostic feedback','FW','Record follow-up updates through versioned change control','FW'),
+('SW_01','SW-P1','Software feasibility and scope','SW',ARRAY['CM_01']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Identify users features interfaces and deployment scope','SW','Record capacity security and delivery assumptions','SW'),
+('SW_02','SW-P1','Software requirements and API contract','SW',ARRAY['SW_01','CM_03']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Define agreed workflows data and API behaviours','SW','Review the firmware payload contract only where devices are in scope','SW'),
+('SW_03','SW-P2','Software architecture and access design','SW',ARRAY['SW_02']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Design application data and authenticated authorization boundaries','SW','Review UI flows and external integration contracts','SW'),
+('SW_04','SW-P2','Build environment and simulators','SW',ARRAY['SW_03']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Configure approved source testing and staging tools','SW','Create contract-based mock inputs for independent development','SW'),
+('SW_05','SW-P3','Feature implementation','SW',ARRAY['SW_04']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Implement the planned application and service capabilities','SW','Link changes to requirements and preserve existing APIs','SW'),
+('SW_06','SW-P3','Access security and operations controls','SW',ARRAY['SW_03']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Implement the agreed identity permissions and sensitive-data controls','SW','Verify applicable operational and update-management behaviour','SW'),
+('SW_07','SW-P4','Automated tests and peer review','SW',ARRAY['SW_05','SW_06']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Run unit integration regression and authorization checks','SW','Resolve required review findings before integration','SW'),
+('SW_08','SW-P4','End-to-end integration','SW',ARRAY['SW_07']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Verify the selected external or device-to-application contract end to end','SW','Record failures and recovery behaviour using agreed test data','SW'),
+('SW_09','SW-P4','Acceptance and security validation','SW',ARRAY['SW_08']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Run applicable user acceptance security and performance checks','SW','Record authorized acceptance and required issue disposition','SW'),
+('SW_10','SW-P5','Controlled deployment','SW',ARRAY['SW_09']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Rehearse the approved deployment data migration and rollback','SW','Obtain release authorization and verify the intended environment','SW'),
+('SW_11','SW-P5','Post-release monitoring','SIT',ARRAY['SW_10']::text[],ARRAY['software_only','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Monitor agreed service indicators and recovery readiness','SIT','Record support handover and follow-up improvements without invented SLA values','SIT'),
+('INT_01','INT-P1','Cross-track baseline handshake','EHW',ARRAY['HW_09','FW_02']::text[],ARRAY['hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Pin the joint interface and participating version references','EHW','Record the accountable joint review before dependent implementation','EHW'),
+('INT_02','INT-P1','Integrated system verification','QA',ARRAY['INT_01']::text[],ARRAY['hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Verify end-to-end behaviour on the pinned full configuration','QA','Record unresolved cross-department blockers and owners','QA'),
+('INT_03','INT-P1','Coordinated pilot acceptance','SAL',ARRAY['INT_02']::text[],ARRAY['hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software']::text[],'Collect authorized customer or internal pilot feedback','SAL','Record accepted scope limitations and refinement actions','SAL'),
+('RM_01','RM-P1','Existing product fit and gap review','SAL',ARRAY['CM_03']::text[],ARRAY['ready_made']::text[],'Select the actual existing product and released reference configuration','SAL','Record fit gaps and conditions without creating a new engineering development track','SAL'),
+('RM_02','RM-P2','Configuration and integration preparation','SIT',ARRAY['RM_01']::text[],ARRAY['ready_made']::text[],'Prepare approved installation configuration and interface settings','SIT','Verify existing version compatibility and authorization','SIT'),
+('RM_03','RM-P3','Ready-made deployment verification','SIT',ARRAY['RM_02']::text[],ARRAY['ready_made']::text[],'Execute the authorized installation or deployment plan','SIT','Record operational checks and exceptions against agreed criteria','SIT'),
+('CL_01','CL-P1','Release decision readiness','QA',ARRAY['HW_32']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Compile the applicable signed evidence and unresolved conditions','QA','Obtain the configured release decision without replacing it with task completion','QA'),
+('CL_02','CL-P1','Delivery and support handover','SAL',ARRAY['CL_01']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Link the actual authorized dispatch or deployment evidence','SAL','Record recipient acceptance documents and support ownership','SAL'),
+('CL_03','CL-P1','Closure and lessons','SAL',ARRAY['CL_02']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Review remaining obligations defects and follow-up ownership','SAL','Record authorized closure or keep the project open for refinement','SAL'),
+('C01','CERT-P1','Certification applicability review','QA',ARRAY['CM_03']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Identify only the approved applicable regulatory and customer requirements','QA','Map required configurations and test evidence without asserting blanket certification','QA'),
+('C02','CERT-P1','External test matrix','QA',ARRAY['C01']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Prepare the relevant test criteria samples and method references','QA','Review technical inputs and required approval authority','QA'),
+('C03','CERT-P1','Test agency selection','PUR',ARRAY['C02']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Collect permitted agency quotations and capability evidence','PUR','Route the selection through existing commercial and QA authority','PUR'),
+('C04','CERT-P1','Pre-compliance service authorization','PUR',ARRAY['C03']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Prepare the authorized testing order request','PUR','Link Finance-approved payment evidence only if actually available','PUR'),
+('C05','CERT-P2','Sample readiness','EMF',ARRAY['C04']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Prepare traceable samples and applicable test configuration','EMF','Record QA readiness checks before dispatch','EMF'),
+('C06','CERT-P2','Technical file compilation','QA',ARRAY['C04']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Compile original requirements design and configuration references','QA','Record authorized submission and external reference if submitted','QA'),
+('C07','CERT-P2','Lab scheduling and dispatch readiness','QA',ARRAY['C05','C06']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Confirm the actual agreed test slot and attendance','QA','Link authorized sample dispatch evidence','QA'),
+('C08','CERT-P2','Pre-compliance execution evidence','QA',ARRAY['C07']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Coordinate applicable external testing against the approved plan','QA','Record genuine lab reports observations and configuration references','QA'),
+('C09','CERT-P2','Findings and corrective verification','EHW',ARRAY['C08']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Assign findings to the responsible domain and link corrective changes','EHW','Record QA-reviewed retest or justified disposition','EHW'),
+('C10','CERT-P3','Final test service authorization','PUR',ARRAY['C09']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Prepare the applicable final test order request','PUR','Link actual Finance-authorized payment evidence if available','PUR'),
+('C11','CERT-P3','Final controlled sample readiness','QA',ARRAY['C10']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Verify sample build and version provenance against released engineering references','QA','Record QA sample-release evidence without inventing results','QA'),
+('C12','CERT-P3','Final compliance evidence','QA',ARRAY['C11']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Track actual applicable external test execution','QA','Link original reports and open findings without simulated measurements','QA'),
+('C13','CERT-P4','Report accuracy review','QA',ARRAY['C12']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Review report identity version criteria and result provenance','QA','Resolve documented report discrepancies with the responsible source','QA'),
+('C14','CERT-P4','External certificate decision','QA',ARRAY['C13']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Track the actual authority decision where certification is required','QA','Upload the issued original or retain a clearly pending state','QA'),
+('C15','CERT-P4','Compliance record handover','QA',ARRAY['C14']::text[],ARRAY['hardware_only','firmware_only','software_only','hardware_firmware','firmware_software_existing_hardware','hardware_firmware_software','ready_made']::text[],'Archive verified original evidence and applicable approval references','QA','Update compliance readiness for the separate authorized release decision','QA')
+ON CONFLICT (stage_code) DO UPDATE SET
+  phase_code = EXCLUDED.phase_code,
+  name = EXCLUDED.name,
+  default_owner = EXCLUDED.default_owner,
+  prerequisites = EXCLUDED.prerequisites,
+  applicable_tracks = EXCLUDED.applicable_tracks,
+  t01_title = EXCLUDED.t01_title,
+  t01_owner = EXCLUDED.t01_owner,
+  t02_title = EXCLUDED.t02_title,
+  t02_owner = EXCLUDED.t02_owner;
+
+-- 2.1 Canonical Stage Validation Helper
 CREATE OR REPLACE FUNCTION public.is_valid_canonical_stage(p_stage text)
-RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
-  SELECT trim(COALESCE(p_stage, '')) IN (
-    'CM_01','CM_02','CM_03','CM_04',
-    'HW_01','HW_02','HW_03','HW_04','HW_05','HW_06','HW_07','HW_08','HW_09','HW_10',
-    'HW_11','HW_12','HW_13','HW_14','HW_15','HW_16','HW_17','HW_18','HW_19','HW_20',
-    'HW_21','HW_22','HW_23','HW_24','HW_25','HW_26','HW_27','HW_28','HW_29','HW_30',
-    'HW_31','HW_32','HW_33','HW_34','HW_35','HW_36','HW_37',
-    'FW_01','FW_02','FW_03','FW_04','FW_05','FW_06','FW_07','FW_08','FW_09','FW_10','FW_11','FW_12',
-    'SW_01','SW_02','SW_03','SW_04','SW_05','SW_06','SW_07','SW_08','SW_09','SW_10',
-    'MECH_01','MECH_02','MECH_03','MECH_04','MECH_05','MECH_06','MECH_07','MECH_08','MECH_09','MECH_10','MECH_11','MECH_12','MECH_13','MECH_14',
-    'RM_01','RM_02','RM_03',
-    'INT_01','INT_02','INT_03',
-    'CL_01','CL_02','CL_03','CL_04',
-    'Stage 1','Stage 2','Stage 3','Stage 4','Stage 5','Stage 6','Stage 7','Stage 8','Stage 9'
+RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT EXISTS(
+    SELECT 1 FROM public.canonical_stage_templates
+    WHERE stage_code = trim(COALESCE(p_stage, ''))
   );
+$$;
+
+-- 2.2 Track Applicability Helper
+CREATE OR REPLACE FUNCTION public.is_stage_applicable_to_track(p_stage text, p_track text)
+RETURNS boolean LANGUAGE sql STABLE AS $$
+  SELECT EXISTS(
+    SELECT 1 FROM public.canonical_stage_templates
+    WHERE stage_code = trim(COALESCE(p_stage, ''))
+      AND COALESCE(NULLIF(trim(p_track), ''), 'hardware_firmware_software') = ANY(applicable_tracks)
+  );
+$$;
+
+-- 2.3 Canonical Prerequisite Resolution Helper
+CREATE OR REPLACE FUNCTION public.resolve_canonical_stage_prerequisites(p_stage text, p_track text)
+RETURNS text[] LANGUAGE plpgsql STABLE AS $$
+DECLARE
+  s text := upper(trim(COALESCE(p_stage, '')));
+  t text := lower(trim(COALESCE(p_track, 'hardware_firmware_software')));
+  base_prereqs text[];
+BEGIN
+  IF s = 'CM_01' THEN
+    RETURN ARRAY[]::text[];
+  ELSIF s = 'INT_01' THEN
+    IF t = 'hardware_firmware' THEN RETURN ARRAY['HW_09', 'FW_02']::text[];
+    ELSIF t = 'firmware_software_existing_hardware' THEN RETURN ARRAY['FW_02', 'SW_02']::text[];
+    ELSIF t = 'hardware_firmware_software' THEN RETURN ARRAY['HW_09', 'FW_02', 'SW_02']::text[];
+    ELSE RETURN ARRAY['CM_04']::text[];
+    END IF;
+  ELSIF s = 'INT_02' THEN
+    IF t = 'hardware_firmware' THEN RETURN ARRAY['INT_01', 'HW_32', 'FW_11']::text[];
+    ELSIF t = 'firmware_software_existing_hardware' THEN RETURN ARRAY['INT_01', 'FW_11', 'SW_08']::text[];
+    ELSIF t = 'hardware_firmware_software' THEN RETURN ARRAY['INT_01', 'HW_32', 'FW_11', 'SW_08']::text[];
+    ELSE RETURN ARRAY['INT_01']::text[];
+    END IF;
+  ELSIF s = 'INT_03' THEN
+    RETURN ARRAY['INT_02']::text[];
+  ELSIF s = 'CL_01' THEN
+    IF t = 'ready_made' THEN RETURN ARRAY['RM_02']::text[];
+    ELSIF t = 'software_only' THEN RETURN ARRAY['SW_09']::text[];
+    ELSIF t = 'firmware_only' THEN RETURN ARRAY['FW_11']::text[];
+    ELSIF t = 'hardware_only' THEN RETURN ARRAY['HW_32']::text[];
+    ELSIF t IN ('hardware_firmware', 'firmware_software_existing_hardware', 'hardware_firmware_software') THEN
+      RETURN ARRAY['INT_02']::text[];
+    ELSE
+      RETURN ARRAY['CM_04']::text[];
+    END IF;
+  ELSIF s = 'CL_02' THEN
+    RETURN ARRAY['CL_01']::text[];
+  ELSIF s = 'CL_03' THEN
+    RETURN ARRAY['CL_02']::text[];
+  ELSE
+    SELECT prerequisites INTO base_prereqs
+    FROM public.canonical_stage_templates
+    WHERE stage_code = s;
+    RETURN COALESCE(base_prereqs, ARRAY[]::text[]);
+  END IF;
+END;
 $$;
 
 -- 3. Canonical Sample Pack Synchronizer (LC2-2026-10-28)
@@ -100,7 +265,7 @@ BEGIN
   IF p_id IS NULL THEN
     INSERT INTO operational_records(organization_id, department_id, area, record_type, reference, title, stage, status, fields, is_demo, created_by, updated_by)
     VALUES(org, d_ehw, 'ehw', 'Project', 'PRJ-INT-001', 'Internal Harness & EOL Test Jig', 'HW_31', 'open',
-           jsonb_build_object('customer','Internal Hexense Labs — Plant Tooling Division','track','hardware_only','currentStage','HW_31','revision','01','scope','Internal'),
+           jsonb_build_object('customer','Internal Hexense Labs — Plant Tooling Division','track','hardware_only','currentStage','HW_31','revision','01','scope','Internal','completedStages',to_jsonb(ARRAY['CM_01','CM_02','CM_03','CM_04','HW_01','HW_02','HW_03','HW_04','HW_05','HW_06','HW_07','HW_08','HW_09','HW_10','HW_11','HW_12','HW_13','HW_14','HW_15','HW_16','HW_17','HW_18','HW_19','HW_20','HW_21','HW_22','HW_23','HW_24','HW_25','HW_26','HW_30']::text[])),
            true, auth.uid(), auth.uid())
     RETURNING id INTO p_id;
   END IF;
@@ -700,6 +865,13 @@ DECLARE
  target_stage text;
  custom_stage text;
  cancel_reason text;
+ prj_track text;
+ req_prereqs text[];
+ completed_stages text[];
+ effective_completed text[];
+ stpl canonical_stage_templates%ROWTYPE;
+ t01_dept uuid;
+ t02_dept uuid;
 BEGIN
  SELECT * INTO a FROM resolve_test_membership();
  IF auth.uid() IS NULL OR a.membership_id IS NULL OR a.role='viewer' THEN RAISE EXCEPTION 'TEST_WRITE_DENIED'; END IF;
@@ -773,12 +945,27 @@ BEGIN
   IF COALESCE(p_payload->>'reference','') !~ '^HLPL-[A-Z0-9]+(-[A-Z0-9]+)*$' THEN
    RAISE EXCEPTION 'PROJECT_CODE_REQUIRED';
   END IF;
+  prj_track := COALESCE(NULLIF(trim(p_payload->>'track'), ''), NULLIF(trim(p_payload->>'projectTrack'), ''), 'hardware_firmware_software');
   SELECT id INTO dept FROM departments WHERE organization_id=org AND code='SAL' AND active;
   INSERT INTO operational_records(organization_id,department_id,area,record_type,reference,title,stage,fields,notes,created_by,updated_by,is_demo)
-  VALUES(org,dept,'sales','Project',p_payload->>'reference',trim(p_payload->>'title'),'CM_01',jsonb_build_object('revision','01'),COALESCE(p_payload->>'notes',''),auth.uid(),auth.uid(),true)
+  VALUES(org,dept,'sales','Project',p_payload->>'reference',trim(p_payload->>'title'),'CM_01',
+         jsonb_build_object('revision','01','track',prj_track,'currentStage','CM_01','completedStages','[]'::jsonb),
+         COALESCE(p_payload->>'notes',''),auth.uid(),auth.uid(),true)
   RETURNING id INTO entity;
 
- ELSIF p_action='create_record' THEN
+  -- Progressive task generation for CM_01
+  SELECT * INTO stpl FROM public.canonical_stage_templates WHERE stage_code = 'CM_01';
+  IF FOUND THEN
+    SELECT id INTO t01_dept FROM departments WHERE organization_id = org AND code = stpl.t01_owner AND active LIMIT 1;
+    IF t01_dept IS NULL THEN t01_dept := dept; END IF;
+    SELECT id INTO t02_dept FROM departments WHERE organization_id = org AND code = stpl.t02_owner AND active LIMIT 1;
+    IF t02_dept IS NULL THEN t02_dept := dept; END IF;
+
+    INSERT INTO tasks(organization_id, department_id, record_id, title, priority, stage_code, is_custom, order_index, status, created_by)
+    VALUES(org, t01_dept, entity, stpl.t01_title, 'Normal', 'CM_01', false, 1, 'Open', auth.uid()),
+          (org, t02_dept, entity, stpl.t02_title, 'Normal', 'CM_01', false, 2, 'Open', auth.uid());
+  END IF;
+ELSIF p_action='create_record' THEN
   IF lower(rec_type)='project' THEN RAISE EXCEPTION 'USE_PROJECT_CREATION'; END IF;
   IF COALESCE(p_payload->>'reference','') !~ '^HLPL-[A-Z0-9]+(-[A-Z0-9]+)*$' OR NULLIF(rec_type,'') IS NULL THEN
    RAISE EXCEPTION 'CONTROLLED_REFERENCE_REQUIRED';
@@ -870,6 +1057,11 @@ BEGIN
   custom_stage:=trim(COALESCE(p_payload->>'stage_code',''));
   IF custom_stage = '' OR NOT public.is_valid_canonical_stage(custom_stage) THEN
    RAISE EXCEPTION 'INVALID_STAGE_CODE: Custom task stage % is not a valid canonical stage', custom_stage;
+  END IF;
+  SELECT * INTO p_rec FROM operational_records WHERE id = project AND organization_id = org;
+  prj_track := COALESCE(NULLIF(trim(p_rec.fields->>'track'), ''), NULLIF(trim(p_rec.fields->>'projectTrack'), ''), 'hardware_firmware_software');
+  IF NOT public.is_stage_applicable_to_track(custom_stage, prj_track) THEN
+   RAISE EXCEPTION 'STAGE_NOT_APPLICABLE_TO_TRACK: Custom task stage % is not applicable to track %', custom_stage, prj_track;
   END IF;
   assignee:=NULLIF(p_payload->>'assignee_id','')::uuid;
   IF assignee IS NOT NULL AND NOT EXISTS(SELECT 1 FROM organization_members WHERE id=assignee AND organization_id=org AND active AND role<>'viewer' AND private.shared_test_member_department(id)=dept) THEN
@@ -1001,9 +1193,37 @@ BEGIN
     RAISE EXCEPTION 'STAGE_ADVANCE_DENIED: Only Purchasing, Service/IT, or Sales can advance ready-made stages';
    ELSIF target_stage LIKE 'INT_%' AND a.department_code NOT IN ('EHW', 'FW', 'SW', 'QA') THEN
     RAISE EXCEPTION 'STAGE_ADVANCE_DENIED: Only Engineering or QA leads can advance integration stages';
+   ELSIF target_stage ~ '^C[0-9]' AND a.department_code NOT IN ('QA', 'PUR', 'EHW', 'EMF') THEN
+    RAISE EXCEPTION 'STAGE_ADVANCE_DENIED: Only QA, Purchasing, Engineering, or Admin can advance certification stages';
    ELSIF target_stage LIKE 'Stage %' AND r.department_id <> dept THEN
     RAISE EXCEPTION 'STAGE_ADVANCE_DENIED: Department lead can only advance stages for projects in their authorized department scope';
    END IF;
+  END IF;
+
+  -- Non-declined gate check
+  IF COALESCE(r.fields->>'declined', '') = 'true' OR COALESCE(r.fields->>'status', '') = 'declined' OR r.status::text IN ('rejected', 'declined') THEN
+   RAISE EXCEPTION 'STAGE_GATE_BLOCKED: Cannot advance declined project or enquiry';
+  END IF;
+
+  -- Track applicability check
+  prj_track := COALESCE(NULLIF(trim(r.fields->>'track'), ''), NULLIF(trim(r.fields->>'projectTrack'), ''), 'hardware_firmware_software');
+  IF NOT public.is_stage_applicable_to_track(target_stage, prj_track) THEN
+   RAISE EXCEPTION 'STAGE_NOT_APPLICABLE_TO_TRACK: Target stage % is not applicable to track %', target_stage, prj_track;
+  END IF;
+
+  -- Prerequisite verification
+  completed_stages := ARRAY(
+    SELECT jsonb_array_elements_text(COALESCE(r.fields->'completedStages', r.fields->'completed_stages', '[]'::jsonb))
+  );
+  effective_completed := completed_stages;
+  IF r.stage IS NOT NULL AND r.stage <> '' AND NOT (r.stage = ANY(effective_completed)) THEN
+    effective_completed := array_append(effective_completed, r.stage);
+  END IF;
+
+  req_prereqs := public.resolve_canonical_stage_prerequisites(target_stage, prj_track);
+  IF NOT (req_prereqs <@ effective_completed) THEN
+    RAISE EXCEPTION 'PREREQUISITES_NOT_MET: Target stage % requires prerequisites % but completed stages are %',
+      target_stage, req_prereqs, effective_completed;
   END IF;
 
   UPDATE operational_records
@@ -1013,6 +1233,7 @@ BEGIN
         '{currentStage}',
         to_jsonb(target_stage)
       ) || jsonb_build_object(
+        'completedStages', to_jsonb(effective_completed),
         'lastStageTransitionAt', now(),
         'lastStageTransitionBy', auth.uid(),
         'stageRemark', COALESCE(p_payload->>'notes', '')
@@ -1021,6 +1242,29 @@ BEGIN
       updated_by=auth.uid()
   WHERE id=r.id;
   entity:=r.id;
+
+  -- Progressive task generation for target stage
+  SELECT * INTO stpl FROM public.canonical_stage_templates WHERE stage_code = target_stage;
+  IF FOUND THEN
+    SELECT id INTO t01_dept FROM departments WHERE organization_id = org AND code = stpl.t01_owner AND active LIMIT 1;
+    IF t01_dept IS NULL THEN t01_dept := r.department_id; END IF;
+    SELECT id INTO t02_dept FROM departments WHERE organization_id = org AND code = stpl.t02_owner AND active LIMIT 1;
+    IF t02_dept IS NULL THEN t02_dept := r.department_id; END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM tasks WHERE organization_id = org AND record_id = r.id AND stage_code = target_stage AND order_index = 1
+    ) THEN
+      INSERT INTO tasks(organization_id, department_id, record_id, title, priority, stage_code, is_custom, order_index, status, created_by)
+      VALUES(org, t01_dept, r.id, stpl.t01_title, 'Normal', target_stage, false, 1, 'Open', auth.uid());
+    END IF;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM tasks WHERE organization_id = org AND record_id = r.id AND stage_code = target_stage AND order_index = 2
+    ) THEN
+      INSERT INTO tasks(organization_id, department_id, record_id, title, priority, stage_code, is_custom, order_index, status, created_by)
+      VALUES(org, t02_dept, r.id, stpl.t02_title, 'Normal', target_stage, false, 2, 'Open', auth.uid());
+    END IF;
+  END IF;
 
  ELSIF p_action IN ('update_record','request_approval','create_document') THEN
   SELECT * INTO r FROM operational_records WHERE id=(p_payload->>'record_id')::uuid AND organization_id=org AND archived_at IS NULL FOR UPDATE;

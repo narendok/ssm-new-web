@@ -10,7 +10,11 @@ import React, { useState, useEffect } from "react";
 import { DepartmentLeadCoordinationCenter, type TaskRecord, type TeamMember } from "./DepartmentLeadCoordinationCenter";
 import type { ApprovalRecord } from "./ApprovalsFullPageView";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
-import { getApplicableStagesForTrack, type ProjectTrack } from "@/lib/canonical-lifecycle";
+import {
+  getApplicableStagesForTrack,
+  computeProgressiveStageAndTaskState,
+  type ProjectTrack,
+} from "@/lib/canonical-lifecycle";
 import {
   FolderKanban,
   Plus,
@@ -115,6 +119,34 @@ export function DepartmentProjectWorkspace(props: Props) {
   const project = projects.find((item) => item.reference === projectScope || item.id === projectScope);
   const track = (project?.fields?.["track"] || "hardware_firmware") as ProjectTrack;
   const applicableStages = project ? getApplicableStagesForTrack(track) : [];
+
+  const currentStageCode = String(
+    project?.fields?.["currentStage"] ||
+    project?.fields?.["lifecycleStage"] ||
+    project?.fields?.["stage"] ||
+    (project as { stage?: string } | undefined)?.stage ||
+    "CM_01"
+  );
+
+  const completedStageCodes = React.useMemo(() => {
+    if (!project) return [];
+    const fromFields = (project.fields?.["completedStages"] || project.fields?.["completed_stages"] || []) as string[];
+    return Array.isArray(fromFields) ? fromFields : [];
+  }, [project]);
+
+  const eligibleStages = React.useMemo(() => {
+    if (!project) return [];
+    const effectiveCompleted = Array.from(new Set([...completedStageCodes, currentStageCode].filter(Boolean)));
+    const progressiveState = computeProgressiveStageAndTaskState({
+      projectId: project.id,
+      track,
+      completedStageCodes: effectiveCompleted,
+      inProgressStageCodes: [currentStageCode].filter(Boolean),
+    });
+    return progressiveState.stages.filter(
+      (stg) => stg.status === "ready" && stg.stageCode !== currentStageCode
+    );
+  }, [project, track, completedStageCodes, currentStageCode]);
   const all = projectScope === "all";
   const records = all ? props.records : recordsForProject(props.records, project);
   const documents = (all ? workspaceDocuments : project ? documentsForProject(workspaceDocuments, records, project) : []).filter(document => matchesWorkspaceDocument(document, props.recordTypeFilter));
@@ -744,23 +776,31 @@ export function DepartmentProjectWorkspace(props: Props) {
               <div>
                 <label className="text-xs font-semibold text-muted-foreground block mb-1">Current Stage</label>
                 <div className="font-mono text-xs font-bold bg-muted/40 p-2 rounded border border-border">
-                  {project.fields["currentStage"] || project.fields["lifecycleStage"] || project.fields["stage"] || "CM_01"}
+                  {currentStageCode}
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Target Stage</label>
+                <label className="text-xs font-semibold text-muted-foreground block mb-1">
+                  Target Stage ({eligibleStages.length} eligible transitions)
+                </label>
                 <select
                   value={selectedTargetStage}
                   onChange={(e) => setSelectedTargetStage(e.target.value)}
                   className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs font-medium outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                 >
-                  <option value="">Select Target Stage...</option>
-                  {applicableStages.map((stg) => (
-                    <option key={stg.stageCode} value={stg.stageCode}>
-                      {stg.stageCode} · {stg.name} ({stg.defaultOwner})
+                  <option value="">Select Eligible Target Stage...</option>
+                  {eligibleStages.length === 0 ? (
+                    <option value="" disabled>
+                      No eligible transitions available (complete open tasks or prerequisites first)
                     </option>
-                  ))}
+                  ) : (
+                    eligibleStages.map((stg) => (
+                      <option key={stg.stageCode} value={stg.stageCode}>
+                        {stg.stageCode} · {stg.name} ({stg.ownerDepartment})
+                      </option>
+                    ))
+                  )}
                 </select>
               </div>
 
