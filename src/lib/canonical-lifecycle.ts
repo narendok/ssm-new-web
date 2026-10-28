@@ -153,6 +153,23 @@ export function normalizeCanonicalTrack(track: string): CanonicalProjectTrack {
   return "hardware_firmware_software";
 }
 
+/** Read a recorded track without assigning an engineering scope to missing/unknown data. */
+export function getRecordedProjectTrack(
+  fields?: Record<string, unknown>,
+): CanonicalProjectTrack | undefined {
+  const recorded = fields?.["track"] || fields?.["projectTrack"];
+  if (typeof recorded !== "string") return undefined;
+  const value = recorded.trim().toLowerCase().replace(/-/g, "_");
+  const aliases = new Set([
+    ...Object.keys(CANONICAL_TRACK_METADATA),
+    "turnkey", "hw_fw_sw", "hw+fw+sw", "software", "sw", "firmware", "fw",
+    "hardware", "ehw", "hw", "hardware+firmware", "hw_fw", "hw+fw",
+    "firmware_software", "fw_sw", "fw+sw", "firmware_software_existing_hw",
+    "readymade", "catalog", "commercial",
+  ]);
+  return aliases.has(value) ? normalizeCanonicalTrack(value) : undefined;
+}
+
 export interface CanonicalTaskTemplate {
   taskKey: string; // e.g. "LC2-2026-10-28:HW_19:T01"
   taskNumber: "T01" | "T02";

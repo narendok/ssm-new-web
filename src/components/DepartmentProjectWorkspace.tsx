@@ -11,9 +11,8 @@ import { DepartmentLeadCoordinationCenter, type TaskRecord, type TeamMember } fr
 import type { ApprovalRecord } from "./ApprovalsFullPageView";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
 import {
-  getApplicableStagesForTrack,
+  getRecordedProjectTrack,
   computeProgressiveStageAndTaskState,
-  type ProjectTrack,
 } from "@/lib/canonical-lifecycle";
 import {
   FolderKanban,
@@ -117,8 +116,13 @@ export function DepartmentProjectWorkspace(props: Props) {
   const [advanceError, setAdvanceError] = useState("");
 
   const project = projects.find((item) => item.reference === projectScope || item.id === projectScope);
-  const track = (project?.fields?.["track"] || "hardware_firmware") as ProjectTrack;
-  const applicableStages = project ? getApplicableStagesForTrack(track) : [];
+  const track = getRecordedProjectTrack(project?.fields);
+
+
+  useEffect(() => {
+    setSelectedTargetStage("");
+    setAdvanceError("");
+  }, [project?.id, track]);
 
   const currentStageCode = String(
     project?.fields?.["currentStage"] ||
@@ -135,7 +139,7 @@ export function DepartmentProjectWorkspace(props: Props) {
   }, [project]);
 
   const eligibleStages = React.useMemo(() => {
-    if (!project) return [];
+    if (!project || !track) return [];
     const effectiveCompleted = Array.from(new Set([...completedStageCodes, currentStageCode].filter(Boolean)));
     const progressiveState = computeProgressiveStageAndTaskState({
       projectId: project.id,
@@ -792,7 +796,7 @@ export function DepartmentProjectWorkspace(props: Props) {
                   <option value="">Select Eligible Target Stage...</option>
                   {eligibleStages.length === 0 ? (
                     <option value="" disabled>
-                      No eligible transitions available (complete open tasks or prerequisites first)
+                      {track ? "No eligible transitions available (complete open tasks or prerequisites first)" : "Project track is missing or unrecognized; confirm the project scope first"}
                     </option>
                   ) : (
                     eligibleStages.map((stg) => (
@@ -833,9 +837,9 @@ export function DepartmentProjectWorkspace(props: Props) {
               </button>
               <button
                 type="button"
-                disabled={advanceBusy || !selectedTargetStage}
+                disabled={advanceBusy || !eligibleStages.some((stage) => stage.stageCode === selectedTargetStage)}
                 onClick={async () => {
-                  if (!selectedTargetStage) return;
+                  if (!eligibleStages.some((stage) => stage.stageCode === selectedTargetStage)) return;
                   setAdvanceBusy(true);
                   setAdvanceError("");
                   try {

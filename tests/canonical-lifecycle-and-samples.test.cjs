@@ -26,6 +26,7 @@ const {
   CANONICAL_TRACK_METADATA,
   CANONICAL_STAGE_TEMPLATES,
   normalizeCanonicalTrack,
+  getRecordedProjectTrack,
   getApplicableStagesForTrack,
   computeProgressiveStageAndTaskState,
   verifyTentativeBomCostingContract,
@@ -307,4 +308,22 @@ test('SECTION 7: Lifecycle Scenarios S01-S06 Parity', () => {
 
   const fixtures = getAllScenarioFixtures();
   assert.ok(fixtures.records.length > 20, 'Scenario fixtures must contain realistic records');
+});
+
+
+test('Recorded project track preserves field aliases and never guesses missing scope', () => {
+  assert.equal(getRecordedProjectTrack({projectTrack: 'software_only'}), 'software_only');
+  assert.equal(getRecordedProjectTrack({projectTrack: 'firmware'}), 'firmware_only');
+  assert.equal(getRecordedProjectTrack({track: 'hardware_only', projectTrack: 'software_only'}), 'hardware_only');
+  assert.equal(getRecordedProjectTrack({track: '', projectTrack: 'ready_made'}), 'ready_made');
+  assert.equal(getRecordedProjectTrack({track: ' HW+FW '}), 'hardware_firmware');
+  for (const track of Object.keys(CANONICAL_TRACK_METADATA)) {
+    assert.equal(getRecordedProjectTrack({track}), track);
+  }
+  assert.equal(getRecordedProjectTrack(), undefined);
+  assert.equal(getRecordedProjectTrack({}), undefined);
+  assert.equal(getRecordedProjectTrack({track: 'unknown-track'}), undefined);
+  assert.equal(getRecordedProjectTrack({track: {value: 'software_only'}}), undefined);
+  const swTrack = getRecordedProjectTrack({projectTrack: 'software_only'});
+  assert.ok(!getApplicableStagesForTrack(swTrack).some(stage => stage.stageCode.startsWith('HW_')));
 });
