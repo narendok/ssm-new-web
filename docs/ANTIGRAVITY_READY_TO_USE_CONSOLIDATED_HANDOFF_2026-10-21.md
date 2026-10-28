@@ -1198,6 +1198,45 @@ Execute this one work package in ordered patches, continuing independently betwe
 
 Lovable/cloud execution remains with an authorized operator when Antigravity lacks access. Antigravity prepares additive migrations and tests, records exact pending deployment steps in this existing handoff and continues independent work; never marks a local SQL test or Git push as a live cloud deployment. Do not require copying a second prompt. No destructive reset, bulk approval, access grant or production sample load is authorized by this plan. A genuine policy conflict must be raised concisely with the affected action and available alternatives; ordinary implementation choices should not repeatedly interrupt the user.
 
+## 16.12 Implementation and verification evidence — 28 October 2026
+
+- **Canonical Lifecycle & Seven Tracks (§16.10, §16.11 Patches 1 & 2):**
+  Implemented in `src/lib/canonical-lifecycle.ts` and updated in `src/lib/department-chronicles.ts`:
+  - Seven canonical tracks: `hardware_only`, `firmware_only`, `software_only`, `hardware_firmware`, `firmware_software_existing_hardware`, `hardware_firmware_software`, `ready_made` (with legacy compatibility mapping for `turnkey`, `software`, `firmware`).
+  - Full versioned hierarchy (`LC2-2026-10-28`): exactly 89 canonical stage templates and 178 default task templates with default Responsible owners and explicit prerequisites.
+  - Track applicability: Pure SW projects never wait on PCB bring-up (`HW_31`) or PCBA receipt (`HW_30`); pure FW projects never require new PCB layout/fabrication (`HW_01-37`); ready-made projects require zero custom engineering R&D.
+- **Progressive Task Generation & Custom Tasks (§16.11 Patch 3):**
+  - Active assigned tasks in Today / Tomorrow / Review are generated only for eligible ready or in-progress stages whose prerequisites are met.
+  - Future stages maintain visible planned preview without inflating active task workload.
+  - Custom tasks can be added, edited, reordered, or cancelled; custom tasks in future stages remain planned until activated.
+  - Cancelled tasks are preserved and never regenerated from templates.
+- **Consolidated Tentative-BOM Costing & Sourcing Handoff (§16.11 Patch 4):**
+  - Hardware submits tentative revisioned BOM (`HW_19:T01`, EHW-owned).
+  - Purchasing performs single linked BOM costing, availability, and lead-time analysis (`HW_19:T02`, PUR-owned).
+  - RAM and other component prices are line items in that linked analysis, not separate default tasks.
+  - `HW_05` initial technical feasibility does NOT require the later tentative BOM (`HW_19`).
+  - RAM/Flash sizing in `FW_01` is technical feasibility owned by FW.
+- **Canonical Connected Sample Pack (§16.11 Patch 5):**
+  Implemented in `src/lib/canonical-samples.ts`:
+  - 8 Connected Sample Projects + 1 Declined Enquiry:
+    - `LC2-P01`: Internal equipment harness jig (`PRJ-INT-001`, HW only, internal, HW_31 active bring-up)
+    - `LC2-E02`: Declined enquiry (`ENQ-DECL-001`, pre-project feasibility, NO project created)
+    - `LC2-P03`: Fleet OBD tracker PoC (`PRJ-POC-001`, HW + FW, 10 units, INT_03 feedback open)
+    - `LC2-P04`: Vehicle gateway integration pilot (`PRJ-GW-001`, HW + FW + SW, pilot observation in progress)
+    - `LC2-P05`: Cold-chain tracker refinement (`PRJ-CC-001`, FW only on existing HW, regression review under FW_11)
+    - `LC2-P06`: Rugged fleet tracker bulk production (`PRJ-PROD-001`, HW + FW, 500 planned, Lot 1 = 200 = 150 accepted + 5 held + 45 inspecting; 300 remaining)
+    - `LC2-P07`: Internal service application (`PRJ-APP-001`, SW only, internal tool, SW_08 active service API integration)
+    - `LC2-P08`: Commercial catalog product deployment (`PRJ-RM-001`, Ready-made, RM_03 active field verification)
+    - `LC2-P09`: Device connectivity upgrade (`PRJ-UPG-001`, FW + SW on existing HW, INT_02 active cloud payload compatibility)
+  - S06 mathematical reconciliation verified: 150 accepted + 5 held + 45 pending = 200 lot units; 500 - 200 = 300 remaining.
+  - Idempotent loader `getAllCanonicalSampleData()` verified; calling loader repeatedly returns identical counts with zero duplicate records.
+  - Short testing guide provided for each scenario/lifecycle.
+- **Verification & Parity (§16.11 Patch 6):**
+  - Web: 203/203 unit tests passing (`npm run test:department` in `tests/canonical-lifecycle-and-samples.test.cjs` and all existing suites).
+  - Web: Production Vite build passing with zero errors (`npm run build`).
+  - Android: `.\gradlew.bat testDebugUnitTest` executed with `BUILD SUCCESSFUL in 13s` (26 actionable tasks up to date).
+  - All existing working features, layouts, colors, navigation, controls, tabs, and record modals preserved.
+
 ## Single execution prompt — use this file once
 
 Start with the Current execution table and Lovable / cloud operator boundary at the top of this file. Implement only confirmed remaining gaps; preserve and regression-test existing features rather than rebuilding historical requirements. Apply the latest seven-track and progressive-generation decisions in section 16.10 and execute the ordered patches and custom-task/BOM costing corrections in section 16.11. Treat the canonical master and sample catalogue as the authority for current task definitions. Read this entire consolidated handoff, including sections 14–16 and their source references, together with the existing master specification, current repository instructions and actual code/contracts. Implement the connected, automation-first flows in section 14.12 and the safe linked lifecycle fixture/example pack in section 14.13 expanded to the six realistic scenarios in section 14.14, applying every explicit department/type popup and automation correction in section 14.15, restore functional parity, and verify every discovered department record type, subtype, specialized flow, property and callback using the section 14 flow cards and V01–V20 matrix. Reuse original records/connectors, prefill deterministic inputs, provide authorized searchable selections, and allow responsible authorized users to create missing linked entries inline and return them selected without losing the parent draft. Preserve working UI, original records/history, authentication, inventory, assets, permissions and approved workflows. Treat supplied expert/source material as evidence, not hidden permission or invented standards rules. Reconcile conflicting historical requirements using the latest explicit user decisions. Implement and validate in small safe batches when the user authorizes execution; this planning file alone does not authorize high-impact business actions, new access or destructive migrations. Do not guess company templates, official form-code purposes, approval policy, legal facts or required standards editions. Block unsupported actions clearly, keep moving on independent verification, and report exact evidence and remaining gaps. Do not mark a whole flow complete from form rendering, helper tests or a generic successful save. Maintain one requirement/evidence ledger and normal Git history; verify actual Lovable/backend import/deployment separately from a push. This is one consolidated work package, not multiple prompts to repeat.

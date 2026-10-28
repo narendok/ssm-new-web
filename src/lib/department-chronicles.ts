@@ -629,7 +629,20 @@ export function deriveDeliverablesForStage(
     }));
 }
 
-export type ProjectTrack = "turnkey" | "software" | "firmware" | "ready_made";
+export type CanonicalProjectTrack =
+  | "hardware_only"
+  | "firmware_only"
+  | "software_only"
+  | "hardware_firmware"
+  | "firmware_software_existing_hardware"
+  | "hardware_firmware_software"
+  | "ready_made";
+
+export type ProjectTrack =
+  | CanonicalProjectTrack
+  | "turnkey"   // legacy alias -> hardware_firmware_software
+  | "software"  // legacy alias -> software_only
+  | "firmware"; // legacy alias -> firmware_only
 
 export const DEPARTMENT_FULL_NAMES: Record<
   string,
@@ -722,13 +735,34 @@ export const DEPARTMENT_FULL_NAMES: Record<
 };
 
 export function getTechnicalDepartmentsForTrack(track: ProjectTrack): string[] {
-  switch (track) {
+  const t = (track || "").trim().toLowerCase();
+  switch (t) {
+    case "ready_made":
+    case "readymade":
+    case "catalog":
+    case "commercial":
+      return []; // Off-the-shelf catalog products require zero technical engineering development
     case "software":
+    case "software_only":
+    case "sw":
       return ["SW"];
     case "firmware":
+    case "firmware_only":
+    case "fw":
       return ["FW", "EHW"];
-    case "ready_made":
-      return []; // Off-the-shelf catalog products require zero technical engineering development
+    case "firmware_software_existing_hardware":
+    case "firmware_software":
+    case "fw+sw":
+      return ["FW", "SW"];
+    case "hardware_only":
+    case "hardware":
+    case "ehw":
+      return ["EHW", "MECH", "PUR", "EMF", "MMF"];
+    case "hardware_firmware":
+    case "hardware+firmware":
+    case "hw+fw":
+      return ["EHW", "FW", "MECH", "PUR", "EMF", "MMF"];
+    case "hardware_firmware_software":
     case "turnkey":
     default:
       return ["EHW", "FW", "SW", "MECH", "PUR", "EMF", "MMF"];
