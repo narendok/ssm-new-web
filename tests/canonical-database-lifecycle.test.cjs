@@ -39,6 +39,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261020034857_shared_test_workspace',
     '20261025091500_harden_downstream_master_guards',
     '20261028120000_lifecycle_and_sample_pack_sync',
+    '20261028120001_canonical_stage_completion_reviews',
   ];
 
   for (const name of migrationNames) {
@@ -130,6 +131,9 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   }
 
   async function call(user, action, payload, key = crypto.randomUUID()) {
+    if (action === 'advance_stage' && !payload.expected_updated_at) {
+      payload = {...payload, expected_updated_at:(await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[payload.project_id])).rows[0].updated_at.toISOString()};
+    }
     return asUser(user, async () => {
       const res = await db.query(
         'SELECT mutate_shared_test_workspace($1,$2::jsonb,$3) as result',
@@ -242,15 +246,8 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     /STAGE_ADVANCE_DENIED/
   );
 
-  // Admin advancing to valid stage CL_02 succeeds
-  await call(admin, 'advance_stage', {
-    project_id: projectId,
-    target_stage: 'CL_02',
-    notes: 'Release decision approved, moving to handover',
-  });
-  const advancedProject = (await db.query('SELECT * FROM operational_records WHERE id = $1', [projectId])).rows[0];
-  assert.equal(advancedProject.stage, 'CL_02');
-  assert.equal(advancedProject.fields.currentStage, 'CL_02');
+  // A sample's current-stage label is not approval evidence.
+  await assert.rejects(call(admin,'advance_stage',{project_id:projectId,target_stage:'CL_02'}),/PREREQUISITES_NOT_MET/);
 
   // ==========================================
   // TEST 3: Custom Task Stage Validation & Lifecycle Safeguards
@@ -475,6 +472,15 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     call(admin, 'advance_stage', { project_id: freshProjectId, target_stage: 'CM_03' }),
     /PREREQUISITES_NOT_MET/
   );
+
+  // Completion requires finished tasks and a separate authorized decision.
+  await assert.rejects(call(salLead,'advance_stage',{project_id:freshProjectId,target_stage:'CM_02'}),/PREREQUISITES_NOT_MET/);
+  for (const task of freshTasks) {
+    await call(salLead,'update_task',{id:task.id,status:'Complete',expected_updated_at:task.updated_at.toISOString()});
+  }
+  const review=await call(salLead,'request_stage_completion',{project_id:freshProjectId,stage_code:'CM_01',expected_updated_at:(await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[freshProjectId])).rows[0].updated_at.toISOString()});
+  const reviewApproval=(await db.query('SELECT * FROM approvals WHERE record_id=$1',[review.id])).rows[0];
+  await call(admin,'decide_approval',{id:reviewApproval.id,outcome:'approved',expected_updated_at:reviewApproval.updated_at.toISOString()});
 
   // Advancing fresh project from CM_01 to eligible next stage CM_02 succeeds
   await call(salLead, 'advance_stage', {

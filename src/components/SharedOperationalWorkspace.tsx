@@ -361,6 +361,7 @@ export function SharedOperationalWorkspace({
           ),
         ),
         lifecycleStage: r.stage || "",
+        completedStages: JSON.stringify(r.fields["completedStages"] || r.fields["completed_stages"] || []),
       },
     }));
   const records: TaskRecord[] = [
@@ -407,6 +408,7 @@ export function SharedOperationalWorkspace({
         notes: "",
         fields: {
           projectId: t.record_id || "",
+          stageCode: t.stage_code || "",
           assignee: data.members.find((m) => m.id === t.assignee_id)?.display_name || "Unassigned",
           dueDate: t.due_at ? businessDate(new Date(t.due_at)) : "",
           workStatus: t.status === "In Progress" ? "In progress" : "To do",
@@ -626,13 +628,21 @@ export function SharedOperationalWorkspace({
           onOpenRecord={openRecord}
           onOpenDocument={id => onOpenVault ? onOpenVault(id,projectRows.find(p=>p.id===scope||p.reference===scope)?.id) : setAdvanced("Documents")}
           onUpdateTask={(id, patch) => void updateTask(id, patch)}
-          onAdvanceStage={async (projectId, targetStage, notes) => {
+          onRequestStageReview={actor.role === "admin" || actor.role === "department_lead" ? async (projectId, stageCode, notes) => {
+            const project = data.records.find(record => record.id === projectId);
+            if (!project) return false;
+            return await save("request_stage_completion", { project_id: projectId, stage_code: stageCode, notes: notes || "", expected_updated_at: project.updated_at });
+          } : undefined}
+          onAdvanceStage={actor.role === "admin" || actor.role === "department_lead" ? async (projectId, targetStage, notes) => {
+            const project = data.records.find(record => record.id === projectId);
+            if (!project) return false;
             return await save("advance_stage", {
               project_id: projectId,
               target_stage: targetStage,
+              expected_updated_at: project.updated_at,
               notes: notes || "",
             });
-          }}
+          } : undefined}
           onCreateTask={async (task) => {
             const project = projectRows.find((p) => [p.id, p.reference].includes(task.projectId));
             if (!project) {

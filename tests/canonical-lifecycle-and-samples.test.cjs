@@ -27,6 +27,7 @@ const {
   CANONICAL_STAGE_TEMPLATES,
   normalizeCanonicalTrack,
   getRecordedProjectTrack,
+  recordedCompletedStageCodes,
   getApplicableStagesForTrack,
   computeProgressiveStageAndTaskState,
   verifyTentativeBomCostingContract,
@@ -326,4 +327,12 @@ test('Recorded project track preserves field aliases and never guesses missing s
   assert.equal(getRecordedProjectTrack({track: {value: 'software_only'}}), undefined);
   const swTrack = getRecordedProjectTrack({projectTrack: 'software_only'});
   assert.ok(!getApplicableStagesForTrack(swTrack).some(stage => stage.stageCode.startsWith('HW_')));
+});
+
+
+test('Approved stage arrays survive the legacy string-field presentation adapter', () => {
+  assert.deepEqual(recordedCompletedStageCodes('["CM_01","CM_02","CM_01","NOT_A_STAGE"]'), ['CM_01','CM_02']);
+  assert.deepEqual(recordedCompletedStageCodes(['CM_01',null,3,'SW_11']), ['CM_01','SW_11']);
+  assert.deepEqual(recordedCompletedStageCodes('{broken'), []);
+  assert.deepEqual(recordedCompletedStageCodes({CM_01:true}), []);
 });

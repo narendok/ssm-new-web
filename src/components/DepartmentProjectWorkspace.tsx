@@ -12,6 +12,7 @@ import type { ApprovalRecord } from "./ApprovalsFullPageView";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
 import {
   getRecordedProjectTrack,
+  recordedCompletedStageCodes,
   computeProgressiveStageAndTaskState,
 } from "@/lib/canonical-lifecycle";
 import {
@@ -74,6 +75,7 @@ type Props = {
     dueDate: string;
     notes: string;
   }) => boolean | void | Promise<boolean | void>;
+  onRequestStageReview?: ((projectId: string, stageCode: string, notes?: string) => Promise<boolean | void>) | undefined;
   onAdvanceStage?: ((projectId: string, targetStage: string, notes?: string) => Promise<boolean | void>) | undefined;
 };
 
@@ -114,6 +116,7 @@ export function DepartmentProjectWorkspace(props: Props) {
   const [advanceNotes, setAdvanceNotes] = useState("");
   const [advanceBusy, setAdvanceBusy] = useState(false);
   const [advanceError, setAdvanceError] = useState("");
+  const [advanceNotice, setAdvanceNotice] = useState("");
 
   const project = projects.find((item) => item.reference === projectScope || item.id === projectScope);
   const track = getRecordedProjectTrack(project?.fields);
@@ -122,6 +125,7 @@ export function DepartmentProjectWorkspace(props: Props) {
   useEffect(() => {
     setSelectedTargetStage("");
     setAdvanceError("");
+    setAdvanceNotice("");
   }, [project?.id, track]);
 
   const currentStageCode = String(
@@ -135,12 +139,12 @@ export function DepartmentProjectWorkspace(props: Props) {
   const completedStageCodes = React.useMemo(() => {
     if (!project) return [];
     const fromFields = (project.fields?.["completedStages"] || project.fields?.["completed_stages"] || []) as string[];
-    return Array.isArray(fromFields) ? fromFields : [];
+    return recordedCompletedStageCodes(fromFields);
   }, [project]);
 
   const eligibleStages = React.useMemo(() => {
     if (!project || !track) return [];
-    const effectiveCompleted = Array.from(new Set([...completedStageCodes, currentStageCode].filter(Boolean)));
+    const effectiveCompleted = completedStageCodes;
     const progressiveState = computeProgressiveStageAndTaskState({
       projectId: project.id,
       track,
@@ -148,7 +152,7 @@ export function DepartmentProjectWorkspace(props: Props) {
       inProgressStageCodes: [currentStageCode].filter(Boolean),
     });
     return progressiveState.stages.filter(
-      (stg) => stg.status === "ready" && stg.stageCode !== currentStageCode
+      (stg) => stg.status === "ready"
     );
   }, [project, track, completedStageCodes, currentStageCode]);
   const all = projectScope === "all";
@@ -784,7 +788,26 @@ export function DepartmentProjectWorkspace(props: Props) {
                 </div>
               </div>
 
-              <div>
+              {props.onRequestStageReview && (
+                <div className="rounded-lg border border-border p-3 space-y-2">
+                  <p className="text-xs text-muted-foreground">Finish all tasks for {currentStageCode}, then submit its evidence to the existing Approvals queue. Another authorized reviewer must approve before dependent stages can start.</p>
+                  <button type="button" className="text-xs font-semibold text-primary disabled:opacity-50"
+                    disabled={advanceBusy || completedStageCodes.includes(currentStageCode)}
+                    onClick={async () => {
+                      setAdvanceBusy(true); setAdvanceError(""); setAdvanceNotice("");
+                      try {
+                        const saved = await props.onRequestStageReview?.(project.id, currentStageCode, advanceNotes);
+                        if (saved !== false) setAdvanceNotice("Review submitted. Open Approvals to review its task evidence.");
+                        else setAdvanceError("Review was not saved. Check the workspace notice and retry.");
+                      } catch (error) { setAdvanceError(error instanceof Error ? error.message : "Review submission failed."); }
+                      finally { setAdvanceBusy(false); }
+                    }}>
+                    {completedStageCodes.includes(currentStageCode) ? "Stage approved" : "Submit current stage for review"}
+                  </button>
+                </div>
+              )}
+
+                            <div>
                 <label className="text-xs font-semibold text-muted-foreground block mb-1">
                   Target Stage ({eligibleStages.length} eligible transitions)
                 </label>
@@ -819,6 +842,7 @@ export function DepartmentProjectWorkspace(props: Props) {
                 />
               </div>
 
+              {advanceNotice && <p role="status" className="text-xs text-primary">{advanceNotice}</p>}
               {advanceError && (
                 <p role="alert" className="text-xs text-destructive font-medium">
                   {advanceError}

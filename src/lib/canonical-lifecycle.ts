@@ -170,6 +170,15 @@ export function getRecordedProjectTrack(
   return aliases.has(value) ? normalizeCanonicalTrack(value) : undefined;
 }
 
+/** Shared presentation may carry JSON-encoded arrays in legacy string-only fields. */
+export function recordedCompletedStageCodes(value: unknown): string[] {
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return []; }
+  }
+  return Array.isArray(value) ? [...new Set(value.filter((code): code is string =>
+    typeof code === "string" && CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === code)))] : [];
+}
+
 export interface CanonicalTaskTemplate {
   taskKey: string; // e.g. "LC2-2026-10-28:HW_19:T01"
   taskNumber: "T01" | "T02";
