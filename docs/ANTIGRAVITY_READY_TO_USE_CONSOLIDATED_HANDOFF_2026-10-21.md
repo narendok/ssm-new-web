@@ -1,5 +1,7 @@
 # SSM — consolidated implementation and correction handoff
 
+> **Historical source only — not an active plan.** Current shared decisions are in the [SSM One Master Plan](https://github.com/narendok/SSM-new/blob/main/SSM_ONE_MASTER_PLAN.md); current web delivery is in [SSM One Web Implementation Plan](../SSM_ONE_WEB_IMPLEMENTATION_PLAN.md). This dated source remains because code and migration history cite its section anchors.
+
 Date: 21 October 2026; record-flow verification expansion: 25 October 2026. Owner: user-approved requirements from the current discussion.
 
 ## Current execution table — read before historical sections (28 October 2026)
@@ -677,7 +679,7 @@ Every family below requires subtype-by-subtype cards, templates/native upload ma
 | D37 | Facility/security service / waste disposal / pest control | Facility / Maintenance | Contracts, service and disposal evidence | Applicable services/assets/schedules; actual agreements/qualified disposal evidence and private commercial terms. Short reminders are work tasks, not templates. |
 | D38 | Cross-department KPI definitions / dashboard | Operations | Definitions + authorized aggregate views | Reuse measured records and the reviewed formula from each department, not a second manually copied enterprise tracker. |
 
-Catalogue references in repository: `docs/SSM One Document Catalogue - Auto-Drafting Audit and Native Upload Rules.json`, its Markdown companion and `src/lib/document-catalogue.ts`. Original user worksheet: `C:\Users\Test\Downloads\Smart Company document management system audit checklist .xlsx`; historical extraction: `audit-checklist-extracted.json` (Design Devlopment Support, Production & Assembly, Audit checklist). Source examples VTU/XLC are project names only. Check actual workbook availability and extraction completeness before marking source reconciliation verified; never recreate “missing” native files from guessed content.
+The canonical catalogue Markdown and source mapping JSON live in the SSM-Planning repository; the web runtime implementation is `src/lib/document-catalogue.ts`. This historical audit's original worksheet/extraction path was laptop-local; verify actual availability before claiming source reconciliation, and never recreate missing native files from guessed content.
 
 ### 14.10 Known gaps and corrections already identified—baseline, not new PASS claims
 

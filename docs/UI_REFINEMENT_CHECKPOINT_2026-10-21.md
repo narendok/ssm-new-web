@@ -39,4 +39,4 @@ This records the implemented local web changes. It is not a claim that the whole
 - Exact DOCX/XLSX template generation and Admin-approved client PDF release need the actual reusable templates and the verified shared release/storage workflow. The audit checklist alone is not that template pack.
 - Advanced project analysis/editing and the remaining discussion-plan UI refinements are not represented as completed by this checkpoint.
 
-The requirements source is `PORTAL_UI_AND_PERMISSION_DISCUSSION_PLAN_2026-10-20.md`. The initial upload pilot and its explicit shared-storage gates are recorded in `DOCUMENT_UPLOAD_PILOT_BASELINE_2026-10-20.md`.
+The current requirements are in the [SSM One master plan](https://github.com/narendok/SSM-new/blob/main/SSM_ONE_MASTER_PLAN.md) and [web implementation plan](../SSM_ONE_WEB_IMPLEMENTATION_PLAN.md). This dated checkpoint is historical evidence; the active document rules live in the [single document catalogue](https://github.com/narendok/SSM-new/blob/main/SSM%20One%20Document%20Catalogue%20-%20Auto-Drafting%20Audit%20and%20Native%20Upload%20Rules.md).
