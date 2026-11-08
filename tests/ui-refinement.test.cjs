@@ -127,6 +127,8 @@ test("workspace document filters refine visible documents without filename-based
     true,
   );
   assert.equal(matchesWorkspaceDocument({ title: "Gerber", type: "ZIP" }, "DFMEA"), true);
+  assert.equal(matchesWorkspaceDocument({ title: "Design verification plan and report", type: "DVP&R report" }, "DVP&R"), true);
+  assert.equal(matchesWorkspaceDocument({ title: "8D Corrective Action Report", type: "Controlled technical record" }, "8D CAPA"), true);
   assert.equal(matchesWorkspaceDocument({ title: "Internal note", type: "PDF" }, "unknown"), false);
 });
 

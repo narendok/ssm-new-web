@@ -3,13 +3,16 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const ts = require("typescript");
-const compiled = ts.transpileModule(
-  fs.readFileSync(path.join(__dirname, "../src/lib/document-upload-pilot.ts"), "utf8"),
-  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
-).outputText;
-const loaded = { exports: {} };
-new Function("module", "exports", compiled)(loaded, loaded.exports);
-const { prepareUploadDraft: prepare, sourceGerberPackages, UPLOAD_TYPES } = loaded.exports;
+function loadSource(name) {
+  const compiled = ts.transpileModule(
+    fs.readFileSync(path.join(__dirname, `../src/lib/${name}.ts`), "utf8"),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const loaded = { exports: {} };
+  new Function("module", "exports", "require", compiled)(loaded, loaded.exports, imported => imported.startsWith("./") ? loadSource(imported.slice(2)) : require(imported));
+  return loaded.exports;
+}
+const { prepareUploadDraft: prepare, sourceGerberPackages, assertUploadContextCurrent, UPLOAD_TYPES } = loadSource("document-upload-pilot");
 const fixture = () => ({
   metadata: {
     title: "Board original",
@@ -98,6 +101,31 @@ test("invalid file, empty/oversize file, invalid revision and missing digest can
   assert.ok(UPLOAD_TYPES.some((t) => t.id === "STL"));
   assert.ok(UPLOAD_TYPES.some((t) => t.id === "DXF"));
 });
+test("BOM originals accept spreadsheet, CSV and PDF sources as an internal Draft", () => {
+  for (const name of ["bom.csv", "bom.xlsx", "bom.pdf"]) {
+    const x = fixture();
+    x.metadata.type = "BOM";
+    x.file = { name, size: 40, type: "application/octet-stream" };
+    const draft = prepare(x);
+    assert.equal(draft.type, "BOM / parts list");
+    assert.equal(draft.lifecycle, "Draft");
+    assert.equal(draft.uploadType, "BOM");
+    assert.equal(draft.localFiles[0].name, name);
+  }
+});
+test("project lifecycle context travels with a document while legacy stage text stays unmapped", () => {
+  const x = fixture();
+  x.metadata.type = "BOM";
+  x.file = { name: "bom.csv", size: 40, type: "application/octet-stream" };
+  x.projects[0].fields = { currentStage: "HW_15", companyPhase: "TG_3" };
+  const draft = prepare(x);
+  assert.equal(draft.phase, "TG_3 · Detailed Engineering & Prototype Tooling");
+  assert.equal(draft.lifecycleStage, "HW_15 · Schematic preparation");
+  x.projects[0].fields = { lifecycleStage: "Stage 7 · Production Release" };
+  const legacy = prepare(x);
+  assert.equal(legacy.phase, undefined);
+  assert.equal(legacy.lifecycleStage, "Legacy stage label · Stage 7 · Production Release");
+});
 test("panel/stencil retain exact source package revision and hash; cross-project and unlinked packages fail", () => {
   for (const type of ["PANEL", "STENCIL"]) {
     const x = fixture();
@@ -138,7 +166,7 @@ test("filename/title never establish a source Gerber link; only explicit project
 test("concurrent project archival, department disable and source replacement block record commit", () => {
   const x = fixture(),
     draft = prepare(x),
-    check = loaded.exports.assertUploadContextCurrent;
+    check = assertUploadContextCurrent;
   assert.doesNotThrow(() => check(draft, x.projects, x.departments, []));
   assert.throws(
     () => check(draft, [{ ...x.projects[0], archived: true }], x.departments, []),

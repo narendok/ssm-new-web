@@ -37,7 +37,6 @@ import {
   ClipboardCheck,
   Sliders,
   Settings2,
-  Cpu,
   Layers,
   PackageSearch,
   BookOpen,
@@ -183,7 +182,7 @@ const DEFAULT_FAVORITES_BY_ROLE: Record<string, string[]> = {
     "adm-people",
   ],
   pur: ["dept-mywork", "pur-inventory", "pur-orders", "pur-quotations", "pur-suppliers"],
-  ehw: ["dept-mywork", "ehw-hub", "ehw-specs", "ehw-schematics", "dept-projects"],
+  ehw: ["dept-mywork", "ehw-hub", "dept-projects"],
   sales: ["dept-mywork", "sales-opps", "sales-customers", "dept-projects", "dept-drive"],
   qa: ["dept-mywork", "qa-hub", "qa-dvpr", "dept-projects", "dept-drive"],
   mech: ["dept-mywork", "mech-hub", "mech-cad", "dept-projects"],
@@ -638,7 +637,7 @@ export function RoleAwareSidebar({
             icon: ShieldCheck,
             badge: openTaskCounts["qa"],
             isActive: activeArea === "qa",
-            onClick: () => handleItemClick(() => onNavigate("qa")),
+            onClick: () => handleItemClick(() => { onRecordTypeFilterChange?.(null); onNavigate("qa", "project"); }),
           },
           {
             id: "adm-dvpr",
@@ -646,7 +645,7 @@ export function RoleAwareSidebar({
             shortLabel: "DVP&R",
             icon: CheckCircle,
             isActive: false,
-            onClick: () => handleItemClick(() => onNavigate("qa")),
+            onClick: () => handleItemClick(() => { onRecordTypeFilterChange?.("DVP&R"); onNavigate("qa", "deliverables"); }),
           },
           {
             id: "adm-capa",
@@ -654,7 +653,7 @@ export function RoleAwareSidebar({
             shortLabel: "8D CAPA",
             icon: AlertTriangle,
             isActive: false,
-            onClick: () => handleItemClick(() => onNavigate("qa")),
+            onClick: () => handleItemClick(() => { onNavigate("qa", "records"); onRecordTypeFilterChange?.("8D CAPA"); }),
           },
         ],
       },
@@ -935,35 +934,11 @@ export function RoleAwareSidebar({
           return [
             {
               id: "ehw-hub",
-              label: "Hardware Records",
-              shortLabel: "Records",
+              label: "Hardware Records & Deliverables",
+              shortLabel: "Hardware",
               icon: Wrench,
-              isActive: activeArea === "ehw" && view === "queue",
-              onClick: () => handleItemClick(() => onNavigate("ehw")),
-            },
-            {
-              id: "ehw-specs",
-              label: "PRS & Technical Specs",
-              shortLabel: "PRS",
-              icon: FileText,
-              isActive: activeArea === "ehw" && view === "deliverables" && recordTypeFilter === "PRS",
-              onClick: () => handleItemClick(() => onNavigateRecordType ? onNavigateRecordType("PRS") : (onRecordTypeFilterChange?.("PRS"), onNavigate("ehw", "deliverables"))),
-            },
-            {
-              id: "ehw-schematics",
-              label: "Schematics & Preliminary BOM",
-              shortLabel: "Schematics",
-              icon: Cpu,
-              isActive: activeArea === "ehw" && view === "deliverables" && recordTypeFilter === "SCHEMATIC",
-              onClick: () => handleItemClick(() => onNavigateRecordType ? onNavigateRecordType("SCHEMATIC") : (onRecordTypeFilterChange?.("SCHEMATIC"), onNavigate("ehw", "deliverables"))),
-            },
-            {
-              id: "ehw-gerber",
-              label: "DFMEA & Gerber Gates",
-              shortLabel: "DFMEA",
-              icon: Layers,
-              isActive: activeArea === "ehw" && view === "deliverables" && recordTypeFilter === "DFMEA",
-              onClick: () => handleItemClick(() => onNavigateRecordType ? onNavigateRecordType("DFMEA") : (onRecordTypeFilterChange?.("DFMEA"), onNavigate("ehw", "deliverables"))),
+              isActive: activeArea === "ehw" && ["queue", "project", "records", "deliverables"].includes(view),
+              onClick: () => handleItemClick(() => { onRecordTypeFilterChange?.(null); onNavigate("ehw"); }),
             },
           ];
         case "sales":
@@ -1037,7 +1012,7 @@ export function RoleAwareSidebar({
               shortLabel: "QA Hub",
               icon: ShieldCheck,
               isActive: activeArea === "qa",
-              onClick: () => handleItemClick(() => onNavigate("qa")),
+              onClick: () => handleItemClick(() => { onRecordTypeFilterChange?.(null); onNavigate("qa", "project"); }),
             },
             {
               id: "qa-dvpr",
@@ -1045,7 +1020,7 @@ export function RoleAwareSidebar({
               shortLabel: "DVP&R",
               icon: CheckCircle,
               isActive: false,
-              onClick: () => handleItemClick(() => onNavigate("qa")),
+              onClick: () => handleItemClick(() => { onRecordTypeFilterChange?.("DVP&R"); onNavigate("qa", "deliverables"); }),
             },
             {
               id: "qa-capa",
@@ -1053,7 +1028,7 @@ export function RoleAwareSidebar({
               shortLabel: "8D CAPA",
               icon: AlertTriangle,
               isActive: false,
-              onClick: () => handleItemClick(() => onNavigate("qa")),
+              onClick: () => handleItemClick(() => { onNavigate("qa", "records"); onRecordTypeFilterChange?.("8D CAPA"); }),
             },
           ];
         case "sit":
@@ -1253,7 +1228,17 @@ export function RoleAwareSidebar({
         id: "dept_workspace",
         title: "Department workspace",
         icon: LayoutDashboard,
-        items: getWorkspaceItems(),
+        items: [
+          ...getWorkspaceItems(),
+          ...(deptId !== "sit" ? [{
+            id: "dept-help-requests",
+            label: "Department Help Requests",
+            shortLabel: "Help Requests",
+            icon: LifeBuoy,
+            isActive: view === "tickets",
+            onClick: () => handleItemClick(() => onOpenTickets ? onOpenTickets() : onNavigate(deptId as AreaId, "tickets")),
+          }] : []),
+        ],
       },
       {
         id: "dept_reference",
@@ -1433,9 +1418,9 @@ export function RoleAwareSidebar({
   // 5. Render Compact Icon-Only Rail View
   if (isCollapsed) {
     return (
-      <div className="flex h-full w-16 flex-col items-center justify-between py-3">
+      <div className="flex h-full w-full flex-col items-center justify-between py-3">
         {/* Top: Brand & Toggle */}
-        <div className="relative flex flex-col items-center gap-3">
+        <div className="relative flex shrink-0 flex-col items-center gap-3">
           <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-steel font-sans text-sm font-bold leading-none tracking-[0.08em] text-primary-foreground shadow-sm shadow-primary/20">
             SS
           </div>
@@ -1450,18 +1435,8 @@ export function RoleAwareSidebar({
         </div>
 
         {/* Middle: Compact Icons Rail */}
-        <div className="my-4 flex flex-1 flex-col items-center gap-1.5 overflow-y-auto no-scrollbar">
-          {/* Favorites Star Indicator */}
-          <div className="py-1">
-            <span
-              title="Favorites (Expand sidebar to customize)"
-              className="grid size-7 place-items-center text-amber-400"
-            >
-              <Star className="size-3.5 fill-amber-400" />
-            </span>
-          </div>
-
-          {/* Favorited Icons */}
+        <div className="my-3 flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto overscroll-contain no-scrollbar">
+          {/* Favorite items are direct shortcuts; remaining department icons follow below. */}
           {favoriteItems.slice(0, 5).map((item) => {
             const Icon = item.icon;
             return (
@@ -1471,7 +1446,7 @@ export function RoleAwareSidebar({
                 onClick={item.onClick}
                 aria-label={item.label}
                 title={item.label}
-                className={`group relative grid size-9 place-items-center rounded-lg transition-colors ${
+                className={`group relative grid size-9 shrink-0 place-items-center rounded-lg transition-colors ${
                   item.isActive
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -1491,7 +1466,7 @@ export function RoleAwareSidebar({
             );
           })}
 
-          <div className="my-1.5 h-px w-6 bg-sidebar-border/80" />
+          {favoriteItems.length > 0 && <div aria-hidden="true" className="my-1.5 h-px w-6 shrink-0 bg-sidebar-border/80" />}
 
           {/* Department / Primary Area Icons */}
           {activeWorkGroups.map((group) => {
@@ -1506,7 +1481,7 @@ export function RoleAwareSidebar({
                 }}
                 aria-label={group.title}
                 title={`${group.title} (Click to expand)`}
-                className={`group relative grid size-9 place-items-center rounded-lg transition-colors ${
+                className={`group relative grid size-9 shrink-0 place-items-center rounded-lg transition-colors ${
                   hasActiveItem
                     ? "border border-primary/40 bg-sidebar-accent text-primary font-semibold"
                     : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

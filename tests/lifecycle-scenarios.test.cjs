@@ -21,10 +21,22 @@ const {
   verifyProductionReconciliation,
 } = scenarioLib;
 
-test("§14.14: Six realistic lifecycle scenarios are completely defined", () => {
-  assert.equal(LIFECYCLE_SCENARIOS.length, 6);
+test("§14.14: Seven realistic lifecycle scenarios are completely defined", () => {
+  assert.equal(LIFECYCLE_SCENARIOS.length, 7);
   const ids = LIFECYCLE_SCENARIOS.map((s) => s.id);
-  assert.deepEqual(ids, ["S01", "S02", "S03", "S04", "S05", "S06"]);
+  assert.deepEqual(ids, ["S01", "S02", "S03", "S04", "S05", "S06", "S10"]);
+});
+
+test("§14.14 S10: offline telematics remains a fictional, pre-freeze evaluation PoC", () => {
+  const s10 = getScenario("S10");
+  assert.ok(s10);
+  assert.equal(s10.fixtureKey, "LC2-P10-OFFLINE-TELEMATICS");
+  assert.equal(s10.projectCode, "DEMO-PROJ-010");
+  assert.equal(s10.enquiryCode, "DEMO-ENQ-010");
+  assert.equal(s10.isExternalClient, true);
+  assert.match(s10.title, /DEMO_ONLY/);
+  assert.match(s10.stageRemark, /not approved or frozen/i);
+  assert.equal(s10.dependencies.length, 4);
 });
 
 test("§14.14 S01: INTERNAL-JIG has no external client and represents internal equipment", () => {
@@ -51,18 +63,19 @@ test("§14.14 S03: CLIENT-POC has 10 devices and pending ignition debounce feedb
   assert.ok(s03);
   assert.equal(s03.fixtureKey, "CLIENT-POC");
   assert.equal(s03.projectCode, "TEST-POC-01");
-  assert.match(s03.stageRemark, /ignition-state debounce feedback remains pending/i);
+  assert.match(s03.stageRemark, /debounce assumption remains unverified/i);
+  assert.match(s03.stageRemark, /no customer acceptance/i);
 });
 
-test("§14.14 S04: SYSTEM-PILOT has active customer pilot observation period", () => {
+test("§14.14 S04: SYSTEM-PILOT remains an internal fictional integration review", () => {
   const s04 = getScenario("S04");
   assert.ok(s04);
   assert.equal(s04.fixtureKey, "SYSTEM-PILOT");
   assert.equal(s04.projectCode, "TEST-PILOT-01");
-  assert.match(s04.stageRemark, /customer pilot observation period remains open/i);
+  assert.match(s04.stageRemark, /no customer observation or acceptance is recorded/i);
 });
 
-test("§14.14 S05: PILOT-REFINEMENT has completed engineering but pilot remains open with refinements", () => {
+test("§14.14 S05: PILOT-REFINEMENT contains synthetic regression feedback under review", () => {
   const s05 = getScenario("S05");
   assert.ok(s05);
   assert.equal(s05.fixtureKey, "PILOT-REFINEMENT");
@@ -85,6 +98,7 @@ test("§14.14 S06: BULK-PRODUCTION satisfies mathematical quantity reconciliatio
 
   // Exact math verification
   assert.equal(rec.acceptedUnits + rec.heldUnits + rec.pendingInspectionUnits, rec.lotQuantity);
+  assert.match(s06.stageRemark, /no customer acceptance or dispatch/i);
   assert.equal(rec.totalPlannedUnits - rec.lotQuantity, rec.remainingPlannedUnits);
   assert.equal(verifyProductionReconciliation(rec), true);
 });

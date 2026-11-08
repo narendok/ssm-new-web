@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const fs = require('node:fs');
+const { sharedSalesPipeline } = require('../src/lib/shared-sales.ts');
 
 const {
   DEFAULT_DEPARTMENT_CHRONICLES,
@@ -72,4 +73,18 @@ test('SalesWorkspaceAndCustomerRegister contains UnifiedSalesIntakeModal and dua
   assert.ok(file.includes('Add Enquiry'), 'Add Enquiry button must be present');
   assert.ok(file.includes('Add Opportunity'), 'Add Opportunity button must be present');
   assert.ok(file.includes('Convert to Opportunity'), 'Convert to Opportunity button must be present');
+  assert.ok(!file.includes('aria-label="Project technical track"'), 'formal track selection must be deferred until after feasibility');
+  assert.ok(file.includes('Engineering track is decided after feasibility review'), 'intake must explain the track decision point');
+  assert.ok(file.includes('Customer-stated scope clue (unconfirmed)'), 'customer scope clues must remain unconfirmed at intake');
+  const sharedPipeline = fs.readFileSync(path.resolve(__dirname, '../src/components/SharedSalesPipeline.tsx'), 'utf8');
+  assert.ok(!sharedPipeline.includes('source.projectTrack==="ready_made"?["SAL","FIN"]'), 'customer scope clues must not waive engineering feasibility reviewers');
+});
+
+test('shared intake does not invent a project track before feasibility records one', () => {
+  const pipeline = sharedSalesPipeline({
+    records: [{ id: 'enquiry-1', reference: 'TEST-ENQ-1', record_type: 'Enquiry', title: 'Fictional intake', status: 'open', department_id: 'sales', updated_at: '2026-11-03T00:00:00Z', fields: { customer: 'Fictional Fleet', scope: 'Tracker requirements under review' }, notes: '' }],
+    approvals: [],
+    departments: [],
+  });
+  assert.equal(pipeline.enquiries[0].projectTrack, undefined);
 });

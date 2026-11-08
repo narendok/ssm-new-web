@@ -716,10 +716,10 @@ export function OperationsLegalAndLetterheadModal({
                       XYZ Pvt Ltd
                     </h1>
                     <p className="font-mono text-[10px] font-semibold text-slate-600">
-                      XYZ Pvt Ltd · AUTOMOTIVE & TELEMATICS DIVISION
+                    Northstar Mobility Systems · FICTIONAL TEST PROFILE
                     </p>
                     <p className="mt-1 text-[9px] text-slate-500">
-                      CIN: U72900UP2021PTC148821 · GSTIN: 09AAACH8214M1Z2
+                      Registration and tax identifiers are not configured in TEST
                     </p>
                   </div>
                 </div>
@@ -730,7 +730,7 @@ export function OperationsLegalAndLetterheadModal({
                   <p className="font-semibold mt-1">SMT Manufacturing Plant:</p>
                   <p>Ecotech II, Greater Noida, UP - 201306</p>
                   <p className="font-mono mt-1 text-[9px] text-slate-500">
-                    IATF 16949:2016 · ISO 9001:2015 · AIS-140 Certified
+                    Standards targets illustrative only · certification unverified
                   </p>
                 </div>
               </div>

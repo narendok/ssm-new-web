@@ -446,7 +446,7 @@ export function calculateDevelopmentSkip(config: ProjectModularConfiguration) {
     weeksSaved: Math.min(17, weeksSaved),
     nreSavedPct: Math.min(95, nreSavedPct),
     effectiveWeeksToSample,
-    canSkipStage4PoC: pcbReused && fwReused, // Can jump directly to Stage 5 SMT Pilot!
+    canSkipStage4PoC: pcbReused && fwReused, // Eligibility to propose a reviewed optional PoC omission.
     fastTrackStatus:
       pcbReused && fwReused && harnessReused
         ? "100% Proven Platform · Zero NRE"
@@ -925,7 +925,7 @@ export function ProjectAssetLinkerModal({
           </div>
           {skipMetrics.canSkipStage4PoC && (
             <p className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-200">
-              ✓ Hardware & Firmware are 100% pre-certified: Stage 4 bench PoC bring-up can be waived. Direct jump to Stage 5 SMT Pilot authorized!
+              Reusable hardware and firmware selected. Review compatibility, exact revisions and any optional Phase 2 PoC omission before Phase 4 pilot work.
             </p>
           )}
         </div>

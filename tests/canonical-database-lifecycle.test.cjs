@@ -41,6 +41,9 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261028120000_lifecycle_and_sample_pack_sync',
     '20261028120001_canonical_stage_completion_reviews',
     '20261028120002_preserve_legacy_lifecycle_boundary',
+    '20261103120000_decide_shared_test_track_after_feasibility',
+    '20261106001444_admin_reset_shared_test_sample_pack',
+    '20261106005734_retire_legacy_test_fixture_on_admin_reset',
   ];
 
   for (const name of migrationNames) {
@@ -105,6 +108,133 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
       'INSERT INTO departments(id, organization_id, name, department_type, code, lead_member_id) VALUES($1,$2,$3,$3,$3,$4)',
       [id, org, code, mids[lead]]
     );
+  }
+  const dClient = uuid(14);
+  const dInactive = uuid(15);
+  const dNoLead = uuid(16);
+  await db.query(
+    'INSERT INTO departments(id, organization_id, name, department_type, code, lead_member_id, active) VALUES($1,$2,$3,$3,$4,$5,$6)',
+    [dClient, org, 'Client', 'CLIENT', mids[salLead], true]
+  );
+  await db.query(
+    'INSERT INTO departments(id, organization_id, name, department_type, code, lead_member_id, active) VALUES($1,$2,$3,$3,$4,$5,$6)',
+    [dInactive, org, 'Inactive QA', 'INACTIVE_QA', mids[ehwLead], false]
+  );
+  await db.query(
+    'INSERT INTO departments(id, organization_id, name, department_type, code, lead_member_id, active) VALUES($1,$2,$3,$3,$4,$5,$6)',
+    [dNoLead, org, 'No active lead', 'NO_LEAD', mids[employee], true]
+  );
+
+  const seedTask = async ({
+    departmentId,
+    assigneeId = null,
+    stageCode = 'HW_01',
+    isCustom = false,
+    status = 'Open',
+    title,
+  }) => (await db.query(
+    `INSERT INTO tasks(
+       organization_id, department_id, title, status, priority, assignee_id,
+       created_by, stage_code, is_custom
+     ) VALUES($1,$2,$3,$4,'High',$5,$6,$7,$8)
+     RETURNING *`,
+    [org, departmentId, title, status, assigneeId, admin, stageCode, isCustom]
+  )).rows[0];
+
+  const backfillEligible = await seedTask({
+    departmentId: dEhw,
+    status: 'Complete',
+    title: 'Preexisting generated stage task',
+  });
+  const explicitAssignment = await seedTask({
+    departmentId: dEhw,
+    assigneeId: mids[employee],
+    title: 'Preexisting explicitly assigned task',
+  });
+  const existingCustom = await seedTask({
+    departmentId: dEhw,
+    isCustom: true,
+    title: 'Preexisting custom task',
+  });
+  const existingNonStage = await seedTask({
+    departmentId: dEhw,
+    stageCode: null,
+    title: 'Preexisting non-stage task',
+  });
+  const existingClient = await seedTask({
+    departmentId: dClient,
+    title: 'Preexisting client stage task',
+  });
+  const existingInactive = await seedTask({
+    departmentId: dInactive,
+    title: 'Preexisting inactive-department task',
+  });
+  const existingNoLead = await seedTask({
+    departmentId: dNoLead,
+    title: 'Preexisting task without active lead',
+  });
+  const taskHistory = {
+    entity_type: 'task',
+    entity_id: backfillEligible.id,
+    action: 'completed_before_assignment',
+    detail: { status: 'Complete', source: 'local regression fixture' },
+  };
+  await db.query(
+    'INSERT INTO audit_events(organization_id, actor_id, entity_type, entity_id, action, detail) VALUES($1,$2,$3,$4,$5,$6)',
+    [org, admin, taskHistory.entity_type, taskHistory.entity_id, taskHistory.action, taskHistory.detail]
+  );
+
+  // Apply the target migration only to this in-process PGlite database so the
+  // seeded rows exercise its backfill as well as its future-insert trigger.
+  await db.exec(fs.readFileSync(
+    path.join(root, 'supabase/migrations/20261101010231_stage_task_lead_assignment.sql'),
+    'utf8'
+  ));
+
+  const backfilledTasks = await db.query(
+    'SELECT id, assignee_id, status, priority, stage_code, is_custom FROM tasks WHERE id = ANY($1::uuid[])',
+    [[backfillEligible.id, explicitAssignment.id, existingCustom.id, existingNonStage.id, existingClient.id, existingInactive.id, existingNoLead.id]]
+  );
+  const backfilledById = new Map(backfilledTasks.rows.map((row) => [row.id, row]));
+  assert.equal(backfilledById.get(backfillEligible.id).assignee_id, mids[ehwLead]);
+  assert.equal(backfilledById.get(backfillEligible.id).status, 'Complete', 'backfill preserves task state');
+  assert.equal(backfilledById.get(backfillEligible.id).priority, 'High');
+  assert.equal(backfilledById.get(backfillEligible.id).stage_code, 'HW_01');
+  assert.equal(backfilledById.get(backfillEligible.id).is_custom, false);
+  assert.equal(backfilledById.get(explicitAssignment.id).assignee_id, mids[employee], 'backfill preserves explicit employee assignment');
+  for (const task of [existingCustom, existingNonStage, existingClient, existingInactive, existingNoLead]) {
+    assert.equal(backfilledById.get(task.id).assignee_id, null, `${task.title} receives no inferred assignee`);
+  }
+  const savedTaskHistory = await db.query(
+    'SELECT entity_type, entity_id, action, detail FROM audit_events WHERE entity_id=$1',
+    [backfillEligible.id]
+  );
+  assert.deepEqual(savedTaskHistory.rows[0], taskHistory, 'backfill does not rewrite task audit history');
+
+  const insertedGenerated = await seedTask({
+    departmentId: dEhw,
+    title: 'New generated stage task',
+  });
+  assert.equal(insertedGenerated.assignee_id, mids[ehwLead], 'new generated task uses active same-department lead');
+  const insertedExplicit = await seedTask({
+    departmentId: dEhw,
+    assigneeId: mids[employee],
+    title: 'New explicit employee assignment',
+  });
+  assert.equal(insertedExplicit.assignee_id, mids[employee], 'trigger preserves explicit employee assignment');
+  const insertedCustom = await seedTask({
+    departmentId: dEhw,
+    isCustom: true,
+    title: 'New custom stage task',
+  });
+  assert.equal(insertedCustom.assignee_id, null, 'trigger does not assign custom tasks');
+  for (const [departmentId, title] of [
+    [dClient, 'New client task'],
+    [dInactive, 'New inactive-department task'],
+    [dNoLead, 'New task without active lead'],
+  ]) {
+    const inserted = await seedTask({ departmentId, title });
+    assert.equal(inserted.assignee_id, null, `${title} receives no inferred assignee`);
   }
 
   // Create department roles and assignments
@@ -550,4 +680,232 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     call(salLead, 'advance_stage', { project_id: declinedProject.id, target_stage: 'CM_02' }),
     /STAGE_GATE_BLOCKED/
   );
+
+  // Track decision is available only after every requested feasibility reviewer approves.
+  const feasibilityOpportunity = await call(salLead, 'create_record', {
+    record_type: 'Opportunity',
+    reference: 'HLPL-TEST-OPP-TRACK-01',
+    title: 'Fictional tracker scope under feasibility',
+    fields: { revision: '01', requiredDepartments: 'EHW,PUR', feasibilityDispatchedAt: new Date().toISOString() },
+  });
+  const ehwReviewId = (await call(salLead, 'request_approval', {
+    record_id: feasibilityOpportunity.id,
+    reviewer_department_id: dEhw,
+  })).id;
+  const purReviewId = (await call(salLead, 'request_approval', {
+    record_id: feasibilityOpportunity.id,
+    reviewer_department_id: dPur,
+  })).id;
+  async function decideTrack(user, track, requestId = crypto.randomUUID(), expectedUpdatedAt = undefined) {
+    const current = expectedUpdatedAt ? new Date(expectedUpdatedAt) : (await db.query('SELECT updated_at FROM operational_records WHERE id=$1', [feasibilityOpportunity.id])).rows[0].updated_at;
+    return asUser(user, async () => {
+      const result = await db.query('SELECT decide_shared_test_track_after_feasibility($1::jsonb,$2) AS result', [
+        JSON.stringify({ opportunityId: feasibilityOpportunity.id, expectedUpdatedAt: current.toISOString(), track }), requestId,
+      ]);
+      return result.rows[0].result;
+    });
+  }
+  await assert.rejects(decideTrack(salLead, 'hardware_firmware'), /FEASIBILITY_REVIEWS_INCOMPLETE/);
+  const ehwApproval = (await db.query('SELECT updated_at FROM approvals WHERE id=$1', [ehwReviewId])).rows[0];
+  await call(ehwLead, 'decide_approval', { id: ehwReviewId, expected_updated_at: ehwApproval.updated_at.toISOString(), outcome: 'approved' });
+  await assert.rejects(decideTrack(salLead, 'hardware_firmware'), /FEASIBILITY_REVIEWS_INCOMPLETE/);
+  const purApproval = (await db.query('SELECT updated_at FROM approvals WHERE id=$1', [purReviewId])).rows[0];
+  await call(purLead, 'decide_approval', { id: purReviewId, expected_updated_at: purApproval.updated_at.toISOString(), outcome: 'approved' });
+  await assert.rejects(decideTrack(ehwLead, 'hardware_firmware'), /SALES_TRACK_DECISION_DENIED/);
+  const trackDecisionRequestId = crypto.randomUUID();
+  const trackDecisionExpectedAt = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1', [feasibilityOpportunity.id])).rows[0].updated_at.toISOString();
+  const decidedTrack = await decideTrack(salLead, 'hardware_firmware', trackDecisionRequestId);
+  assert.equal(decidedTrack.id, feasibilityOpportunity.id);
+  assert.equal(decidedTrack.track, 'hardware_firmware');
+  const storedTrack = (await db.query('SELECT fields FROM operational_records WHERE id=$1', [feasibilityOpportunity.id])).rows[0].fields;
+  assert.equal(storedTrack.projectTrack, 'hardware_firmware');
+  assert.match(storedTrack.trackDecisionBasis, /completed internal feasibility reviews/);
+  assert.deepEqual(await decideTrack(salLead, 'hardware_firmware', trackDecisionRequestId, trackDecisionExpectedAt), decidedTrack, 'Track decision retry is idempotent');
+  await assert.rejects(decideTrack(salLead, 'hardware_only'), /SALES_TRACK_ALREADY_DECIDED/);
+
+  // ==========================================
+  // TEST 4: Admin-only shared sample reset
+  // ==========================================
+  async function resetPack(user, runId = 'LC2-2026-10-28', requestId = crypto.randomUUID()) {
+    return asUser(user, async () => {
+      const res = await db.query('SELECT reset_shared_test_sample_pack($1,$2) AS result', [runId, requestId]);
+      return res.rows[0].result;
+    });
+  }
+
+  await assert.rejects(resetPack(viewer), /SAMPLE_RESET_ADMIN_REQUIRED/);
+  await assert.rejects(resetPack(ehwLead), /SAMPLE_RESET_ADMIN_REQUIRED/);
+  await assert.rejects(resetPack(employee), /SAMPLE_RESET_ADMIN_REQUIRED/);
+  await assert.rejects(resetPack(admin, 'another-run'), /FIXTURE_RUN_NOT_SUPPORTED/);
+
+  const unrelated = await call(admin, 'create_project', {
+    reference: 'HLPL-TEST-KEEP-01',
+    title: 'Unrelated TEST workspace project',
+    track: 'hardware_only',
+  });
+  const uploadedDoc = (await call(admin, 'create_document', {
+    record_id: p06Project.id,
+    title: 'Uploaded customer test drawing',
+    document_type: 'Drawing',
+    reference_url: 'private',
+    visibility: 'internal',
+  })).id;
+  const uploadedFileId = uuid(910);
+  await db.query(
+    `INSERT INTO controlled_document_files(id,organization_id,department_id,document_id,revision,storage_path,original_name,content_type,size_bytes,checksum,uploaded_by)
+     VALUES($1,$2,$3,$4,'01','TEST/kept-sample-artifact.pdf','kept-sample-artifact.pdf','application/pdf',12,'fictional-test-checksum',$5)`,
+    [uploadedFileId, org, dEhw, uploadedDoc, admin]
+  );
+  await db.query(
+    "INSERT INTO storage.objects(bucket_id,name) VALUES('controlled-documents','TEST/kept-sample-artifact.pdf')"
+  );
+  // Model optional downstream tables so the same scoped cleanup branch is exercised locally.
+  await db.exec(`
+    CREATE TABLE project_input_sheets(id uuid PRIMARY KEY,organization_id uuid,source_record_id uuid,project_record_id uuid);
+    CREATE TABLE project_input_events(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),sheet_id uuid);
+    CREATE TABLE decision_entries(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),organization_id uuid,project_id uuid);
+    CREATE TABLE customer_change_requests(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),organization_id uuid,project_record_id uuid);
+    CREATE TABLE customer_change_events(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),request_id uuid);
+    CREATE TABLE customer_change_impacts(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),request_id uuid);
+  `);
+  const inputSheetId = uuid(912);
+  const changeRequestId = uuid(913);
+  await db.query('INSERT INTO project_input_sheets VALUES($1,$2,$3,$3)', [inputSheetId, org, p06Project.id]);
+  await db.query('INSERT INTO project_input_events(sheet_id) VALUES($1)', [inputSheetId]);
+  await db.query('INSERT INTO decision_entries(organization_id,project_id) VALUES($1,$2)', [org, p06Project.id]);
+  await db.query('INSERT INTO customer_change_requests(id,organization_id,project_record_id) VALUES($1,$2,$3)', [changeRequestId, org, p06Project.id]);
+  await db.query('INSERT INTO customer_change_events(request_id) VALUES($1)', [changeRequestId]);
+  await db.query('INSERT INTO customer_change_impacts(request_id) VALUES($1)', [changeRequestId]);
+
+  // A stale, explicitly manifested legacy fixture is retired by the same
+  // authenticated reset. A linked user-created record and uploaded bytes survive.
+  const legacyProjectId = uuid(920);
+  const legacyRecordId = uuid(921);
+  const legacyDocumentId = uuid(922);
+  const legacyDraftDocumentId = uuid(923);
+  const legacyTaskId = uuid(924);
+  const linkedUserRecordId = uuid(925);
+  const legacyFileId = uuid(926);
+  const legacyRunId = 'TEST-LIFECYCLE-20261025-001';
+  await db.query(
+    `INSERT INTO operational_records(id,organization_id,department_id,area,record_type,reference,title,status,stage,fields,is_demo,created_by,updated_by)
+     VALUES($1,$2,$3,'project','Project','TEST-OLD-01','Old TEST project · Stage 5','in_review','Stage 5',$4::jsonb,true,$5,$5),
+           ($6,$2,$3,'ehw','Schematic','TEST-OLD-01-SCH','Old schematic · Stage 4','draft','Stage 4',$7::jsonb,true,$5,$5),
+           ($8,$2,$3,'ehw','Schematic','TEST-OLD-01-USER','User linked draft · Stage 4','draft','Stage 4',$9::jsonb,false,$5,$5)`,
+    [legacyProjectId, org, dEhw, JSON.stringify({ stage: 'Stage 5' }), admin,
+      legacyRecordId, JSON.stringify({ projectId: legacyProjectId, stage: 'Stage 4' }),
+      linkedUserRecordId, JSON.stringify({ projectId: legacyProjectId, stage: 'Stage 4' })]
+  );
+  await db.query(
+    'INSERT INTO record_links(organization_id,source_record_id,target_record_id,relationship,created_by) VALUES($1,$2,$3,\'deliverable\',$4)',
+    [org, legacyProjectId, linkedUserRecordId, admin]
+  );
+  await db.query(
+    `INSERT INTO documents(id,organization_id,record_id,title,document_type,reference_url,visibility,created_by)
+     VALUES($1,$2,$3,'Legacy uploaded drawing','Drawing','private','internal',$4),
+           ($5,$2,$3,'Legacy empty draft','Drawing','private','internal',$4)`,
+    [legacyDocumentId, org, legacyRecordId, admin, legacyDraftDocumentId]
+  );
+  await db.query(
+    'INSERT INTO controlled_document_files(id,organization_id,department_id,document_id,revision,storage_path,original_name,content_type,size_bytes,checksum,uploaded_by) VALUES($1,$2,$3,$4,\'01\',\'TEST/legacy-original.pdf\',\'legacy-original.pdf\',\'application/pdf\',10,\'legacy-fictional-checksum\',$5)',
+    [legacyFileId, org, dEhw, legacyDocumentId, admin]
+  );
+  await db.query("INSERT INTO storage.objects(bucket_id,name) VALUES('controlled-documents','TEST/legacy-original.pdf')");
+  await db.query(
+    `INSERT INTO tasks(id,organization_id,department_id,record_id,title,status,priority,created_by,template_task_key)
+     VALUES($1,$2,$3,$4,'Legacy fixture task','Open','Normal',$5,$6)`,
+    [legacyTaskId, org, dEhw, legacyProjectId, admin, `${legacyRunId}:HW_01:T01`]
+  );
+  await db.query(
+    `INSERT INTO scenario_fixture_manifests(organization_id,run_id,scenario_id,fixture_key,entity_type,record_type,canonical_id,reference,stage)
+     VALUES($1,$2,'legacy-test','legacy-project','project','Project',$3,'TEST-OLD-01','Stage 5'),
+           ($1,$2,'legacy-test','legacy-record','record','Schematic',$4,'TEST-OLD-01-SCH','Stage 4'),
+           ($1,$2,'legacy-test','legacy-file','document','Drawing',$5,'DOC-OLD-01','Stage 4'),
+           ($1,$2,'legacy-test','legacy-empty-doc','document','Drawing',$6,'DOC-OLD-02','Stage 4'),
+           ($1,$2,'legacy-test','legacy-task','task','Task',$7,'OLD-TASK-01',NULL)`,
+    [org, legacyRunId, legacyProjectId, legacyRecordId, legacyDocumentId, legacyDraftDocumentId, legacyTaskId]
+  );
+
+  const firstReset = await resetPack(admin, 'LC2-2026-10-28', uuid(911));
+  assert.equal(firstReset.status, 'reset_and_restored');
+  assert.equal(firstReset.fictional_test_data, true);
+  assert.equal(firstReset.binary_files_preserved, true);
+  assert.equal(firstReset.legacy_fixture.status, 'legacy_fixture_retired');
+  assert.equal(firstReset.legacy_fixture.retired_record_count, 2);
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM operational_records WHERE id=ANY($1::uuid[])',
+    [[legacyProjectId, legacyRecordId]])).rows[0].count, 0, 'Only manifested legacy sample records are retired');
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM operational_records WHERE id=$1',
+    [linkedUserRecordId])).rows[0].count, 1, 'An unmanifested user-created record linked to a sample remains');
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM documents WHERE id=$1',
+    [legacyDocumentId])).rows[0].count, 1, 'Document metadata with an uploaded original remains');
+  assert.equal((await db.query('SELECT record_id FROM documents WHERE id=$1',
+    [legacyDocumentId])).rows[0].record_id, null, 'Preserved legacy original is detached from retired sample records');
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM documents WHERE id=$1',
+    [legacyDraftDocumentId])).rows[0].count, 0, 'Empty fixture-only document metadata is retired');
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM controlled_document_files WHERE id=$1',
+    [legacyFileId])).rows[0].count, 1, 'Legacy uploaded original metadata survives');
+  assert.equal((await db.query("SELECT count(*)::int AS count FROM storage.objects WHERE name='TEST/legacy-original.pdf'"))
+    .rows[0].count, 1, 'Legacy uploaded original bytes remain untouched');
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM tasks WHERE id=$1', [legacyTaskId])).rows[0].count, 0);
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM scenario_fixture_manifests WHERE organization_id=$1 AND run_id=$2',
+    [org, legacyRunId])).rows[0].count, 0, 'The stale legacy manifest is retired');
+  const restoredProject = (await db.query(
+    "SELECT * FROM operational_records WHERE organization_id=$1 AND record_type='Project' AND reference='PRJ-PROD-001'",
+    [org]
+  )).rows[0];
+  assert.ok(restoredProject);
+  assert.equal(restoredProject.status, 'open');
+  assert.match(restoredProject.fields.customer, /fictional TEST customer/);
+  assert.equal(restoredProject.fields.acceptedUnits, undefined);
+  assert.match(restoredProject.fields.sampleDataNotice, /no customer acceptance or release recorded/);
+  assert.match(restoredProject.title, /pilot/i);
+  assert.equal((await db.query(
+    "SELECT count(*)::int AS count FROM operational_records WHERE organization_id=$1 AND reference='HLPL-TEST-KEEP-01'",
+    [org]
+  )).rows[0].count, 1, 'Reset must preserve unrelated TEST projects');
+  assert.equal((await db.query(
+    'SELECT count(*)::int AS count FROM controlled_document_files WHERE id=$1', [uploadedFileId]
+  )).rows[0].count, 1, 'Uploaded binary file metadata must survive reset');
+  assert.equal((await db.query('SELECT record_id FROM documents WHERE id=$1', [uploadedDoc])).rows[0].record_id, null,
+    'Preserved uploaded evidence must be detached from the deleted sample project');
+  assert.equal((await db.query(
+    "SELECT count(*)::int AS count FROM storage.objects WHERE name='TEST/kept-sample-artifact.pdf'"
+  )).rows[0].count, 1, 'Uploaded binary storage object must remain untouched');
+  for (const table of ['project_input_sheets','project_input_events','decision_entries','customer_change_requests','customer_change_events','customer_change_impacts']) {
+    assert.equal((await db.query(`SELECT count(*)::int AS count FROM ${table}`)).rows[0].count, 0,
+      `${table} rows linked to the reset sample must be removed`);
+  }
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM organizations WHERE id=$1', [org])).rows[0].count, 1);
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM organization_members WHERE organization_id=$1', [org])).rows[0].count, 6);
+  assert.equal((await db.query(
+    "SELECT count(*)::int AS count FROM operational_records WHERE id IN (SELECT canonical_id FROM scenario_fixture_manifests WHERE organization_id=$1 AND run_id='LC2-2026-10-28' AND entity_type IN ('record','project')) AND status IN ('approved','released')",
+    [org]
+  )).rows[0].count, 0, 'Reset sample must not claim approval or release');
+  assert.equal((await db.query(
+    `SELECT count(*)::int AS count FROM operational_records record
+     WHERE record.id IN (SELECT canonical_id FROM scenario_fixture_manifests WHERE organization_id=$1 AND run_id='LC2-2026-10-28' AND entity_type IN ('record','project'))
+       AND (lower(record.title || record.notes || record.fields::text) LIKE '%tata motors%'
+         OR lower(record.title || record.notes || record.fields::text) LIKE '%bharat heavy%'
+         OR lower(record.title || record.notes || record.fields::text) LIKE '%city delivery express%'
+         OR lower(record.title || record.notes || record.fields::text) LIKE '%fastcargo logistics%'
+         OR lower(record.title || record.notes || record.fields::text) LIKE '%hexense%')`,
+    [org]
+  )).rows[0].count, 0, 'Reset must replace legacy customer identities with fictional TEST names');
+  assert.equal((await db.query(
+    "SELECT count(*)::int AS count FROM tasks WHERE id IN (SELECT canonical_id FROM scenario_fixture_manifests WHERE organization_id=$1 AND run_id='LC2-2026-10-28' AND entity_type='task') AND status='Complete'",
+    [org]
+  )).rows[0].count, 0, 'Reset sample tasks must return to active work');
+
+  const sampleCount = (await db.query(
+    "SELECT count(*)::int AS count FROM scenario_fixture_manifests WHERE organization_id=$1 AND run_id='LC2-2026-10-28'",
+    [org]
+  )).rows[0].count;
+  const secondReset = await resetPack(admin);
+  assert.equal(secondReset.status, 'reset_and_restored');
+  assert.equal((await db.query(
+    "SELECT count(*)::int AS count FROM scenario_fixture_manifests WHERE organization_id=$1 AND run_id='LC2-2026-10-28'",
+    [org]
+  )).rows[0].count, sampleCount, 'Repeated reset must not duplicate fixture rows');
+  const replay = await resetPack(admin, 'LC2-2026-10-28', uuid(911));
+  assert.deepEqual(replay, firstReset, 'Request replay must return its idempotent result');
 });

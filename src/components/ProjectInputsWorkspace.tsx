@@ -15,9 +15,18 @@ import {
 import type { TestMembership } from "@/lib/test-auth.functions";
 import type { AnalysisRecord } from "@/lib/project-analysis-data";
 import { SharedMasterSelect } from "./SharedMasterSelect";
+import { CustomerChangeRequestsPanel } from "./CustomerChangeRequestsPanel";
 import { SmartParameterField } from "./SmartParameterField";
 import { SmartSorImporterModal } from "./SmartSorImporterModal";
 import { readAssessmentDraft } from "@/lib/assessment-drafts";
+import {
+  availableFeasibilitySources,
+  createDemoFeasibilitySheet,
+  isDemoInputActionAllowed,
+  seedS10DemoFeasibilitySnapshot,
+  withS10DemoFeasibilitySources,
+} from "@/lib/s10-demo-feasibility";
+import { getScenario } from "@/lib/lifecycle-scenarios";
 import { Sparkles } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
@@ -67,9 +76,9 @@ function inferScope(source: AnalysisRecord | undefined): "Client" | "Internal" {
   return "Client";
 }
 function createDemoProjectInputsData(sources: AnalysisRecord[]): import("@/lib/project-inputs.functions").InputSnapshot {
-  const prj = sources.find((s) => s.type === "Project" || s.reference?.includes("PRJ")) || sources[0];
+  const prj = sources.find((s) => (s.type === "Project" || s.reference?.includes("PRJ")) && s.reference !== "DEMO-PROJ-010") || sources.find((source) => source.reference !== "DEMO-PROJ-010");
   const sourceId = prj?.id || "demo-prj-01";
-  return {
+  const snapshot: import("@/lib/project-inputs.functions").InputSnapshot = {
     sheets: [
       {
         id: "sheet-demo-01",
@@ -117,25 +126,82 @@ function createDemoProjectInputsData(sources: AnalysisRecord[]): import("@/lib/p
     ],
     events: [],
   };
+  const scenario = getScenario("S10");
+  if (!scenario) throw new Error("S10_DEMO_SCENARIO_UNAVAILABLE");
+  const s10Project = sources.find(
+    (source) =>
+      source.type === "Project" &&
+      source.reference === scenario.projectCode &&
+      source.fields["demoFixtureKey"] === scenario.fixtureKey,
+  );
+  return s10Project
+    ? createDemoFeasibilitySheet(
+        snapshot,
+        sources,
+        s10Project.id,
+        "Client",
+        new Date().toISOString(),
+        scenario,
+      )
+    : seedS10DemoFeasibilitySnapshot(snapshot, sources, scenario);
 }
 
 const demoInputStorageKey = "ssm:demo-project-input-sheets:v1";
 function loadDemoProjectInputs(sources: AnalysisRecord[]): import("@/lib/project-inputs.functions").InputSnapshot {
+  let saved: { sheets?: unknown; events?: unknown } | null = null;
   if (typeof window !== "undefined") {
     try {
-      const saved = JSON.parse(localStorage.getItem(demoInputStorageKey) || "null");
-      if (saved && Array.isArray(saved.sheets) && Array.isArray(saved.events)) {
-        const sheets = saved.sheets.filter((row: InputSheet) => row && row.id && Number.isInteger(row.version) && row.parameter_values && sources.some(source => source.id === row.source_record_id || source.id === row.project_record_id));
-        if (sheets.length) return { sheets, events: saved.events };
-      }
+      saved = JSON.parse(localStorage.getItem(demoInputStorageKey) || "null");
     } catch { /* Invalid demo recovery data cannot replace the initial sample. */ }
+  }
+  if (
+    saved &&
+    Array.isArray(saved.sheets) &&
+    Array.isArray(saved.events)
+  ) {
+    const sheets = saved.sheets.filter((row: InputSheet) => row && row.id && Number.isInteger(row.version) && row.parameter_values && sources.some(source => source.id === row.source_record_id || source.id === row.project_record_id));
+    if (sheets.length) {
+      const scenario = getScenario("S10");
+      if (!scenario) throw new Error("S10_DEMO_SCENARIO_UNAVAILABLE");
+      const snapshot = seedS10DemoFeasibilitySnapshot(
+        { sheets, events: saved.events },
+        sources,
+        scenario,
+      );
+      const s10Project = sources.find(
+        (source) =>
+          source.type === "Project" &&
+          source.reference === scenario.projectCode &&
+          source.fields["demoFixtureKey"] === scenario.fixtureKey,
+      );
+      const withS10Sheet =
+        s10Project &&
+        !snapshot.sheets.some(
+          (sheet) =>
+            sheet.source_record_id === s10Project.id ||
+            sheet.project_record_id === s10Project.id,
+        )
+          ? createDemoFeasibilitySheet(
+              snapshot,
+              sources,
+              s10Project.id,
+              "Client",
+              new Date().toISOString(),
+              scenario,
+            )
+          : snapshot;
+      if (withS10Sheet.sheets.some((sheet, index) => sheet !== sheets[index])) {
+        localStorage.setItem(demoInputStorageKey, JSON.stringify(withS10Sheet));
+      }
+      return withS10Sheet;
+    }
   }
   return createDemoProjectInputsData(sources);
 }
 
 export function ProjectInputsWorkspace({
   membership,
-  sources,
+  sources: sourceRecords,
   initialSourceId,
 }: {
   membership?: TestMembership | undefined;
@@ -155,6 +221,12 @@ export function ProjectInputsWorkspace({
     displayName: "Demo input coordinator",
     isClient: false,
   };
+  const s10Scenario = getScenario("S10");
+  if (!s10Scenario) throw new Error("S10_DEMO_SCENARIO_UNAVAILABLE");
+  const sources =
+    membership || !s10Scenario
+      ? sourceRecords
+      : withS10DemoFeasibilitySources(sourceRecords, s10Scenario);
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["project-inputs", effectiveMembership.organizationId, effectiveMembership.membershipId],
@@ -207,12 +279,12 @@ export function ProjectInputsWorkspace({
     const source = sources.find((record) => record.id === saved.source_record_id || record.id === saved.project_record_id);
     return !filter || `${source?.reference || ""} ${source?.title || ""} ${saved.scope} ${saved.status}`.toLowerCase().includes(filter.toLowerCase());
   });
-  const availableSources = sources.filter((record) => {
-    if (!["Project", "Enquiry", "Opportunity"].includes(record.type)) return false;
-    if (sourceId && record.id !== sourceId) return false;
-    const exists = (query.data?.sheets || []).some((saved) => saved.source_record_id === record.id || saved.project_record_id === record.id);
-    return !exists && `${record.reference} ${record.title} ${record.fields["customer"] || record.fields["client"] || ""}`.toLowerCase().includes(filter.toLowerCase());
-  });
+  const availableSources = availableFeasibilitySources(
+    sources,
+    query.data?.sheets || [],
+    sourceId,
+    filter,
+  );
   const portfolioTotals = savedSheets.reduce(
     (totals, saved) => {
       const readiness = inputReadiness(saved.parameter_values, [...PROJECT_INPUT_PARAMETERS, ...saved.custom_parameters]);
@@ -342,9 +414,41 @@ export function ProjectInputsWorkspace({
     setError("");
     setNotice("");
     if (!membership) {
-      setError("This action is a demo preview. Sign in to save workflow and approval changes to the shared workspace.");
-      setBusy(false);
-      return false;
+      if (!isDemoInputActionAllowed(action)) {
+        setError("DEMO ONLY preview supports local draft inputs only. Approval, freeze, and downstream workflow actions require an authorized shared workspace.");
+        setBusy(false);
+        return false;
+      }
+      try {
+        const selectedSourceId = payload["sourceId"];
+        const selectedScope = payload["scope"];
+        if (
+          typeof selectedSourceId !== "string" ||
+          (selectedScope !== "Client" && selectedScope !== "Internal")
+        ) {
+          throw new Error("DEMO_INPUT_SOURCE_INVALID");
+        }
+        const snapshot = createDemoFeasibilitySheet(
+          query.data || { sheets: [], events: [] },
+          sources,
+          selectedSourceId,
+          selectedScope,
+          new Date().toISOString(),
+          s10Scenario!,
+        );
+        localStorage.setItem(demoInputStorageKey, JSON.stringify(snapshot));
+        queryClient.setQueryData(
+          ["project-inputs", effectiveMembership.organizationId, effectiveMembership.membershipId],
+          snapshot,
+        );
+        setNotice("DEMO ONLY · Created a browser-local Draft feasibility sheet. No approval, freeze, or downstream tasks were created.");
+        return true;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Unable to create the local demo draft.");
+        return false;
+      } finally {
+        setBusy(false);
+      }
     }
     try {
       await write({
@@ -505,6 +609,12 @@ export function ProjectInputsWorkspace({
             Client or internal requirements, departmental assessments and an approved specification
             baseline. Example hints are not decided values.
           </p>
+          {!membership && (
+            <p role="note" className="text-xs font-medium text-amber-700 dark:text-amber-300">
+              DEMO ONLY · Browser-local draft preview. No client approval, measurements,
+              certification, readiness, feasibility freeze, or downstream work is asserted.
+            </p>
+          )}
         </div>
         <Button
           type="button"
@@ -536,6 +646,7 @@ export function ProjectInputsWorkspace({
         </div>
         {sheet && (
           <span className="text-xs">
+            {!membership ? "DEMO ONLY · " : ""}
             {sheet.scope} · Rev {String(sheet.revision).padStart(2, "0")} · {sheet.status}
           </span>
         )}
@@ -562,7 +673,11 @@ export function ProjectInputsWorkspace({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3">
           <div>
             <p className="text-xs font-medium">No input sheet yet</p>
-            <p className="text-[11px] text-muted-foreground">Start the shared feasibility sheet for this entry.</p>
+            <p className="text-[11px] text-muted-foreground">
+              {!membership
+                ? "Start a browser-local DEMO ONLY draft sheet. Approval and downstream work stay blocked."
+                : "Start the shared feasibility sheet for this entry."}
+            </p>
           </div>
           {["admin", "department_lead"].includes(effectiveMembership.role) && (
             <div className="flex flex-wrap items-center gap-2">
@@ -581,7 +696,7 @@ export function ProjectInputsWorkspace({
                 ))}
               </div>
               <Button size="sm" disabled={busy} onClick={() => void save("create", { sourceId, scope })}>
-                Start sheet
+                {!membership ? "Start DEMO ONLY draft" : "Start sheet"}
               </Button>
             </div>
           )}
@@ -958,7 +1073,7 @@ export function ProjectInputsWorkspace({
             </table>
           </div>
           */}
-          {editable && inputOwner && sheet.scope === "Client" && (
+          {membership && editable && inputOwner && sheet.scope === "Client" && (
             <div className="rounded border p-3 space-y-2">
               <p className="text-xs font-medium">Client approval evidence reference</p>
               <p className="text-xs text-muted-foreground">
@@ -981,7 +1096,7 @@ export function ProjectInputsWorkspace({
               </Button>
             </div>
           )}
-          {!sheet.project_record_id && (effectiveMembership.role === "admin" || dept === "SAL") && (
+          {membership && !sheet.project_record_id && (effectiveMembership.role === "admin" || dept === "SAL") && (
             <div className="flex gap-2">
               <div className="flex-1">
                 <SharedMasterSelect
@@ -1001,7 +1116,7 @@ export function ProjectInputsWorkspace({
               </Button>
             </div>
           )}
-          {editable && effectiveMembership.role === "admin" && (
+          {membership && editable && effectiveMembership.role === "admin" && (
             <Button
               disabled={busy || sheet.input_owner_id === effectiveMembership.membershipId}
               onClick={() => void save("approve", {})}
@@ -1049,9 +1164,16 @@ export function ProjectInputsWorkspace({
                 </div>
               ))}
           </details>
+          {sheet.project_record_id && (
+            <CustomerChangeRequestsPanel
+              membership={membership}
+              sheet={sheet}
+              departments={people.data?.departments.map(({ code, name }) => ({ code, name })) || []}
+            />
+          )}
         </>
       )}
-      {editable && ["admin", "department_lead"].includes(effectiveMembership.role) && dept && (
+      {membership && editable && ["admin", "department_lead"].includes(effectiveMembership.role) && dept && (
         <Button variant="outline" onClick={() => setNewQuestion(true)}>
           Add department question
         </Button>

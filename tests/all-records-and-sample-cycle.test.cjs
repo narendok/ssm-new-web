@@ -11,7 +11,7 @@ function loadTsModule(relativePath) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const mod = { exports: {} };
-  new Function("module", "exports", "require", transpiled)(mod, mod.exports, require);
+  new Function("module", "exports", "require", transpiled)(mod, mod.exports, imported => imported.startsWith('./') ? loadTsModule(path.relative(__dirname,path.resolve(path.dirname(fullPath),imported+'.ts'))) : require(imported));
   return mod.exports;
 }
 
@@ -44,7 +44,9 @@ test("SECTION 1: Comprehensive verification of all 88 record types across all de
       };
 
       for (const field of fields) {
-        if (field.kind === "select" && field.options?.length) {
+        if (field.automaticValue) {
+          sampleInput[field.key] = field.automaticValue;
+        } else if (field.kind === "select" && field.options?.length) {
           sampleInput[field.key] = field.options[0];
         } else if (field.kind === "date") {
           sampleInput[field.key] = "2026-10-25";
@@ -57,7 +59,7 @@ test("SECTION 1: Comprehensive verification of all 88 record types across all de
         } else if (field.master === "parts") {
           sampleInput[field.key] = "STM32G0B1VCT6";
         } else if (field.master === "customers") {
-          sampleInput[field.key] = "Tata Motors Limited";
+          sampleInput[field.key] = "Northstar Mobility Works · fictional TEST client";
         } else if (field.master === "routes") {
           sampleInput[field.key] = "SMT Line 1 -> Automated Optical Inspection";
         } else {
@@ -128,7 +130,7 @@ test("SECTION 2: Verification of all 38 Document Catalogue Families (D01-D38)", 
 });
 
 test("SECTION 3: End-to-End Cross-Department Project Cycle Simulation (§14.13C & §14.14)", () => {
-  // Phase 1: Sales Customer & Enquiry Intake (S02 Declined vs S03/S04 Accepted)
+  // Phase 1: Sales enquiry intake (S02 sample decline; S03/S04 remain fictional workflow cases)
   const s02 = getScenario("DECLINED-ENQUIRY");
   assert.ok(s02, "S02 must exist");
   assert.equal(s02.projectCode, undefined, "S02 Declined Enquiry MUST NOT create a project code");
@@ -148,7 +150,7 @@ test("SECTION 3: End-to-End Cross-Department Project Cycle Simulation (§14.13C 
   const s03 = getScenario("CLIENT-POC");
   assert.ok(s03, "S03 must exist");
   assert.equal(s03.projectCode, "TEST-POC-01");
-  assert.ok(s03.stageRemark.includes("PoC acceptance does not authorize mass production"));
+  assert.ok(s03.stageRemark.includes("No customer acceptance"));
 
   // Verify tentative BOM draft generation without hardware boilerplate leakage
   const bomDraft = buildDocumentDraft("Production BOM", "HLPL-POC-EHW-BOM-01");
@@ -183,9 +185,9 @@ test("SECTION 3: End-to-End Cross-Department Project Cycle Simulation (§14.13C 
   assert.ok(s05, "S05 must exist");
   assert.equal(s05.projectCode, "TEST-REFINEMENT-01");
   assert.ok(s05.dependencies.some((d) => d.criticalPath));
-  assert.ok(s05.stageRemark.includes("Final customer acceptance and bulk release remain blocked"));
+  assert.match(s05.stageRemark, /No customer acceptance or release is represented/i);
 
-  // Phase 7: Bulk Production Release & Strict Mathematical Reconciliation (S06)
+  // Phase 7: Fictional Production Workflow & Sample Quantity Reconciliation (S06)
   const s06 = getScenario("BULK-PRODUCTION");
   assert.ok(s06, "S06 must exist");
   assert.equal(s06.projectCode, "TEST-PROD-01");
@@ -193,7 +195,7 @@ test("SECTION 3: End-to-End Cross-Department Project Cycle Simulation (§14.13C 
   assert.ok(recon, "S06 must have production reconciliation matrix");
 
   // Invariant verification:
-  // 1. First lot total must equal accepted (150) + held (5) + pending inspection (45) = 200
+  // 1. Sample total: internal QA pass placeholder (150) + held (5) + pending inspection (45) = 200
   assert.equal(recon.acceptedUnits + recon.heldUnits + recon.pendingInspectionUnits, recon.lotQuantity);
   assert.equal(recon.lotQuantity, 200);
 

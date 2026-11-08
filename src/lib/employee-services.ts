@@ -461,7 +461,7 @@ export const DEFAULT_EMPLOYEE_LETTERS: EmployeeLetter[] = [
     status: "Issued",
     signerName: "Executive Admin",
     issuedAt: "2026-10-01",
-    summary: "Statutory delegation for signing Stage 4 Hardware Schematics (EHW-SCH-01) and BOM freezing (BOM-01).",
+    summary: "TEST delegation example for Phase 3 hardware schematics and controlled BOM review. Actual signing authority follows configured permissions.",
   },
 ];
 

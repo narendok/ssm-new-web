@@ -22,6 +22,8 @@
  * 6. The 8 Connected Sample Projects + 1 Declined Enquiry Pack (LC2-P01 to LC2-P09).
  */
 
+import { additionalLifecycleStages, extensionApplicableTracks } from './lifecycle-stage-extensions';
+
 export type CanonicalProjectTrack =
   | "hardware_only"
   | "firmware_only"
@@ -176,7 +178,7 @@ export function recordedCompletedStageCodes(value: unknown): string[] {
     try { value = JSON.parse(value); } catch { return []; }
   }
   return Array.isArray(value) ? [...new Set(value.filter((code): code is string =>
-    typeof code === "string" && CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === code)))] : [];
+    typeof code === "string" && (CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === code) || additionalLifecycleStages().some(stage=>stage.code===code))))] : [];
 }
 
 export interface CanonicalTaskTemplate {
@@ -2350,12 +2352,18 @@ export const CANONICAL_STAGE_TEMPLATES: CanonicalStageTemplate[] = [
  */
 export function getApplicableStagesForTrack(
   track: ProjectTrack,
-  options?: { enableCertification?: boolean }
+  options?: { enableCertification?: boolean; stageDefinitions?: {code:string;name:string;phase:string;department:string;prerequisites:string[];tasks:{id:string;title:string;description:string;department:string}[]}[] }
 ): CanonicalStageTemplate[] {
   const norm = normalizeCanonicalTrack(track);
   const includeCert = Boolean(options?.enableCertification);
 
-  return CANONICAL_STAGE_TEMPLATES.filter((stg) => {
+  const configured=options?.stageDefinitions;
+  const templates=[...CANONICAL_STAGE_TEMPLATES,...(configured ? additionalLifecycleStages().filter(stage=>configured.some(s=>s.code===stage.code)).map(stage=>({stageCode:stage.code,stageKey:`LC-TG:${stage.code}`,phaseCode:stage.phase,phaseTitle:stage.phase,name:stage.name,defaultOwner:stage.department,prerequisites:stage.prerequisites,
+    t01:{taskKey:`LC-TG:${stage.code}:T01`,taskNumber:'T01' as const,title:stage.tasks[0]?.title||'',description:stage.tasks[0]?.description||'',defaultOwner:stage.department},
+    t02:{taskKey:`LC-TG:${stage.code}:T02`,taskNumber:'T02' as const,title:stage.tasks[1]?.title||'',description:stage.tasks[1]?.description||'',defaultOwner:stage.department}})) : [])];
+  return templates.filter((stg) => {
+    if(configured&&!configured.some(stage=>stage.code===stg.stageCode))return false;
+    if(/^G[0-9]_/.test(stg.stageCode))return extensionApplicableTracks(stg.stageCode).includes(norm);
     // Certification stages C01-C15 apply only if certification is explicitly enabled
     if (/^C\d+$/.test(stg.stageCode)) {
       return includeCert;
@@ -2439,7 +2447,7 @@ export interface ProjectTaskInstance {
   projectId: string;
   stageCode: string;
   stageKey: string;
-  taskNumber?: "T01" | "T02" | "CUSTOM";
+  taskNumber?: string;
   title: string;
   description: string;
   department: string;
@@ -2641,6 +2649,41 @@ export function updateTaskInstance(
  * 2. Supplying an in_progress stage NEVER bypasses prerequisite checks.
  * 3. Cancelled tasks are preserved and never regenerated from templates.
  */
+export interface AuthorizedFeasibilityFreeze {
+  projectId: string;
+  sheetId: string;
+  revision: number;
+  status: "Approved";
+  action: "freeze";
+  authorizedBy: string;
+  authorizedRole: "admin";
+  authorizationId: string;
+  frozenAt: string;
+}
+
+function hasAuthorizedFeasibilityFreeze(
+  projectId: string,
+  authorization: AuthorizedFeasibilityFreeze | undefined,
+): boolean {
+  return Boolean(
+    authorization &&
+      authorization.projectId === projectId &&
+      typeof authorization.sheetId === "string" &&
+      authorization.sheetId.trim() &&
+      Number.isInteger(authorization.revision) &&
+      authorization.revision > 0 &&
+      authorization.status === "Approved" &&
+      authorization.action === "freeze" &&
+      typeof authorization.authorizedBy === "string" &&
+      authorization.authorizedBy.trim() &&
+      authorization.authorizedRole === "admin" &&
+      typeof authorization.authorizationId === "string" &&
+      authorization.authorizationId.trim() &&
+      typeof authorization.frozenAt === "string" &&
+      Number.isFinite(Date.parse(authorization.frozenAt)),
+  );
+}
+
 export function computeProgressiveStageAndTaskState(params: {
   projectId: string;
   track: ProjectTrack;
@@ -2649,7 +2692,11 @@ export function computeProgressiveStageAndTaskState(params: {
   customStages?: ProjectStageInstance[];
   customTasks?: ProjectTaskInstance[];
   cancelledTaskIds?: string[];
+  omittedStageCodes?: string[];
   enableCertification?: boolean;
+  requireAuthorizedFeasibilityFreeze?: boolean;
+  feasibilityFreezeAuthorization?: AuthorizedFeasibilityFreeze;
+  stageDefinitions?: { code: string; name: string; department: string; phase: string; prerequisites: string[]; tasks: { id: string; title: string; description: string; department: string }[] }[] | undefined;
 }): {
   stages: ProjectStageInstance[];
   activeTasks: ProjectTaskInstance[];
@@ -2664,23 +2711,37 @@ export function computeProgressiveStageAndTaskState(params: {
     customTasks = [],
     cancelledTaskIds = [],
     enableCertification = false,
+    requireAuthorizedFeasibilityFreeze = false,
+    feasibilityFreezeAuthorization,
   } = params;
 
-  const applicableStageTemplates = getApplicableStagesForTrack(track, { enableCertification });
+  const applicableStageTemplates = getApplicableStagesForTrack(track, { enableCertification, ...(params.stageDefinitions ? {stageDefinitions:params.stageDefinitions} : {}) });
+  const freezeRequired =
+    requireAuthorizedFeasibilityFreeze &&
+    !hasAuthorizedFeasibilityFreeze(projectId, feasibilityFreezeAuthorization);
   const completedSet = new Set(completedStageCodes.map((s) => s.toUpperCase()));
   const inProgressSet = new Set(inProgressStageCodes.map((s) => s.toUpperCase()));
   const cancelledTaskSet = new Set(cancelledTaskIds);
+  const omitted = new Set(params.omittedStageCodes ?? []);
 
   const stages: ProjectStageInstance[] = [];
 
   for (const tpl of applicableStageTemplates) {
     const code = tpl.stageCode.toUpperCase();
-    const prereqs = resolveStagePrerequisites(tpl.stageCode, track);
-    const prereqsMet = prereqs.length === 0 || prereqs.every((p) => completedSet.has(p.toUpperCase()));
+    if (omitted.has(code)) continue;
+    const configured = params.stageDefinitions?.find(s => s.code === tpl.stageCode);
+    const prereqs = (configured?.prerequisites ?? resolveStagePrerequisites(tpl.stageCode, track)).filter(p=>!omitted.has(p));
+    const downstreamFreezeBlocked =
+      freezeRequired && code !== "CM_01" && code !== "CM_02";
+    const prereqsMet =
+      !downstreamFreezeBlocked &&
+      (prereqs.length === 0 || prereqs.every((p) => completedSet.has(p.toUpperCase())));
 
     let status: StageProgressionStatus = "planned";
 
-    if (completedSet.has(code)) {
+    if (downstreamFreezeBlocked) {
+      status = "planned";
+    } else if (completedSet.has(code)) {
       status = "completed";
     } else if (inProgressSet.has(code)) {
       // STRICT GATING: A stage cannot legally be in_progress unless its prerequisites are completed
@@ -2701,10 +2762,10 @@ export function computeProgressiveStageAndTaskState(params: {
     stages.push({
       stageCode: tpl.stageCode,
       stageKey: tpl.stageKey,
-      name: tpl.name,
-      phaseCode: tpl.phaseCode,
+      name: configured?.name ?? tpl.name,
+      phaseCode: configured?.phase ?? tpl.phaseCode,
       status,
-      ownerDepartment: tpl.defaultOwner,
+      ownerDepartment: configured?.department ?? tpl.defaultOwner,
       prerequisites: prereqs,
     });
   }
@@ -2722,53 +2783,23 @@ export function computeProgressiveStageAndTaskState(params: {
     const template = applicableStageTemplates.find((t) => t.stageCode === stage.stageCode);
 
     if (template) {
-      // Task 1
-      const t1Id = `${projectId}:${stage.stageCode}:T01`;
-      if (!cancelledTaskSet.has(t1Id)) {
-        const task1: ProjectTaskInstance = {
-          id: t1Id,
-          projectId,
-          stageCode: stage.stageCode,
-          stageKey: stage.stageKey,
-          taskNumber: "T01",
-          title: template.t01.title,
-          description: template.t01.description,
-          department: template.t01.defaultOwner,
-          status: stage.status === "completed" ? "completed" : stage.status === "in_progress" ? "in_progress" : "todo",
-          priority: "Normal",
-          order: 1,
+      const configured = params.stageDefinitions?.find(s => s.code === stage.stageCode);
+      const defaults = configured?.tasks ?? [template.t01, template.t02].map(t => ({
+        id: t.taskNumber, title: t.title, description: t.description, department: t.defaultOwner,
+      }));
+      for (const [index, definition] of defaults.entries()) {
+        const id = `${projectId}:${stage.stageCode}:${definition.id}`;
+        if (cancelledTaskSet.has(id)) continue;
+        const task: ProjectTaskInstance = {
+          id, projectId, stageCode: stage.stageCode, stageKey: stage.stageKey,
+          taskNumber: definition.id, title: definition.title, description: definition.description,
+          department: definition.department,
+          status: stage.status === "completed" ? "completed" : stage.status === "in_progress" && index === 0 ? "in_progress" : "todo",
+          priority: "Normal", order: index + 1,
         };
-        if (isStageActive) {
-          activeTasks.push(task1);
-        } else {
-          plannedTaskPreviews.push(task1);
-        }
-      }
-
-      // Task 2
-      const t2Id = `${projectId}:${stage.stageCode}:T02`;
-      if (!cancelledTaskSet.has(t2Id)) {
-        const task2: ProjectTaskInstance = {
-          id: t2Id,
-          projectId,
-          stageCode: stage.stageCode,
-          stageKey: stage.stageKey,
-          taskNumber: "T02",
-          title: template.t02.title,
-          description: template.t02.description,
-          department: template.t02.defaultOwner,
-          status: stage.status === "completed" ? "completed" : "todo",
-          priority: "Normal",
-          order: 2,
-        };
-        if (isStageActive) {
-          activeTasks.push(task2);
-        } else {
-          plannedTaskPreviews.push(task2);
-        }
+        (isStageActive ? activeTasks : plannedTaskPreviews).push(task);
       }
     }
-
     // Attach custom tasks for this stage
     const stageCustomTasks = customTasks.filter((ct) => ct.stageCode === stage.stageCode);
     for (const ct of stageCustomTasks) {

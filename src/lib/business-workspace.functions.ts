@@ -23,7 +23,7 @@ export type BusinessSnapshot = {
   };
   departments: { id: string; code: string; name: string }[];
   members: { id: string; name: string; role: string; departmentId: string | null }[];
-  projects: { id: string; reference: string; title: string }[];
+  projects: { id: string; reference: string; title: string; currentStage: string | null }[];
   surveyResults: { template_id: string; response_count: number; answers: Json[] | null }[];
   notifications: { itemId: string; kind: string; event: string; at: string }[];
   votes: { message_id: string; choice: number; total: number; my_vote: boolean }[];
@@ -55,7 +55,7 @@ const snapshot = z.object({
       departmentId: z.string().nullable(),
     }),
   ),
-  projects: z.array(z.object({ id: z.string(), reference: z.string(), title: z.string() })),
+  projects: z.array(z.object({ id: z.string(), reference: z.string(), title: z.string(), currentStage: z.string().nullable() })),
   surveyResults: z.array(
     z.object({
       template_id: z.string(),

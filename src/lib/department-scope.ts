@@ -51,9 +51,39 @@ export function approvalScope<T extends { id: string; department?: string | unde
   return defaults ? { ...defaults, ...approval, department: approval.department ?? defaults.department, approverAuthority: approval.approverAuthority ?? defaults.approverAuthority } : approval;
 }
 
-export function projectReferences(record: { reference: string; type: string; fields: Record<string, string> }): string[] {
-  const explicit = [record.fields["projectId"], record.fields["projectCode"]].filter((value): value is string => Boolean(value?.trim())).map(value => value.trim());
-  const links = [record.fields["project"], record.fields["linkedRecords"]].flatMap(value => (value ?? "").split(/[,·]/).map(part => part.trim()).filter(Boolean));
+type ProjectLinkedRecord = {
+  id: string;
+  reference: string;
+  type: string;
+  fields: Record<string, unknown>;
+};
+
+const fieldText = (fields: Record<string, unknown>, key: string) =>
+  typeof fields[key] === "string" ? fields[key].trim() : "";
+
+export function projectReferences(record: ProjectLinkedRecord): string[] {
+  const explicit = ["project_id", "projectId", "project_code", "projectCode", "linkedProjectId", "projectReference"]
+    .map((key) => fieldText(record.fields, key))
+    .filter(Boolean);
+  const links = ["project", "linkedRecords"]
+    .map((key) => fieldText(record.fields, key))
+    .flatMap(value => value.split(/[,·]/).map(part => part.trim()).filter(Boolean));
   if (record.type === "Project") explicit.push(record.reference);
   return [...new Set([...explicit, ...links, ...links.flatMap(value => value.match(/\bHLPL-[A-Z0-9]+-\d+\b/g) ?? [])])];
+}
+
+export function taskProjectId(
+  task: { recordId: string | null; projectId?: string | null },
+  records: ProjectLinkedRecord[],
+): string | null {
+  const projects = records.filter((record) => record.type === "Project");
+  for (const link of [task.projectId, task.recordId]) {
+    if (!link) continue;
+    const directProject = projects.find((project) => project.id === link || project.reference === link);
+    if (directProject) return directProject.id;
+  }
+  const linkedRecord = records.find((record) => record.id === task.recordId);
+  if (!linkedRecord) return null;
+  const references = projectReferences(linkedRecord);
+  return projects.find((project) => references.includes(project.id) || references.includes(project.reference))?.id ?? null;
 }

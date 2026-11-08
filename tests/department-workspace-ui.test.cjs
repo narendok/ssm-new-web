@@ -14,6 +14,7 @@ function loadSource(name) {
 
 const { taskLane } = loadSource('task-board');
 const { businessDate } = loadSource('business-date');
+const { recordStageLabel } = loadSource('lifecycle-record-presentation');
 
 test('taskLane deterministically maps tasks to the four lanes without duplication', () => {
   const completedTask = { status: 'Approved', fields: {} };
@@ -29,6 +30,15 @@ test('taskLane deterministically maps tasks to the four lanes without duplicatio
   assert.equal(taskLane(inProgressTask), 'today');
   assert.equal(taskLane(todayDueTask), 'today');
   assert.equal(taskLane(todoTask), 'todo');
+});
+
+test('register labels canonical phases and explicitly quarantines unmapped legacy stage text', () => {
+  assert.match(recordStageLabel({ hwStage: 'HW_15' }), /^TG_2 · Proof of Concept & Subsystem Bring-Up · HW_15 /);
+  assert.equal(recordStageLabel({ lifecycleStage: 'Stage 7 · Production Release' }), 'Legacy stage label · Stage 7 · Production Release');
+  assert.match(recordStageLabel({ lifecycleStage: 'Stage 3 · Requirement Freeze' }, 'PRS'), /^TG_1 · Concept, Architecture & Interface Freeze · HW_02 Product Requirement Spec \(PRS\) Freeze$/);
+  assert.match(recordStageLabel({ lifecycleStage: 'Schematic' }, 'Schematic'), /^TG_2 · Proof of Concept & Subsystem Bring-Up · HW_15 Full Schematic Capture$/);
+  assert.match(recordStageLabel({ lifecycleStage: 'BOM & layout' }, 'BOM'), /^TG_3 · Detailed Engineering & Prototype Tooling · HW_19 Tentative BOM Release$/);
+  assert.equal(recordStageLabel({}), 'Operational · stage not recorded');
 });
 
 test('DepartmentLeadCoordinationCenter source includes Checklist, Kanban, and Table modes with collapsed completed group', () => {
@@ -49,8 +59,23 @@ test('DepartmentLeadCoordinationCenter source includes Checklist, Kanban, and Ta
   assert.match(coordSource, /hideProjectsAndTeam/, 'hideProjectsAndTeam prop supported for My Tasks isolation');
 });
 
-test('DepartmentProjectWorkspace provides compact header, sub-navigation tabs, and Unified Technical Deliverables board', () => {
+test('record and project labels use saved stage names and phase assignments', () => {
+  const { defaultLifecycleRevision } = loadSource('lifecycle-baseline');
+  const { projectLifecycleContext } = loadSource('lifecycle-record-presentation');
+  const config = defaultLifecycleRevision();
+  const schematic = config.stages.find(stage => stage.code === 'HW_15');
+  schematic.name = 'Configured schematic authoring';
+  schematic.phase = 'TG_4';
+  const fields = { lifecycleBaseline: JSON.stringify(config), currentStage: 'HW_15' };
+  assert.match(recordStageLabel({recordStage:'HW_15'}, 'Schematic', fields), /^TG_4 .*Configured schematic authoring$/);
+  assert.match(projectLifecycleContext(fields).stage, /Configured schematic authoring$/);
+  assert.match(projectLifecycleContext(fields).phase, /^TG_4 /);
+  assert.match(recordStageLabel({recordStage:'HW_15'}, 'Schematic'), /^TG_2 /, 'A saved project configuration does not rewrite unrelated baselines');
+});
+
+test('DepartmentProjectWorkspace combines project records and linked deliverables in one register', () => {
   const workspaceSource = fs.readFileSync(path.resolve(__dirname, '../src/components/DepartmentProjectWorkspace.tsx'), 'utf8');
+  const routeSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
 
   // Verify compact header
   assert.match(workspaceSource, /Lead:\s*<strong className="text-foreground">\{lead\}<\/strong>/, 'Lead displayed in compact context');
@@ -59,15 +84,55 @@ test('DepartmentProjectWorkspace provides compact header, sub-navigation tabs, a
   // Verify sub-navigation tabs
   assert.match(workspaceSource, /activeTab === "overview"/, 'Overview subview present');
   assert.match(workspaceSource, /activeTab === "tasks"/, 'Tasks subview present');
-  assert.match(workspaceSource, /activeTab === "deliverables"/, 'Deliverables subview present');
   assert.match(workspaceSource, /activeTab === "approvals"/, 'Approvals subview present');
   assert.match(workspaceSource, /activeTab === "records"/, 'Records subview present');
   assert.match(workspaceSource, /activeTab === "team"/, 'Team subview present');
 
-  // Verify the selected-project deliverables slice is distinct from the all-project vault.
-  assert.match(workspaceSource, /Project Deliverables & Linked Files/, 'Project deliverables board heading present');
-  assert.match(workspaceSource, /search across all projects you can access/, 'Project board explains the separate all-project vault');
-  assert.match(workspaceSource, /Inspect File/, 'Inspect file action present on deliverables');
+  // Department record and its controlled document are shown together as one row group.
+  assert.match(workspaceSource, /Records & Deliverables \(\{registerRowCount\}\)/, 'One combined project register heading present');
+  assert.match(workspaceSource, /documentsForRecord\(record\)/, 'Linked documents are grouped with their department record');
+  assert.match(workspaceSource, /Conflicting duplicate reference ·/, 'Duplicate controlled references are visibly flagged without deleting source records');
+  assert.match(workspaceSource, /recordStageLabel\(record\.fields,\s*record\.type,\s*project\?\.fields\)/, 'Register resolves the selected project configuration');
+  assert.match(routeSource, /recordStageLabel\(\{ \.\.\.record\.fields, recordStage: String\(value\) \}, record\.type\)/, 'Legacy stored stage fields are presented canonically in record details without rewriting the source');
+  assert.match(workspaceSource, /Open file details/, 'Linked original opens from its record group');
+  assert.match(routeSource, /onCreateDeliverable=\{\(\) => \{[\s\S]*setDocumentUploadRequested\(true\);[\s\S]*setModal\("documents"\)/, 'Project Add document opens the upload dialog directly instead of the template chooser');
+  assert.match(routeSource, /initialProjectId=\{documentUploadProjectId\}/, 'Current project selection is passed to the upload dialog');
+  assert.match(workspaceSource, /standaloneDocuments\.map/, 'Unlinked project documents remain discoverable in the same register');
+  assert.doesNotMatch(workspaceSource, /activeTab === "deliverables"/, 'Duplicate deliverables subview removed');
+});
+
+test('legacy RecordForm keeps PRS editable and assigns a fixed HW stage without inventing a global approval', () => {
+  const routeSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
+  const catalogueSource = fs.readFileSync(path.resolve(__dirname, '../src/lib/record-form-catalogue.ts'), 'utf8');
+  const recordFormSource = routeSource.slice(routeSource.indexOf('function RecordForm('), routeSource.indexOf('function ManagedField('));
+
+  assert.match(recordFormSource, /hardwareStageForRecordType\(type\)/, 'Record type provides its automatic hardware stage');
+  assert.match(recordFormSource, /Project-linked PRS draft/, 'PRS is presented as a project-linked draft');
+  assert.match(recordFormSource, /Operational draft · editable until submitted for review/, 'PRS remains editable and unapproved');
+  assert.doesNotMatch(recordFormSource, /PRS is generated only after an approved Contract Review/, 'PRS creation no longer requires a global unrelated approval');
+  assert.doesNotMatch(recordFormSource, /baseline: "Frozen · automated baseline · changes require PMSS amendment"/, 'Draft creation does not claim a frozen baseline');
+  assert.match(catalogueSource, /PRS: \{ code: "HW_02", label: "HW_02 · Hardware PRS baseline" \}/, 'PRS stage is fixed by the record type catalogue');
+});
+
+test('decision stage choices and browser-local validation use the selected project lifecycle codes', () => {
+  const decisionSource = fs.readFileSync(path.resolve(__dirname, '../src/components/DecisionDeviationLog.tsx'), 'utf8');
+  const routeSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
+
+  assert.match(decisionSource, /lifecycleStages\.some\(\(item\) => item\.code === stage\)/, 'The form accepts its pinned lifecycle stage code');
+  assert.doesNotMatch(decisionSource, /stageOptions\.includes\(stage\)/, 'Legacy chronicle labels no longer reject canonical stage codes');
+  assert.match(routeSource, /const decisionBaseline = readLifecycleBaseline\(decisionProject\?\.fields\["lifecycleBaseline"\]\)/, 'Local save validation loads the selected project baseline');
+  assert.match(routeSource, /\)\.map\(stage => stage\.code\)/, 'Local save validation permits only stages in that project baseline');
+});
+
+test('QA CAPA shortcut preserves its record filter and explains empty filtered registers', () => {
+  const sidebarSource = fs.readFileSync(path.resolve(__dirname, '../src/components/RoleAwareSidebar.tsx'), 'utf8');
+  const routeSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
+  const workspaceSource = fs.readFileSync(path.resolve(__dirname, '../src/components/DepartmentProjectWorkspace.tsx'), 'utf8');
+
+  assert.match(sidebarSource, /onNavigate\("qa", "records"\); onRecordTypeFilterChange\?\.\("8D CAPA"\)/, 'Navigate before applying the CAPA filter that the route must preserve');
+  assert.match(routeSource, /targetView !== "deliverables" && targetView !== "records"/, 'Generic navigation clears filters except on filtered registers');
+  assert.match(workspaceSource, /Filtered to \{props\.recordTypeFilter\}/, 'The active record filter is visible');
+  assert.match(workspaceSource, /No \$\{props\.recordTypeFilter\} records or deliverables are linked/, 'Empty filtered scopes explain what is missing');
 });
 
 test('PurchasingCommandCenter removes duplicate 6-module switcher while retaining canonical subviews and actions', () => {
@@ -83,7 +148,7 @@ test('PurchasingCommandCenter removes duplicate 6-module switcher while retainin
   assert.match(purSource, /\+ Add Quotation/, 'Quotation creation action present for quotations');
 });
 
-test('RoleAwareSidebar avoids duplicate department record navigation and routes DFMEA to project workspace', () => {
+test('RoleAwareSidebar gives EHW one records and deliverables destination', () => {
   const sidebarSource = fs.readFileSync(path.resolve(__dirname, '../src/components/RoleAwareSidebar.tsx'), 'utf8');
 
   // Verify demo walkthrough is in Reference & Training
@@ -95,15 +160,25 @@ test('RoleAwareSidebar avoids duplicate department record navigation and routes 
   assert.ok(deptProjectsSection, 'dept_projects section exists');
   assert.doesNotMatch(deptProjectsSection[1], /dept-lifecycle/, 'dept_projects does not embed demo lifecycle');
 
-  // Verify EHW DFMEA and specs route to full-page deliverables board
-  assert.match(sidebarSource, /id:\s*"ehw-gerber"[\s\S]*?onNavigate\("ehw",\s*"(?:project|deliverables)"\)/, 'EHW DFMEA navigates to deliverables board');
-  assert.match(sidebarSource, /id:\s*"ehw-specs"[\s\S]*?onNavigate\("ehw",\s*"deliverables"\)/, 'EHW Specs navigates to deliverables board');
+  // Type-specific shortcuts all opened the same project-deliverables destination with a preset filter.
+  // Keep one EHW destination; users can browse every type within the project workspace.
+  assert.match(sidebarSource, /id:\s*"ehw-hub"[\s\S]*?label:\s*"Hardware Records & Deliverables"/, 'EHW has one combined records destination');
+  assert.doesNotMatch(sidebarSource, /id:\s*"ehw-(?:specs|schematics|gerber)"/, 'Duplicate EHW type-filter shortcuts are removed');
 
   // Records remain available within the project workspace; don't repeat the same register in the sidebar.
   const workspaceSource = fs.readFileSync(path.resolve(__dirname, '../src/components/DepartmentProjectWorkspace.tsx'), 'utf8');
   assert.doesNotMatch(deptProjectsSection[1], /dept-records|Department Records Register/, 'Duplicate register shortcut removed');
-  assert.match(workspaceSource, /Department Records Register \(\{deptWorkRecords\.length\}\)/, 'Full register remains in the department workspace');
+  assert.match(workspaceSource, /Records & Deliverables \(\{registerRowCount\}\)/, 'Unified register remains in the department workspace');
   assert.match(sidebarSource, /label:\s*"Project Documents & Vault"/, 'Department document library remains a separate destination');
+});
+
+test('collapsed sidebar keeps favorite shortcuts first and lets the remaining department icons scroll', () => {
+  const sidebarSource = fs.readFileSync(path.resolve(__dirname, '../src/components/RoleAwareSidebar.tsx'), 'utf8');
+  assert.match(sidebarSource, /my-3 flex min-h-0 flex-1 flex-col items-center gap-1\.5 overflow-y-auto/, 'Compact rail has a shrinkable, scrollable icon lane');
+  assert.match(sidebarSource, /favoriteItems\.slice\(0, 5\)\.map[\s\S]*?activeWorkGroups\.map/, 'Favorites are listed before remaining department shortcuts');
+  assert.doesNotMatch(sidebarSource, /Favorites Star Indicator/, 'Decorative favorite star no longer consumes a shortcut slot');
+  assert.match(sidebarSource, /onClick=\{item\.onClick\}/, 'Favorite icons remain direct navigation buttons');
+  assert.match(sidebarSource, /onToggleExpanded\(\);\s*setExpandedGroups/, 'Department icons expand directly into their section');
 });
 
 test('Theme styling consistency on select controls and options', () => {

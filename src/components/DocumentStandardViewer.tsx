@@ -204,7 +204,7 @@ export function DocumentStandardViewer({
                   </div>
                 </div>
                 <p className="mt-3 text-[9px] leading-4 text-muted-foreground border-t border-border/40 pt-1.5">
-                  {settings.accreditationMarks || "IATF 16949:2016 Certified · ISO 9001:2015 Registered"}
+                  {settings.accreditationMarks || "TEST sample · standards targets only · certification status unverified"}
                 </p>
               </div>
 
@@ -401,7 +401,7 @@ export function DocumentStandardViewer({
                   Controlled Verification & Sign-off Ledger
                 </h3>
                 <span className="text-[9px] font-mono text-muted-foreground">
-                  IATF 16949 §8.3.4 / 21 CFR Part 11 Audit Trail
+                  Internal draft history · source verification and human review required
                 </span>
               </div>
 

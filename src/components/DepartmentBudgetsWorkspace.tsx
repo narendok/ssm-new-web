@@ -356,7 +356,7 @@ export function DepartmentBudgetsWorkspace({
             Budgets & Expenses
           </h2>
           <p className="text-xs text-muted-foreground">
-            Department budget allocations, operational expense claims, travel advances, and asset requests with two-step commitment and settlement.
+            Department budget allocations, travel and reimbursement claims, and purchase requests routed through Procurement and Finance.
           </p>
         </div>
 
@@ -371,7 +371,7 @@ export function DepartmentBudgetsWorkspace({
             className="h-8 gap-1.5 text-xs bg-primary text-primary-foreground font-semibold"
           >
             <Plus className="w-3.5 h-3.5" />
-            New Expense / Travel Request
+            New Request
           </Button>
           {sharedPresentation?.actions}
         </div>
@@ -447,7 +447,7 @@ export function DepartmentBudgetsWorkspace({
               activeTab === "requests" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            Expense & Travel Requests ({sharedPresentation?.requestCount ?? filteredRequests.length})
+            {sharedPresentation ? "Requests" : "Expense & Travel Requests"} ({sharedPresentation?.requestCount ?? filteredRequests.length})
           </button>
           <button
             onClick={() => setActiveTab("allocations")}

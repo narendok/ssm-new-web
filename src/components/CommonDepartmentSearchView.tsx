@@ -158,6 +158,7 @@ export const DEPARTMENTS_METADATA: DepartmentMeta[] = [
 ];
 
 interface CommonDepartmentSearchViewProps {
+  departments?: DepartmentMeta[];
   currentDepartment: AreaId;
   onSelectDepartment: (deptId: AreaId, viewTab?: string) => void;
   openTaskCounts?: Record<string, number>;
@@ -166,6 +167,7 @@ interface CommonDepartmentSearchViewProps {
 }
 
 export function CommonDepartmentSearchView({
+  departments = DEPARTMENTS_METADATA,
   currentDepartment,
   onSelectDepartment,
   openTaskCounts = {},
@@ -184,7 +186,7 @@ export function CommonDepartmentSearchView({
   ];
 
   const filteredDepartments = useMemo(() => {
-    return DEPARTMENTS_METADATA.filter((dept) => {
+    return departments.filter((dept) => {
       // Category filter
       if (selectedCategory !== "All" && dept.category !== selectedCategory) {
         return false;
@@ -200,7 +202,7 @@ export function CommonDepartmentSearchView({
       }
       return true;
     });
-  }, [searchQuery, selectedCategory]);
+  }, [departments, searchQuery, selectedCategory]);
 
   const totalTasks = Object.values(openTaskCounts).reduce((a, b) => a + b, 0);
   const totalApprovals = Object.values(approvalCounts).reduce((a, b) => a + b, 0);
@@ -221,7 +223,7 @@ export function CommonDepartmentSearchView({
               All Departments Directory & Common Search
             </h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Search and inspect all 12 operational departments across engineering, supply chain, quality, and commercial domains. Select any department to enter its active workspace.
+              Search and inspect {departments.length} configured operational departments across engineering, supply chain, quality, and commercial domains. Select a department to enter its permitted workspace.
             </p>
           </div>
 

@@ -1,3 +1,7 @@
+import { ProjectMasterSpecSheet } from './ProjectMasterSpecSheet';
+import { readLifecycleBaseline, projectLifecycleStages, recordedStageOmissions } from '@/lib/lifecycle-baseline';
+import { ProjectLifecycleConfiguration } from './ProjectLifecycleConfiguration';
+import { getProjectInputs, type InputSnapshot } from '@/lib/project-inputs.functions';
 import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/ResponsiveFilterBar";
 import { SalesEnquiriesAndOpportunities, defaultCustomers, defaultEnquiriesOpportunities } from "./SalesWorkspaceAndCustomerRegister";
 import { Sparkles } from "lucide-react";
@@ -10,6 +14,7 @@ import React, { useState, useEffect } from "react";
 import { DepartmentLeadCoordinationCenter, type TaskRecord, type TeamMember } from "./DepartmentLeadCoordinationCenter";
 import type { ApprovalRecord } from "./ApprovalsFullPageView";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
+import { recordStageLabel } from "@/lib/lifecycle-record-presentation";
 import {
   getRecordedProjectTrack,
   CANONICAL_STAGE_TEMPLATES,
@@ -25,7 +30,6 @@ import {
   Users,
   ShieldCheck,
   ArrowRight,
-  Layers,
   FileSpreadsheet,
   ExternalLink,
   ChevronRight,
@@ -62,10 +66,12 @@ type Props = {
   initialTab?: "overview" | "tasks" | "deliverables" | "approvals" | "records" | "team" | undefined;
   onProjectChange: (value: string) => void;
   onCreateRecord: () => void;
-  onOpenInputs?: (() => void) | undefined;
+  onOpenAssetCatalog?: (()=>void) | undefined;
+  onOpenInputs?: ((sourceId?:string) => void) | undefined;
   onCreateDeliverable?: (() => void) | undefined;
   onCreateProject?: (() => void) | undefined;
   onOpenRecord: (id: string) => void;
+  onOpenApprovals?: (()=>void) | undefined;
   onOpenDocument: (id: string) => void;
   onUpdateTask: (id: string, patch: Partial<TaskRecord>, action: string) => void;
   onCreateTask: (task: {
@@ -83,6 +89,8 @@ type Props = {
 export function DepartmentProjectWorkspace(props: Props) {
   const { departmentCode, departmentName, lead, projects, projectScope } = props;
   const loadSharedWorkspace = useServerFn(getSharedTestWorkspace);
+  const loadInputSheets=useServerFn(getProjectInputs);
+  const inputSheets=useQuery({queryKey:['project-inputs',props.sharedTestMembership?.organizationId,props.sharedTestMembership?.membershipId],queryFn:()=>loadInputSheets(),enabled:Boolean(props.sharedTestMembership)});
   const sharedWorkspace = useQuery({
     queryKey: ["shared-test-workspace", props.sharedTestMembership?.organizationId, props.sharedTestMembership?.membershipId],
     queryFn: () => loadSharedWorkspace(),
@@ -103,15 +111,18 @@ export function DepartmentProjectWorkspace(props: Props) {
   ];
   const isSalesDept = departmentCode.toUpperCase() === "SAL";
   const [activeTab, setActiveTab] = useState<"overview" | "tasks" | "deliverables" | "approvals" | "records" | "team" | "sales-pipeline">(
-    props.initialTab ?? (isSalesDept ? "sales-pipeline" : "overview")
+    props.initialTab === "deliverables" ? "records" : props.initialTab ?? (isSalesDept ? "sales-pipeline" : "overview")
   );
 
   useEffect(() => {
     if (props.initialTab) {
-      setActiveTab(props.initialTab);
+      setActiveTab(props.initialTab === "deliverables" ? "records" : props.initialTab);
     }
   }, [props.initialTab]);
-  const [recordSearch, setRecordSearch] = useState("");
+  const [recordSearch, setRecordSearch] = useState(props.recordTypeFilter ?? "");
+  useEffect(() => {
+    setRecordSearch(props.recordTypeFilter ?? "");
+  }, [props.recordTypeFilter]);
   const [advanceModalOpen, setAdvanceModalOpen] = useState(false);
   const [selectedTargetStage, setSelectedTargetStage] = useState("");
   const [advanceNotes, setAdvanceNotes] = useState("");
@@ -120,6 +131,12 @@ export function DepartmentProjectWorkspace(props: Props) {
   const [advanceNotice, setAdvanceNotice] = useState("");
 
   const project = projects.find((item) => item.reference === projectScope || item.id === projectScope);
+  const openProjectInputs=()=>props.onOpenInputs?.(project?.fields['sourceOpportunityId'] || project?.id);
+  let inputSnapshot:InputSnapshot|undefined=inputSheets.data;
+  if(!props.sharedTestMembership && typeof window!=='undefined'){
+    try{const saved=JSON.parse(localStorage.getItem('ssm:demo-project-input-sheets:v1')||'null') as InputSnapshot|null;if(saved&&Array.isArray(saved.sheets)&&Array.isArray(saved.events))inputSnapshot=saved;}catch{/* Absent local draft data stays absent. */}
+  }
+  const inputSheet=inputSnapshot?.sheets.filter(s=>[project?.id,project?.fields['sourceOpportunityId']].includes(s.project_record_id||'') || [project?.id,project?.fields['sourceOpportunityId']].includes(s.source_record_id)).sort((a,b)=>b.revision-a.revision)[0];
   const track = getRecordedProjectTrack(project?.fields);
 
 
@@ -144,16 +161,19 @@ export function DepartmentProjectWorkspace(props: Props) {
   }, [project]);
 
   const eligibleStages = React.useMemo(() => {
-    if (!project || !track || !CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === currentStageCode)) return [];
+    if (!project || !track || !(readLifecycleBaseline(project.fields['lifecycleBaseline'])?.stages.some(stage=>stage.code===currentStageCode) || CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === currentStageCode))) return [];
     const effectiveCompleted = completedStageCodes;
     const progressiveState = computeProgressiveStageAndTaskState({
       projectId: project.id,
       track,
+      stageDefinitions: readLifecycleBaseline(project.fields['lifecycleBaseline']) ? projectLifecycleStages(readLifecycleBaseline(project.fields['lifecycleBaseline'])!, track,project.fields['certificationRequired']==='true') : undefined,
+      enableCertification:project.fields['certificationRequired']==='true',
+      omittedStageCodes:Object.keys(recordedStageOmissions(project.fields['omittedStages'])),
       completedStageCodes: effectiveCompleted,
       inProgressStageCodes: [currentStageCode].filter(Boolean),
     });
     return progressiveState.stages.filter(
-      (stg) => stg.status === "ready"
+      (stg) => stg.status === "ready" && (stg.stageCode!=='CL_01'||!readLifecycleBaseline(project.fields['lifecycleBaseline'])||['true','false'].includes(project.fields['certificationRequired']||''))
     );
   }, [project, track, completedStageCodes, currentStageCode]);
   const all = projectScope === "all";
@@ -175,11 +195,30 @@ export function DepartmentProjectWorkspace(props: Props) {
   const team = all ? props.team : props.team.filter((member) => owners.has(member.name));
   const shownProjects = all ? projects : project ? [project] : [];
 
-  const filteredDeptRecords = deptWorkRecords.filter((rec) => {
-    if (!recordSearch.trim()) return true;
-    const q = recordSearch.toLowerCase();
-    return rec.title.toLowerCase().includes(q) || rec.reference.toLowerCase().includes(q) || (rec.type || "").toLowerCase().includes(q);
-  });
+  const normalizedRecordSearch = recordSearch.trim().toLowerCase();
+  const documentsForRecord = (record: TaskRecord) =>
+    documents.filter((document) =>
+      document.linkedRecordRefs?.some((reference) => reference === record.id || reference === record.reference)
+    );
+  const recordMatchesSearch = (record: TaskRecord) => {
+    if (!normalizedRecordSearch) return true;
+    const linkedDocuments = documentsForRecord(record);
+    return [record.title, record.reference, record.type, record.fields["lifecycleStage"], ...Object.values(record.fields)]
+      .some((value) => String(value || "").toLowerCase().includes(normalizedRecordSearch)) ||
+      linkedDocuments.some((document) => `${document.title} ${document.type}`.toLowerCase().includes(normalizedRecordSearch));
+  };
+  const filteredDeptRecords = deptWorkRecords.filter(recordMatchesSearch);
+  const duplicateReferenceCounts = new Map<string, number>();
+  for (const record of filteredDeptRecords) {
+    const reference = record.reference.trim().toUpperCase();
+    duplicateReferenceCounts.set(reference, (duplicateReferenceCounts.get(reference) ?? 0) + 1);
+  }
+  const standaloneDocuments = documents.filter((document) =>
+    !deptWorkRecords.some((record) =>
+      document.linkedRecordRefs?.some((reference) => reference === record.id || reference === record.reference)
+    ) && (!normalizedRecordSearch || `${document.title} ${document.type} ${document.id}`.toLowerCase().includes(normalizedRecordSearch))
+  );
+  const registerRowCount = filteredDeptRecords.length + standaloneDocuments.length;
 
   return (
     <main className="space-y-4" aria-label="Department project workspace">
@@ -206,7 +245,7 @@ export function DepartmentProjectWorkspace(props: Props) {
             {props.onCreateProject && <button type="button" onClick={props.onCreateProject} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold">New Project</button>}
             <button
               type="button"
-              onClick={props.onOpenInputs}
+              onClick={openProjectInputs}
               disabled={!props.onOpenInputs}
               className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-xs hover:bg-primary/20 transition-colors cursor-pointer"
               title="Open project inputs and feasibility; the input coordinator can import requirements there"
@@ -222,6 +261,7 @@ export function DepartmentProjectWorkspace(props: Props) {
               <Plus className="size-3.5" />
               <span>Add Record</span>
             </button>
+            {props.onOpenAssetCatalog && <button type="button" onClick={props.onOpenAssetCatalog} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold">Reusable assets</button>}
           </div>
         </div>
 
@@ -232,6 +272,8 @@ export function DepartmentProjectWorkspace(props: Props) {
         )}
       </header>
 
+      {project && <ProjectMasterSpecSheet project={project} records={records} documents={documents} inputSheet={inputSheet} inputEvents={inputSnapshot?.events.filter(e=>e.sheet_id===inputSheet?.id)} onOpenStageRecords={code=>{setActiveTab("records");setRecordSearch(code);}} onOpenInputs={openProjectInputs} onOpenRecord={props.onOpenRecord} onOpenDocument={props.onOpenDocument} canViewCommercial={["FIN","PUR"].includes(departmentCode.toUpperCase())}/>}
+      {project && props.sharedTestMembership && <ProjectLifecycleConfiguration key={project.id} projectId={project.id} scopeKey={props.sharedTestMembership.membershipId} isAdmin={props.sharedTestMembership.role==='admin'} canManageCertification={props.sharedTestMembership.role==='admin'||(props.sharedTestMembership.role==='department_lead'&&props.sharedTestMembership.departmentCode==='QA')}/>}
       {/* 2. Compact Project Overview Banner (if a specific project is selected) */}
       {project && (
         <section aria-label="Selected project overview" className="rounded-xl border border-border/80 bg-card p-3.5 shadow-xs">
@@ -316,9 +358,8 @@ export function DepartmentProjectWorkspace(props: Props) {
           ...(isSalesDept ? [{ key: "sales-pipeline", label: "Opportunities & Enquiries", icon: Sparkles }] : []),
           { key: "overview", label: "Overview", icon: LayoutDashboard },
           { key: "tasks", label: `Tasks (${taskRecords.length})`, icon: CheckSquare },
-          { key: "deliverables", label: `Project Deliverables (${documents.length})`, icon: FileSpreadsheet },
+          { key: "records", label: `Records & Deliverables (${registerRowCount})`, icon: FileSpreadsheet },
           { key: "approvals", label: `Approvals (${approvals.length})`, icon: ShieldCheck },
-          { key: "records", label: `Department Records (${deptWorkRecords.length})`, icon: Layers },
           { key: "team", label: `Team & Capacity (${team.length})`, icon: Users },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -430,7 +471,7 @@ export function DepartmentProjectWorkspace(props: Props) {
                   Project Deliverables ({documents.length})
                 </h3>
                 <button
-                  onClick={() => setActiveTab("deliverables")}
+                  onClick={() => setActiveTab("records")}
                   className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   View all in Board <ArrowRight className="size-3" />
@@ -529,92 +570,93 @@ export function DepartmentProjectWorkspace(props: Props) {
         </section>
       )}
 
-      {/* SUBVIEW 3: UNIFIED TECHNICAL DELIVERABLES & LIFECYCLE BOARD */}
-      {activeTab === "deliverables" && (
-        <section aria-label="Unified technical deliverables board" className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
-          {props.recordTypeFilter && <div className="flex items-center justify-between text-xs"><span>Document view: {props.recordTypeFilter === "SCHEMATIC" ? "Schematics & BOM" : props.recordTypeFilter === "DFMEA" ? "DFMEA & Gerber" : "Requirements / PRS"}</span><button type="button" onClick={props.onClearRecordTypeFilter} className="text-primary hover:underline">Show all document types</button></div>}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-3">
+      {/* SUBVIEW 3: ONE PROJECT-SCOPED RECORDS & DELIVERABLES REGISTER */}
+      {activeTab === "records" && (
+        <section aria-label="Records and deliverables register" className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
             <div>
               <h2 className="text-base font-bold text-foreground flex items-center gap-2">
                 <FileSpreadsheet className="size-4 text-primary" />
-                Project Deliverables & Linked Files
+                Records & Deliverables ({registerRowCount})
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Authorized files and deliverable records for the selected project. Open Project Documents & Vault to search across all projects you can access.
+                One project-scoped list. A department record and its linked original file appear together; approvals remain in Approvals.
               </p>
             </div>
-            <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2.5 py-1 rounded">
-              {documents.length} Authorized Documents
-            </span>
-            {props.onCreateDeliverable && <button type="button" onClick={props.onCreateDeliverable} className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"><Plus className="size-3.5"/>Add Deliverable</button>}
+            {props.onCreateDeliverable && <button type="button" onClick={props.onCreateDeliverable} className="flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"><Plus className="size-3.5"/>Add document</button>}
+            <div className="relative min-w-56">
+              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search records and files..."
+                value={recordSearch}
+                onChange={(e) => setRecordSearch(e.target.value)}
+                className="h-8 w-full rounded-lg border border-border bg-background pl-8 pr-3 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
           </div>
 
-          <div className="space-y-3">
-            {documents.length === 0 ? (
-              <div className="py-8 text-center text-xs text-muted-foreground">
-                No authorized deliverables or documents recorded for {projectScope}.
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="border-b border-border bg-muted/40 font-mono uppercase tracking-wider text-muted-foreground text-[10px]">
-                    <tr>
-                      <th className="px-4 py-3">Deliverable & Title</th>
-                      <th className="px-3 py-3">Category</th>
-                      <th className="px-3 py-3">Revision</th>
-                      <th className="px-3 py-3">Lifecycle State</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/60">
-                    {documents.map((doc) => (
-                      <tr key={doc.id} className="transition-colors hover:bg-muted/30">
-                        <td className="px-4 py-3">
-                          <span className="font-mono text-[10px] font-bold text-primary block">
-                            {doc.id}
-                          </span>
-                          <strong className="text-xs text-foreground block mt-0.5">
-                            {doc.title}
-                          </strong>
-                        </td>
-                        <td className="px-3 py-3">
-                          <span className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] text-secondary-foreground font-semibold">
-                            {doc.type}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 font-mono text-[11px] font-semibold text-foreground">
-                          {doc.revision && doc.revision !== "Not recorded" ? `Rev ${doc.revision}` : "Not recorded"}
-                        </td>
-                        <td className="px-3 py-3">
-                          <span
-                            className={`rounded border px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${
-                              doc.lifecycle === "Approved" || doc.lifecycle === "Released"
-                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                : doc.lifecycle === "In review"
-                                ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                : "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                            }`}
-                          >
-                            {doc.lifecycle || "Draft"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => props.onOpenDocument(doc.id)}
-                            className="inline-flex items-center gap-1 rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-secondary/80 transition-colors cursor-pointer"
-                          >
-                            <span>Inspect File</span>
-                            <ExternalLink className="size-3 text-muted-foreground" />
-                          </button>
-                        </td>
-                      </tr>
+          {props.recordTypeFilter && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+              <span className="font-medium text-foreground">Filtered to {props.recordTypeFilter}</span>
+              <button
+                type="button"
+                onClick={() => { setRecordSearch(""); props.onClearRecordTypeFilter?.(); }}
+                className="rounded-md border border-border bg-background px-2.5 py-1 font-semibold text-foreground hover:bg-secondary"
+              >
+                Show all records
+              </button>
+            </div>
+          )}
+
+          {registerRowCount === 0 ? (
+            <div role="status" className="py-8 text-center text-xs text-muted-foreground">
+              {props.recordTypeFilter
+                ? `No ${props.recordTypeFilter} records or deliverables are linked in this project scope yet.`
+                : "No records or deliverables match this project and search."}
+            </div>
+          ) : (
+            <div className="divide-y divide-border/60">
+              {filteredDeptRecords.map((record) => {
+                const linkedDocuments = documentsForRecord(record);
+                return (
+                  <article key={record.id} className="space-y-2 py-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <button type="button" onClick={() => props.onOpenRecord(record.id)} className="min-w-0 text-left hover:underline">
+                        <span className="font-mono text-[10px] font-bold text-primary">{record.reference}</span>
+                        <strong className="block text-xs font-semibold text-foreground mt-0.5">{record.title}</strong>
+                        <span className="text-[11px] text-muted-foreground">{record.type} · {recordStageLabel(record.fields, record.type, project?.fields)}</span>
+                        {(duplicateReferenceCounts.get(record.reference.trim().toUpperCase()) ?? 0) > 1 && <span role="status" className="mt-1 inline-flex rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300">Conflicting duplicate reference · {duplicateReferenceCounts.get(record.reference.trim().toUpperCase())} records retained</span>}
+                      </button>
+                      <span className="self-start rounded border border-border bg-muted/30 px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">{record.status}</span>
+                    </div>
+                    {linkedDocuments.map((document) => (
+                      <div key={document.id} className="ml-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 sm:ml-6">
+                        <div className="min-w-0">
+                          <strong className="block truncate text-xs font-medium">{document.title}</strong>
+                          <span className="text-[11px] text-muted-foreground">{document.type} · {document.revision && document.revision !== "Not recorded" ? `Rev ${document.revision}` : "Revision not recorded"} · {document.lifecycle || "Draft"}</span>
+                        </div>
+                        <button type="button" onClick={() => props.onOpenDocument(document.id)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-secondary/80">
+                          Open file details <ExternalLink className="size-3 text-muted-foreground" />
+                        </button>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                  </article>
+                );
+              })}
+              {standaloneDocuments.map((document) => (
+                <article key={document.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <strong className="block truncate text-xs font-semibold text-foreground">{document.title}</strong>
+                    <span className="text-[11px] text-muted-foreground">{document.type} · {document.revision && document.revision !== "Not recorded" ? `Rev ${document.revision}` : "Revision not recorded"} · {document.lifecycle || "Draft"}</span>
+                  </div>
+                  <button type="button" onClick={() => props.onOpenDocument(document.id)} className="inline-flex shrink-0 items-center gap-1 self-start rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-secondary/80 sm:self-auto">
+                    Open file details <ExternalLink className="size-3 text-muted-foreground" />
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -648,9 +690,10 @@ export function DepartmentProjectWorkspace(props: Props) {
                     <div>
                       <strong className="text-xs font-semibold text-foreground block">{approval.title}</strong>
                       <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Outcome: <span className="font-semibold text-foreground">{approval.outcome}</span> · Authority: {approval.approverAuthority || "Not assigned"}
+                        Outcome: <span className="font-semibold text-foreground">{approval.outcome}</span> · Authority: {approval.approverAuthority || approval.department || "Not assigned"}
                       </p>
                     </div>
+                    {props.onOpenApprovals && <button type="button" onClick={props.onOpenApprovals} className="text-xs text-primary font-semibold hover:underline">Open approval review →</button>}
                     {sourceIds.has(approval.recordId) && (
                       <button
                         type="button"
@@ -661,62 +704,6 @@ export function DepartmentProjectWorkspace(props: Props) {
                       </button>
                     )}
                   </article>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {/* SUBVIEW 5: DEPARTMENT RECORDS REGISTER */}
-      {activeTab === "records" && (
-        <section aria-label="Department records full register" className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/60 pb-3">
-            <div>
-              <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-                <Layers className="size-4 text-primary" />
-                Department Records Register ({deptWorkRecords.length})
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Full-page column view of non-task operational records, technical trackers, and governed documents.
-              </p>
-            </div>
-
-            <div className="relative min-w-56">
-              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search records..."
-                value={recordSearch}
-                onChange={(e) => setRecordSearch(e.target.value)}
-                className="h-8 w-full rounded-lg border border-border bg-background pl-8 pr-3 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {filteredDeptRecords.length === 0 ? (
-              <div className="py-8 text-center text-xs text-muted-foreground">
-                No department records match the active search.
-              </div>
-            ) : (
-              <div className="divide-y divide-border/60">
-                {filteredDeptRecords.map((record) => (
-                  <button
-                    key={record.id}
-                    type="button"
-                    onClick={() => props.onOpenRecord(record.id)}
-                    className="flex w-full items-center justify-between py-3 text-left hover:bg-secondary/40 px-2 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <div>
-                      <span className="font-mono text-[10px] font-bold text-primary">{record.reference}</span>
-                      <strong className="block text-xs font-semibold text-foreground mt-0.5">{record.title}</strong>
-                      <span className="text-[11px] text-muted-foreground">{record.type} · {record.fields["lifecycleStage"] || "Operational"}</span>
-                    </div>
-                    <span className="rounded border border-border bg-muted/30 px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">
-                      {record.status}
-                    </span>
-                  </button>
                 ))}
               </div>
             )}

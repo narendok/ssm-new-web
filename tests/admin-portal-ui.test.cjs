@@ -10,11 +10,8 @@ test('Admin Portal UI: PersonaSwitcher provides clean department access dropdown
   assert.match(indexSource, /aria-label="Select department access"/, 'Department access dropdown exists in PersonaSwitcher');
   assert.match(indexSource, /Department:/, 'Department label shown in PersonaSwitcher');
 
-  // Verify canonical departments are in the dropdown
-  assert.match(indexSource, /value="ehw"[^>]*>EHW · Embedded Hardware/, 'EHW option present');
-  assert.match(indexSource, /value="pur"[^>]*>PUR · Purchasing & SCM/, 'PUR option present');
-  assert.match(indexSource, /value="qa"[^>]*>QA · Quality Assurance/, 'QA option present');
-  assert.match(indexSource, /value="sales"[^>]*>SAL · Sales & Business Development/, 'SAL option present');
+  assert.match(indexSource, /departments=\{configuredDepartments\}/, 'Department selector receives the organization master');
+  assert.match(indexSource, /DEPARTMENT_MODULES\[code\]/, 'Configured department names retain stable workflow identities');
 
   // Verify Main Admin badge with Switch Login option and Search All button
   assert.match(indexSource, /MAIN ADMIN/, 'MAIN ADMIN badge present');

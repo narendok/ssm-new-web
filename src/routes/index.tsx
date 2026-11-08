@@ -1,4 +1,17 @@
-import { formSpecs, recordFormSpec } from "@/lib/record-form-catalogue";
+import { configuredTicketGroups } from '@/lib/department-ticket-groups';
+import { ProjectMasterSpecSheet } from '@/components/ProjectMasterSpecSheet';
+import { CANONICAL_STAGE_TEMPLATES, computeProgressiveStageAndTaskState, getRecordedProjectTrack } from '@/lib/canonical-lifecycle';
+import { SharedLifecycleWorkspace } from '@/components/SharedLifecycleWorkspace';
+import { ReusableAssetsWorkspace } from '@/components/ReusableAssetsWorkspace';
+import { linkReusableAsset, type ReusableAssetRevision, type ProjectAssetUse } from '@/lib/reusable-assets';
+import { LifecycleSettingsEditor } from '@/components/LifecycleSettingsEditor';
+import { SharedDepartmentConfiguration } from '@/components/SharedDepartmentConfiguration';
+import { SharedOrganizationDepartments, SharedCompanyDirectory } from '@/components/SharedOrganizationDirectory';
+import { useOrganizationConfiguration, DEPARTMENT_MODULES } from '@/lib/organization-configuration';
+import { defaultLifecycleRevision, pinLifecycleRevision, readLifecycleBaseline, projectLifecycleStages, type LifecycleRevision } from '@/lib/lifecycle-baseline';
+import { formSpecs, recordFields, recordFormSpec, hardwareStageForRecordType, hardwareAttachmentForRecordType, recordAttachmentAllowedAtStage } from "@/lib/record-form-catalogue";
+import { reconcileDemoProjectLifecycle } from "@/lib/demo-project-lifecycle";
+import { projectLifecycleContext, recordStageLabel } from "@/lib/lifecycle-record-presentation";
 import { SharedBusinessWorkspace } from "@/components/SharedBusinessWorkspace";
 import { SharedDecisionLog } from "@/components/SharedDecisionLog";
 import { SharedProjectAnalysis } from "@/components/SharedProjectAnalysis";
@@ -27,7 +40,8 @@ import { SharedTestWorkspace } from "@/components/SharedTestWorkspace";
 import { evolveResponsibilityConfiguration, resolveProjectChronicles, type ResponsibilityVersion } from "@/lib/responsibility-version";
 import { DepartmentProjectWorkspace } from "@/components/DepartmentProjectWorkspace";
 import { businessDate } from "@/lib/business-date";
-import { feasibilityIntakeContext, linkIntakeProject, isPreProjectIntake, suggestIntakeReference, salesEnquiryFromRecord, validateIntakeProject } from "@/lib/portal-intake";
+import { feasibilityIntakeContext, linkIntakeProject, isPreProjectIntake, suggestIntakeReference, salesEnquiryFromRecord, reconcileSalesEnquiries, validateIntakeProject } from "@/lib/portal-intake";
+import { mergeDemoDepartmentCommonDocuments } from "@/lib/demo-common-documents";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -128,7 +142,7 @@ import { getLocalAttachment, migrateLegacyAttachment, removeLocalAttachment, sav
 import { migratePortalState, repairDemoState } from "@/lib/portal-hydration";
 import { approvalInDepartment, approvalScope, canDepartmentSign, departmentCode, projectReferences } from "@/lib/department-scope";
 import { ApprovalsFullPageView, type ApprovalRecord } from "@/components/ApprovalsFullPageView";
-import { CommonDepartmentSearchView } from "@/components/CommonDepartmentSearchView";
+import { CommonDepartmentSearchView, DEPARTMENTS_METADATA } from "@/components/CommonDepartmentSearchView";
 import { DepartmentLeadCoordinationCenter } from "@/components/DepartmentLeadCoordinationCenter";
 import {
   LiveInventoryWorkspace,
@@ -233,6 +247,7 @@ type RecordItem = {
   archived?: boolean;
 };
 type Department = {
+  workspaceDepartmentId?: string | null;
   id: string;
   name: string;
   code: string;
@@ -245,6 +260,7 @@ type Department = {
   isDemo?: boolean;
 };
 type DepartmentSettings = {
+  ticketGroups?: ("service" | "it")[];
   activityTypes: string[];
   statuses: string[];
   priorities: string[];
@@ -327,6 +343,7 @@ type ControlledDocument = {
   history?: string[] | undefined;
   cloudDocumentId?: string | undefined;
   projectId?: string | undefined;
+  projectStage?: string | undefined;
   uploadType?: UploadType | undefined;
   uploadScope?: UploadScope | undefined;
   sourcePackage?: SourcePackage | undefined;
@@ -472,7 +489,7 @@ const personas: Persona[] = [
   { id: "fin", label: "FIN Lead", person: "Priya Voss · Finance & Accounts", departmentId: "fin", kind: "lead" },
   { id: "sit", label: "SIT Lead", person: "Kai Morgan · Service & IT", departmentId: "sit", kind: "lead" },
   { id: "hrops", label: "HR Lead", person: "Taylor Quinn · HR & Operations", departmentId: "hrops", kind: "lead" },
-  { id: "client", label: "Client Portal", person: "Rohan Verma · Tata Motors Fleet Manager", kind: "client" },
+  { id: "client", label: "Client Portal", person: "Casey Example · Northstar test contact", kind: "client" },
 ];
 
 const VALID_PERSONA_IDS = new Set([
@@ -512,23 +529,23 @@ export function normalizePersonaId(role: string | null | undefined): string {
 }
 
 const ai4tStages = [
-  ["Stage 1", "Client & Sales Intake", "SOR HLPL-AI4T-SAL-SOR-01 and Mutual NDA HLPL-AI4T-SAL-mNDA-01 are recorded."],
-  ["Stage 2", "Feasibility & Contract Review", "EHW, FW, SW, MECH, PUR, QA and FIN feasibility requirement sheets compile Contract Review HLPL/F/MKT/01."],
-  ["Stage 3", "Requirement Freeze & Commercial Lock", "Governed by HR/Operations & Sales: HR-OPS Competency & Safety Freeze (HLPL-AI4T-HROPS-CRS-01), Commercial Quotation (HLPL-AI4T-SAL-QUO-01), and domain specifications baseline are locked."],
-  ["Stage 4", "Design & Development PoC", "SCH-01, preliminary BOM, MCU RTOS bring-up (FW) and CAN/telematics software stack (SW) are checked."],
-  ["Stage 5", "Pilot Build & Manufacturing Readiness", "Accepted outsourced PCBA lots, EMF-CP-01, box-build checks and mechanical fitment evidence are reviewed."],
-  ["Stage 6", "DVP&R Pre-Compliance", "QA-DVP-01 records 18 illustrative electrical and environmental verification checks."],
-  ["Stage 7", "Production Release & PPAP", "Gerber Rev B, EHW-DFMEA-01 and supplier PPAP Level 3 package are released."],
-  ["Stage 8", "Type Approval & Production Authorization", "Illustrative TAC evidence and the 50,000-unit authorization are human-reviewed."],
-  ["Stage 9", "PDI, Field Mounting & Commercial Invoice", "TST-PDI-01, SIT Service Field Installation & Vehicle Mounting Checklist (HLPL-OBD4-SIT-MNT-01), and FIN-INV-01 complete the full deployment cycle."],
+  ["Stage 1", "Enquiry & scope intake", "Fictional SOR and mutual NDA checklist are drafts; no customer agreement is represented."],
+  ["Stage 2", "Cross-department feasibility", "EHW, FW, SW, MECH, PUR, QA and FIN capture open assumptions and indicative estimates."],
+  ["Stage 3", "Requirements baseline proposal", "A reviewable baseline is prepared; requirement freeze and commercial commitment remain pending."],
+  ["Stage 4", "Design & development PoC", "Schematic, preliminary BOM, firmware bring-up and software interfaces are work-in-progress items."],
+  ["Stage 5", "Prototype build readiness", "Prototype routing, build instructions and mechanical fitment checks are planned; no production authorization."],
+  ["Stage 6", "QA verification planning", "DVP&R scenarios and evidence checklist are in review; test results are not asserted."],
+  ["Stage 7", "Design and sourcing review", "Gerber, DFMEA and supplier evidence are candidate deliverables; no production release."],
+  ["Stage 8", "Certification readiness planning", "External certification is not submitted or issued; any gate remains subject to authorized review."],
+  ["Stage 9", "Prototype validation & service feedback", "Inspection, field-installation feedback and budget workflows are sample scenarios, not deployment or billing."],
 ] as const;
 const raciDepartments = ["SAL", "EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF", "FIN", "SIT", "HR"] as const;
 const projectDocumentProfiles: Record<string, ProjectDocumentProfile> = {
-  "HLPL-OBD4-01": { name: "4G OBD-II Smart Telematics Tracker & Fleet Gateway", customer: "Ashok Leyland Limited · Fleet Solutions Division, Chennai", contact: "Mr. K. Ramanathan · General Manager Telematics", quantity: "25,000 units / year", techSpec: "4G Cat-1 · J1962 OBD-II · Dual CAN · GNSS · BLE 5.2 Sensor Hub", commercialValue: "₹11,25,00,000 · $1.35M", environmental: "12V / 24V (9V–36V) · −40°C to +85°C · IP54 / IP67 Mated", compliance: "AIS-140 · AEC-Q100 · ISO 7637-2 · ISO 15031 / SAE J1962 · RoHS" },
-  "HLPL-AI4T-01": { name: "Tata Ace EV 4G Telematics Gateway", customer: "Tata Motors Limited · EV Fleet Division, Pune", contact: "Mr. Rajesh Sharma · Lead D&D EV", quantity: "50,000 units / year", techSpec: "4G Cat-1 · IP67 · CAN J1939 · Dual SIM · GNSS", commercialValue: "₹20,33,50,000 · $2.45M", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AIS-140 · AEC-Q100/Q200 · ISO 7637-2 · RoHS / REACH" },
-  "HLPL-BCU-02": { name: "Ashok Leyland Telematics & BLE Sensor Gateway (OEM Modification)", customer: "Ashok Leyland Limited · Commercial Vehicle Telematics, Chennai", contact: "Mr. K. Ramanathan · General Manager Telematics", quantity: "15,000 units / year", techSpec: "4G Cat-1 · Dual CAN J1939 · BLE 5.2 Nordic nRF52840 · 3.7V NABL Li-ion Battery · iCAT TAC", commercialValue: "₹6,72,00,000 · $810k", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AIS-140 Annexure 8 · ETSI EN 300 328 · IS 16046 / UN 38.3 · ISO 7637-2" },
-  "HLPL-SLCT-01": { name: "Select Motors AIS-140 GPS Telematics Tracker (Reusable Platform)", customer: "Select Motors Limited · Telematics Division, Noida", contact: "Mr. Vikram Singhania · Lead Telematics", quantity: "10,000 units / year", techSpec: "100% Platform Reused PCB · 4G Cat-1 · OBD-II · 3.7V Li-ion Battery · IP67", commercialValue: "₹3,45,00,000 · $415k", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AIS-140 · AEC-Q100 · ISO 7637-2 · RoHS" },
-  "HLPL-SW-01": { name: "Commercial Fleet Telematics & Driver Analytics Cloud Platform", customer: "Commercial Fleet Solutions Ltd · Enterprise Cloud Services", contact: "Mr. Ananya Rao · VP Cloud Engineering", quantity: "25,000 vehicles / year SaaS", techSpec: "Microservices · Kafka Streaming · REST/GraphQL APIs · Mobile Driver App", commercialValue: "₹2,55,00,000 / year ($310k ARR)", environmental: "Cloud Hosted (AWS / GCP Multi-AZ) · 99.9% SLA", compliance: "ISO 27001 · SOC 2 Type II · GDPR / DPDP Act 2023" },
+  "HLPL-OBD4-01": { name: "4G OBD-II Fleet Gateway · Prototype", customer: "Meridian Fleet Devices (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative annual volume · under review", techSpec: "4G Cat-1 · J1962 OBD-II · Dual CAN · GNSS · BLE sensor hub · proposed only", commercialValue: "Budget estimate pending", environmental: "12V / 24V · environmental limits to be confirmed", compliance: "Target standards require review; no certification claimed" },
+  "HLPL-AI4T-01": { name: "Northstar Cargo EV Gateway · Engineering Pilot", customer: "Northstar Mobility Systems (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative pilot volume · under review", techSpec: "4G Cat-1 · CAN · GNSS · proposed only", commercialValue: "Budget estimate pending", environmental: "12V / 24V · environmental limits to be confirmed", compliance: "Target standards require review; no certification claimed" },
+  "HLPL-BCU-02": { name: "Meridian Fleet Gateway · HW+FW PoC", customer: "Meridian Fleet Devices (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative PoC quantity · under review", techSpec: "Dual CAN · BLE sensor hub · cellular modem · proposed only", commercialValue: "Budget estimate pending", environmental: "Environmental limits to be confirmed", compliance: "Target standards require review; no certification claimed" },
+  "HLPL-SLCT-01": { name: "Northstar Fleet Tracker · HW+FW+SW Pilot", customer: "Northstar Mobility Systems (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative pilot quantity · under review", techSpec: "4G · GNSS · CAN · cloud telemetry · proposed only", commercialValue: "Budget estimate pending", environmental: "Environmental limits to be confirmed", compliance: "Target standards require review; no certification claimed" },
+  "HLPL-SW-01": { name: "Fleet Telemetry Service · QA Feedback Cycle", customer: "Copperfield Transit Works (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative fleet size · under review", techSpec: "Telemetry API · dashboard · mobile workflow · proposed only", commercialValue: "Budget estimate pending", environmental: "Service objectives under review", compliance: "Security and privacy review pending; no certification claimed" },
   "HLPL-XLINK-03": { name: "Commercial Fleet Gateway", customer: "Commercial Fleet Solutions Limited", contact: "Demo fleet programme SPOC", quantity: "25,000 units / year", techSpec: "Dual CAN · OBD-II · GNSS · 4G fleet gateway", commercialValue: "Commercial value pending controlled review", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AEC-Q100 · ISO 7637-2 · RoHS / REACH" },
 };
 function defaultRaciMatrix(): RaciMatrix {
@@ -595,190 +612,65 @@ export function defaultProjectAnalysis(projectId: string): Record<string, Depart
         keyDocumentId: "", stageGate: "Not assigned" }];
     }));
   }
-  const isAi4t = projectId === "HLPL-AI4T-01";
-  const isXlink = projectId === "HLPL-XLINK-03";
-  const isObd = projectId === "HLPL-OBD4-01" || projectId.includes("OBD");
-  const pfx = isObd ? "HLPL-OBD4" : isAi4t ? "HLPL-AI4T" : isXlink ? "HLPL-XLINK" : "HLPL-SLCT";
-  const customerName = isObd ? "Ashok Leyland Limited" : isAi4t ? "Tata Motors Limited" : isXlink ? "Commercial Fleet Operators" : "Select Motors Ltd";
-
-  return {
-    SAL: {
-      departmentCode: "SAL",
-      departmentName: "Sales & Business Development",
-      lead: "Priya Sharma",
-      progress: 100,
-      status: "Completed",
-      currentDeliverable: "Customer SOR & Commercial Lock",
-      targetDate: "2026-10-01",
-      internalRemarks: "Payment terms locked at 30 days net against delivery. Advance for tooling received. Annual volume commit 50k units.",
-      clientRemarks: `Customer SOR requirements accepted in full. Mutual NDA executed. Volume tier pricing locked for ${customerName}.`,
-      keyDocumentId: `${pfx}-SAL-SOR-01`,
-      stageGate: "Stage 3 · Commercial Lock",
-      lastUpdated: "2026-10-15",
-    },
-    EHW: {
-      departmentCode: "EHW",
-      departmentName: "Embedded Hardware Engineering",
-      lead: "Avery Vale",
-      progress: 90,
-      status: "On Track",
-      currentDeliverable: "Schematic Rev 2.1 & Production Gerber Pack",
-      targetDate: "2026-11-15",
-      internalRemarks: "ISO 7637-2 pulse 2a/5b TVS diode clamping verified at 36V. AEC-Q100 Cat-1 modem EC200U-CN RF matching tuned for 850/1800MHz.",
-      clientRemarks: "Hardware architecture frozen with automotive-grade MCU and Quectel 4G modem. Power section validated for 9V–36V transient protection.",
-      keyDocumentId: `${pfx}-EHW-PRS-01`,
-      stageGate: "Stage 7 · Production Design",
-      lastUpdated: "2026-10-16",
-    },
-    FW: {
-      departmentCode: "FW",
-      departmentName: "Firmware",
-      lead: "Devon Lane",
-      progress: 85,
-      status: "On Track",
-      currentDeliverable: "AIS-140 Protocol Stack & CAN J1939 Driver",
-      targetDate: "2026-11-20",
-      internalRemarks: "RAM utilization at 68% of 512KB Flash. Watchdog timer and fail-safe recovery verified under simulated cellular dropouts.",
-      clientRemarks: `Firmware build v2.4 passed 72-hour soak testing. ${customerName} CAN J1939 battery telemetry decoding verified.`,
-      keyDocumentId: `${pfx}-FW-01`,
-      stageGate: "Stage 4 · Firmware PoC",
-      lastUpdated: "2026-10-16",
-    },
-    SW: {
-      departmentCode: "SW",
-      departmentName: "Cloud & Application Software",
-      lead: "Siddharth Roy",
-      progress: 85,
-      status: "On Track",
-      currentDeliverable: "Cloud Telemetry Pipeline & FOTA Server",
-      targetDate: "2026-11-20",
-      internalRemarks: "MQTT broker ingestion benchmark passed at 50k msgs/s. FOTA campaign orchestrator integration verified.",
-      clientRemarks: `Cloud telemetry ingestion verified with live dashboards. Real-time fleet streaming active for ${customerName}.`,
-      keyDocumentId: `${pfx}-SW-ARCH-01`,
-      stageGate: "Stage 4 · Cloud Architecture",
-      lastUpdated: "2026-10-16",
-    },
-    MECH: {
-      departmentCode: "MECH",
-      departmentName: "Mechanical Engineering",
-      lead: "Samira Holt",
-      progress: 80,
-      status: "On Track",
-      currentDeliverable: "IP67 Enclosure & Connector Tooling",
-      targetDate: "2026-11-25",
-      internalRemarks: "O-ring compression FEA analysis completed. Tooling draft angle adjusted by 1.5° on bottom housing for rapid de-molding.",
-      clientRemarks: "IP67 environmental ingress testing passed. Vibration test fixture approved for vehicle chassis mounting bracket.",
-      keyDocumentId: `${pfx}-MECH-CAD-01`,
-      stageGate: "Stage 5 · Tooling Setup",
-      lastUpdated: "2026-10-14",
-    },
-    PUR: {
-      departmentCode: "PUR",
-      departmentName: "Purchasing & Supply Chain",
-      lead: "Morgan Reed",
-      progress: 75,
-      status: "Needs Attention",
-      currentDeliverable: "AEC-Q100 IC Sourcing & Dual-Track POs",
-      targetDate: "2026-11-30",
-      internalRemarks: "Quectel modem lead-time is 6 weeks. Buffer inventory of 5,000 pcs secured with authorized distributor Arrow Electronics.",
-      clientRemarks: "Component sourcing plan finalized. Critical silicon purchase orders placed to secure production delivery window.",
-      keyDocumentId: `${pfx}-PUR-BOM-01`,
-      stageGate: "Stage 5 · SMT Tooling",
-      lastUpdated: "2026-10-16",
-    },
-    QA: {
-      departmentCode: "QA",
-      departmentName: "Quality Assurance & APQP",
-      lead: "Jordan Blake",
-      progress: 80,
-      status: "On Track",
-      currentDeliverable: "DVP&R 18-Test Matrix & TAC ARAI Dossier",
-      targetDate: "2026-12-05",
-      internalRemarks: "AIS-140 pre-compliance thermal shock test completed (100 cycles at -40°C to +85°C). Final TAC submission scheduled.",
-      clientRemarks: "DVP&R pre-compliance completed with 100% test pass. Automotive Type Approval Certificate (TAC) preparation on schedule.",
-      keyDocumentId: `${pfx}-QA-DVP-01`,
-      stageGate: "Stage 6 · DVP&R Verification",
-      lastUpdated: "2026-10-15",
-    },
-    EMF: {
-      departmentCode: "EMF",
-      departmentName: "Electronics Manufacturing & Box-Build",
-      lead: "Casey Rowan",
-      progress: 70,
-      status: "On Track",
-      currentDeliverable: "Outsourced PCBA Acceptance & Box-Build Readiness",
-      targetDate: "2026-12-10",
-      internalRemarks: "Review supplier PCBA acceptance evidence, lot traceability and released assembly instructions. Actual checks and QA disposition must be recorded.",
-      clientRemarks: "Illustrative pilot integration plan; actual acceptance and production readiness evidence remain required.",
-      keyDocumentId: `${pfx}-EMF-CP-01`,
-      stageGate: "Stage 5 · Pilot Integration",
-      lastUpdated: "2026-10-13",
-    },
-    TST: {
-      departmentCode: "TST",
-      departmentName: "Production & Automated EOL Testing",
-      lead: "Mina Cross",
-      progress: 75,
-      status: "On Track",
-      currentDeliverable: "Automated EOL Test Jig & PDI Calibration",
-      targetDate: "2026-12-15",
-      internalRemarks: "Jig cycle time clocked at 48 seconds per unit including GNSS TTFF fix and RF power verification. Barcode laser scanner linked.",
-      clientRemarks: "100% End-of-Line automated testing established. PDI zero-defect inspection release certificate ready.",
-      keyDocumentId: `${pfx}-TST-PDI-01`,
-      stageGate: "Stage 9 · PDI Inspection",
-      lastUpdated: "2026-10-15",
-    },
-    FIN: {
-      departmentCode: "FIN",
-      departmentName: "Accounts & Finance",
-      lead: "Priya Voss",
-      progress: 90,
-      status: "On Track",
-      currentDeliverable: "Commercial Tax Invoice & Stage Billing Milestone",
-      targetDate: "2026-12-20",
-      internalRemarks: "Tooling advance collected. Working capital credit facility active with State Bank of India for mass component buy.",
-      clientRemarks: `GST compliance and milestone billing documentation aligned with ${customerName} vendor portal requirements.`,
-      keyDocumentId: `${pfx}-FIN-INV-01`,
-      stageGate: "Stage 9 · Commercial Release",
-      lastUpdated: "2026-10-12",
-    },
-    SIT: {
-      departmentCode: "SIT",
-      departmentName: "Service & IT Infrastructure",
-      lead: "Kai Morgan",
-      progress: isObd ? 95 : 85,
-      status: "On Track",
-      currentDeliverable: isObd ? "Vehicle Field Fitment, OBD-II Port Mounting & SIT Cloud Linking" : "AWS Telematics Broker & Private APN Ingestion",
-      targetDate: "2026-12-22",
-      internalRemarks: isObd
-        ? "Under-dash J1962 retention verified on commercial vehicle chassis. 100% OBD port latch engagement confirmed. SIT diagnostic app pairs IMEI to VIN in < 30 seconds."
-        : "Dual Airtel/Jio eSIM profiles tested with auto-switching logic. AWS IoT Core connection throughput verified at 10k msgs/sec.",
-      clientRemarks: isObd
-        ? `Service installation SOP HLPL-OBD4-SIT-MNT-01 approved for ${customerName} dealer network. Plug-and-play fitment with zero wiring splice ensures vehicle OEM warranty intact.`
-        : `Dedicated cloud backend and fleet telemetry APIs connected with ${customerName} Fleet Edge platform.`,
-      keyDocumentId: isObd ? `${pfx}-SIT-MNT-01` : `${pfx}-SIT-INFRA-01`,
-      stageGate: isObd ? "Stage 9 · Vehicle Mounting & PDI" : "Stage 8 · Field TAC Integration",
-      lastUpdated: "2026-10-16",
-    },
-    HR: {
-      departmentCode: "HR",
-      departmentName: "HR & Operations Competency",
-      lead: "Taylor Quinn",
-      progress: 95,
-      status: "Completed",
-      currentDeliverable: "Operator Skill Matrix & Assembly Certification",
-      targetDate: "2026-10-10",
-      internalRemarks: "All 18 Line 2 operators certified Level 4/4 on ESD handling and IPC-A-610 Class 3 standard under HLPL/F/HR/03.",
-      clientRemarks: "Production workforce certified under IATF 16949 competency standards. Shift capacity aligned with 50,000 units/year volume.",
-      keyDocumentId: "HLPL/F/HR/03",
-      stageGate: "Stage 9 · Competency Verification",
-      lastUpdated: "2026-10-10",
-    },
+  const projectPrefix = projectId.replace(/-\d+$/, "");
+  const stages: Record<string, string> = {
+    SAL: "Stage 1 · Enquiry intake and scope clarification",
+    EHW: "Stage 2 · Requirements, hardware options and preliminary BOM",
+    FW: "Stage 3 · Firmware PoC and interface assumptions",
+    SW: "Stage 3 · Software/API assumptions and integration planning",
+    MECH: "Stage 3 · Enclosure and mounting feasibility",
+    PUR: "Stage 2 · Inventory and supplier lead-time checks",
+    QA: "Stage 4 · Verification plan and evidence checklist",
+    EMF: "Stage 5 · Prototype build readiness",
+    MMF: "Stage 5 · Enclosure build readiness",
+    TST: "Stage 6 · Prototype validation and defect feedback",
+    FIN: "Stage 2 · Indicative budget and cost assumptions",
+    SIT: "Stage 7 · Serviceability and field-feedback loop",
+    HR: "Stage 2 · Skills and capacity inputs",
   };
+  const teams: Array<[string, string, string, number]> = [
+    ["SAL", "Sales & Business Development", "Enquiry scope and volume assumptions · draft", 32],
+    ["EHW", "Embedded Hardware Engineering", "Requirements map, reusable assets and tentative BOM", 46],
+    ["FW", "Firmware", "Boot, sensor and offline-buffering PoC questions", 28],
+    ["SW", "Cloud & Application Software", "API, data retention and connectivity assumptions", 22],
+    ["MECH", "Mechanical Engineering", "Mounting, enclosure and environment inputs", 18],
+    ["PUR", "Purchasing & Supply Chain", "Inventory availability and indicative lead-time review", 38],
+    ["QA", "Quality Assurance & APQP", "Verification plan and certification evidence checklist", 24],
+    ["EMF", "Electronics Manufacturing & Box-Build", "Prototype build route and process questions", 15],
+    ["MMF", "Mechanical Manufacturing", "Prototype enclosure route and fixture inputs", 12],
+    ["TST", "Production & Automated EOL Testing", "Bench-test and defect-capture approach", 20],
+    ["FIN", "Accounts & Finance", "Indicative NRE, unit-cost and budget assumptions", 34],
+    ["SIT", "Service & IT Infrastructure", "Installation, connectivity and field-feedback plan", 16],
+    ["HR", "HR & Operations Competency", "Role coverage and training needs", 25],
+  ];
+  const leads: Record<string, string> = {
+    SAL: "Riley Stone", EHW: "Avery Vale", FW: "Devon Lane", SW: "Siddharth Roy",
+    MECH: "Samira Holt", PUR: "Morgan Reed", QA: "Jordan Blake", EMF: "Casey Rowan",
+    MMF: "Taylor Quinn", TST: "Mina Cross", FIN: "Priya Voss", SIT: "Kai Morgan", HR: "Taylor Quinn",
+  };
+  const today = businessDate();
+  return Object.fromEntries(teams.map(([code, departmentName, currentDeliverable, progress], index) => [
+    code,
+    {
+      departmentCode: code,
+      departmentName,
+      lead: leads[code] ?? "Unassigned",
+      progress,
+      status: (code === "PUR" ? "Needs Attention" : code === "QA" || code === "EHW" ? "At Risk" : "On Track") as DepartmentAnalysisEntry["status"],
+      currentDeliverable,
+      targetDate: today,
+      internalRemarks: "Fictional TEST scenario. Replace assumptions with project evidence during authorized work; this row records no approval, purchase, certification, customer acceptance or completed test.",
+      clientRemarks: "No customer-facing commitment or acceptance is represented in this test fixture.",
+      keyDocumentId: `${projectPrefix}-${code}-DRAFT-01`,
+      stageGate: stages[code] ?? "Not recorded",
+      lastUpdated: today,
+    },
+  ]));
 }
 
 type PortalState = {
   schemaVersion?: number | undefined;
+  sampleDataVersion?: number | undefined;
   demoLoaded: boolean;
   demoSnapshot?: PortalState | undefined;
   setup: SetupState;
@@ -799,6 +691,9 @@ type PortalState = {
   raciMatrix?: RaciMatrix | undefined;
   chronicles?: DepartmentChronicle[] | undefined;
   responsibilityVersions?: ResponsibilityVersion[] | undefined;
+  lifecycleRevisions?: LifecycleRevision[] | undefined;
+  reusableAssetRevisions?: ReusableAssetRevision[] | undefined;
+  projectAssetUses?: ProjectAssetUse[] | undefined;
   customersRegistry?: CustomerRecord[] | undefined;
   enquiriesOpportunities?: EnquiryOpportunity[] | undefined;
   modularConfigs?: Record<string, ProjectModularConfiguration> | undefined;
@@ -1170,14 +1065,14 @@ const emptyPortal = (): PortalState => ({
 
 function defaultTemplateSettings(): TemplateSettings {
   return {
-    companyName: "XYZ Pvt Ltd / XYZ Pvt Ltd",
+    companyName: "Northstar Mobility Systems · Fictional TEST",
     techCenter: "B-12, Sector 63, Noida Tech Center, UP - 201301",
     plantLocation: "Plot 45, Ecotech III, Greater Noida SMT Plant 2, UP - 201306",
-    accreditationMarks: "IATF 16949:2016 · ISO 9001:2015 · AIS-140 · CE / RoHS",
+    accreditationMarks: "TEST sample · standards targets only · certification status unverified",
     prefix: "HLPL",
     logoBadge: "SS",
-    confidentialityNotice: "CONFIDENTIAL & PROPRIETARY — XYZ Pvt Ltd All rights reserved. Reproduction or distribution without written permission is strictly prohibited.",
-    complianceFooter: "IATF 16949:2016 & ISO 9001:2015 Certified Automotive Tier-1 Electronic Systems Facility | Doc Ref: Standard Format 4.2",
+    confidentialityNotice: "Fictional TEST content for internal workflow validation. No customer or production information is represented.",
+    complianceFooter: "Fictional browser-local TEST draft. Verify company details, standards, approval, release, and customer acceptance before any real use.",
   };
 }
 
@@ -1195,11 +1090,11 @@ const templateDepartments = ["SAL", "EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF
 const templateDocumentTypes = ["PRS", "SOR", "DVP", "DFMEA", "PFMEA", "CP", "BOM", "PPAP", "WI", "SOP", "QUO", "INV"];
 const formDocumentTypes = ["Contract Review", "Skill Matrix", "Form"];
 const projectSeed = {
-  customer: "Tata Motors Limited (EV Fleet Division, Pune)",
-  contact: "Mr. Rajesh Sharma (Lead D&D EV)",
-  quantity: "50,000 units / annum",
-  techSpec: "AIS-140 / 4G Cat-1 / IP67 / CAN J1939 / Dual SIM / GNSS",
-  commercialValue: "₹20.33 Cr",
+  customer: "Northstar Mobility Systems (fictional)",
+  contact: "Test contact · unassigned",
+  quantity: "Illustrative pilot quantity · under review",
+  techSpec: "4G · GNSS · CAN · proposed engineering scope",
+  commercialValue: "Budget estimate pending",
 };
 const departmentSignatories: Record<string, { author: string; reviewer: string; approver: string }> = {
   SAL: { author: "Priya Sharma", reviewer: "Priya Sharma", approver: "Executive Admin / MD" },
@@ -1225,10 +1120,10 @@ function documentNumber(project: string, department: string, type: string, revis
 
 const demoPortal = (): PortalState => {
   const base = emptyPortal();
-  const timestamp = "DEMO · 03 Oct 2026";
+  const timestamp = `TEST DATA · ${businessDate()}`;
   const project = "HLPL-SLCT-01";
   const demoNote =
-    "Operational telematics lifecycle adhering to IATF 16949 / ISO 9001 quality standards. Master recordsstomer, supplier, certification, procurement, billing, production, shipment, or client communication is represented.";
+    "Fictional integrated-device program used to exercise enquiry, engineering, sourcing and validation workflows. Values are illustrative; no real customer, supplier, approval, certification, purchase, billing or shipment is represented.";
   const departmentSeeds: {
     id: AreaId;
     name: string;
@@ -1241,97 +1136,97 @@ const demoPortal = (): PortalState => {
       name: "Sales & Business Development",
       code: "SAL",
       departmentType: "Sales & Business Development",
-      lead: "Riley Stone · demo",
+    lead: "Riley Stone",
     },
     {
       id: "ehw",
       name: "Embedded Hardware",
       code: "EHW",
       departmentType: "Embedded Hardware",
-      lead: "Avery Vale · demo",
+    lead: "Avery Vale",
     },
     {
       id: "fw",
       name: "Firmware",
       code: "FW",
       departmentType: "Firmware",
-      lead: "Devon Lane · demo",
+    lead: "Devon Lane",
     },
     {
       id: "sw",
       name: "Cloud & Application Software",
       code: "SW",
       departmentType: "Cloud & Application Software",
-      lead: "Siddharth Roy · demo",
+    lead: "Siddharth Roy",
     },
     {
       id: "mech",
       name: "Mechanical Engineering",
       code: "MECH",
       departmentType: "Mechanical Engineering",
-      lead: "Samira Holt · demo",
+    lead: "Samira Holt",
     },
     {
       id: "pur",
       name: "Purchasing & SCM",
       code: "PUR",
       departmentType: "Purchasing & SCM",
-      lead: "Morgan Reed · demo",
+    lead: "Morgan Reed",
     },
     {
       id: "qa",
       name: "Quality Assurance",
       code: "QA",
       departmentType: "Quality Assurance",
-      lead: "Jordan Blake · demo",
+    lead: "Jordan Blake",
     },
     {
       id: "emf",
       name: "Electronics Manufacturing",
       code: "EMF",
       departmentType: "Electronics Manufacturing",
-      lead: "Casey Rowan · demo",
+    lead: "Casey Rowan",
     },
     {
       id: "mmf",
       name: "Mechanical Manufacturing",
       code: "MMF",
       departmentType: "Mechanical Manufacturing",
-      lead: "Mechanical Manufacturing Lead (Interim) · demo",
+    lead: "Mechanical Manufacturing Lead (Interim)",
     },
     {
       id: "tst",
       name: "EOL Testing",
       code: "TST",
       departmentType: "EOL Testing",
-      lead: "Mina Cross · demo",
+    lead: "Mina Cross",
     },
     {
       id: "fin",
       name: "Accounts & Finance",
       code: "FIN",
       departmentType: "Accounts & Finance",
-      lead: "Priya Voss · demo",
+    lead: "Priya Voss",
     },
     {
       id: "sit",
       name: "Service & IT",
       code: "SIT",
       departmentType: "Service & IT",
-      lead: "Kai Morgan · demo",
+    lead: "Kai Morgan",
     },
     {
       id: "hrops",
       name: "HR & Operations",
       code: "HROPS",
       departmentType: "HR & Operations",
-      lead: "Taylor Quinn · demo",
+    lead: "Taylor Quinn",
     },
   ];
   const departments: Department[] = departmentSeeds.map((seed, sortOrder) => ({
     id: `demo-dept-${seed.id}`,
-    name: `DEMO · ${seed.name}`,
-    code: `DEMO-${seed.code}`,
+    name: seed.name,
+    code: seed.code,
     departmentType: seed.departmentType,
     active: true,
     lead: seed.lead,
@@ -1339,11 +1234,11 @@ const demoPortal = (): PortalState => {
     isDemo: true,
     settings: {
       ...blankSettings(),
-      prefix: `DEMO-${seed.code}`,
-      activityTypes: ["DEMO controlled work", "DEMO review"],
+      prefix: `TEST-${seed.code}`,
+      activityTypes: ["Controlled work", "Engineering review"],
       approvalGates: ["Human approval required"],
-      milestones: ["DEMO Stage 8 readiness"],
-      kpis: ["DEMO linked lifecycle progress"],
+      milestones: ["Pilot readiness review"],
+      kpis: ["Linked lifecycle progress"],
     },
   }));
   const fields = (stage: string, links: string[], extra: Record<string, string> = {}) => ({
@@ -1373,7 +1268,7 @@ const demoPortal = (): PortalState => {
     area,
     departmentId: `demo-dept-${area}`,
     type,
-    title: `DEMO · ${title}`,
+    title,
     status,
     priority,
     reference: id,
@@ -1867,7 +1762,7 @@ const demoPortal = (): PortalState => {
     linkedRecordRefs: string[],
   ): ControlledDocument => ({
     id,
-    title: `DEMO · ${title}`,
+    title,
     url: "",
     type: "Controlled technical record",
     departmentId,
@@ -1893,9 +1788,10 @@ const demoPortal = (): PortalState => {
             ? "BOM tracker"
             : undefined,
   });
-  return {
+  const seeded: PortalState = {
     ...base,
     demoLoaded: true,
+    sampleDataVersion: 3,
     inventory: inventorySeed(),
     setupStep: setupSteps.length - 1,
     setup: {
@@ -1952,7 +1848,7 @@ const demoPortal = (): PortalState => {
       { id: "demo-approval-ecn-002", title: "DEMO · EHW ECN-002 thermal layout review", recordId: "DEMO-TASK-EHW-ECN-002", outcome: "Pending", updatedAt: timestamp },
       { id: "demo-approval-fin-advance", title: "DEMO · FIN advance billing payment release", recordId: "DEMO-TASK-FIN-ADVANCE", outcome: "Pending", updatedAt: timestamp },
     ],
-    documents: mergeAutomotiveDemoDocuments([
+    documents: mergeAutomotiveDemoDocuments(mergeDemoDepartmentCommonDocuments([
       document(
         "demo-doc-pmss",
         "Project master specification sheet",
@@ -2014,7 +1910,7 @@ const demoPortal = (): PortalState => {
       document("demo-doc-eol", "Pre-dispatch inspection and serialized EOL certificate", "demo-dept-tst", "Product/Device Audit Packs", "HLPL-SLCT-TST-PDI-01", "Phase_9_Production_and_Verification · HW_30–35", "Approved", ["HLPL-SLCT-TST-EOL-01"]),
       document("demo-doc-invoice", "Commercial tax invoice and e-Way bill", "demo-dept-fin", "Governance/QMS", "HLPL-SLCT-FIN-INV-01", "Stage 9 · Mass Production", "In review", ["HLPL-INV-2026-089"]),
       document("demo-doc-skill", "Annual skill matrix and competency evaluation", "demo-dept-hrops", "Governance/QMS", "HLPL/F/HR/03", "Stage 9 · Mass Production", "Approved", ["HLPL/F/HR/03"]),
-    ]),
+    ], departments)),
     audit: [
       {
         id: "demo-audit-slct",
@@ -2043,6 +1939,120 @@ const demoPortal = (): PortalState => {
     assignedForms: DEFAULT_ASSIGNED_FORMS,
     employeeAssets: DEFAULT_EMPLOYEE_ASSETS,
   };
+  const fictionalNameMap: Array<[string, string]> = [
+    ["XYZ Pvt Ltd", "Northstar Mobility Systems"],
+    ["Tata Motors Limited", "Northstar Mobility Systems (fictional)"],
+    ["Tata Motors", "Northstar Mobility Systems"],
+    ["Tata Ace EV & Ultra T.7 Commercial Fleet", "Northstar light commercial EV platforms"],
+    ["Tata Ace EV", "Northstar Cargo EV"],
+    ["Ashok Leyland Limited", "Meridian Fleet Devices (fictional)"],
+    ["Ashok Leyland", "Meridian Fleet Devices"],
+    ["Mahindra Electric Mobility Limited", "Copperfield Transit Works (fictional)"],
+    ["Sonalika Tractors Limited", "Redwood Utility Mobility (fictional)"],
+    ["Escorts Kubota Limited", "Bluehaven Industrial Vehicles (fictional)"],
+    ["Molex", "Example Connector Works"],
+    ["Fibocom", "Example Radio Systems"],
+    ["ARAI/TAC/2026/AIS140-842", "TEST-CERT-NOT-ISSUED"],
+    ["RFQ-2026-TATA-SLCT-088", "TEST-RFQ-NORTHSTAR-088"],
+    ["PO-TATA-SLCT-2026-9041", "TEST-PO-NORTHSTAR-9041"],
+  ];
+  const normalizeValue = (key: string, value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map((entry) => normalizeValue(key, entry));
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+          childKey,
+          normalizeValue(childKey, childValue),
+        ]),
+      );
+    }
+    if (typeof value !== "string") return value;
+    let text = value;
+    for (const [source, replacement] of fictionalNameMap) text = text.replaceAll(source, replacement);
+    text = text
+      .replaceAll("DEMO · ", "")
+      .replaceAll(" · DEMO", " · TEST DATA")
+      .replaceAll("DEMO ", "TEST ")
+      .replaceAll("DEMO-TASK", "TEST-TASK")
+      .replaceAll(" · demo", "")
+      .replaceAll("DEMO", "TEST DATA")
+      .replaceAll("Customer purchase order sync · 50,000 units", "Commercial volume planning checkpoint")
+      .replaceAll("Advance deposit verification and tax invoice", "Budget estimate review")
+      .replaceAll("Final production BOM", "Tentative BOM · not released")
+      .replaceAll("Final Gerber package release", "Gerber package review")
+      .replaceAll("Production BOM release", "Tentative BOM review")
+      .replaceAll("Production BOM", "Tentative BOM")
+      .replaceAll("Customer purchase order sync · 50,000 units", "Commercial planning checkpoint · volume under discussion")
+      .replaceAll("Customer purchase order sync", "Commercial planning checkpoint")
+      .replaceAll("Commercial tax invoice and e-Way bill", "Budget estimate workflow review")
+      .replaceAll("Advance deposit verification and tax invoice", "Budget estimate review")
+      .replaceAll("Advance deposit", "Indicative cost assumption")
+      .replaceAll("Customer LOI confirmed · TEST DATA simulation", "No customer commitment recorded in this test fixture")
+      .replaceAll("Customer LOI confirmed", "No customer commitment recorded")
+      .replaceAll("Commercial billing", "Indicative budget review")
+      .replaceAll("invoice", "budget estimate")
+      .replaceAll("Invoice", "Budget estimate")
+      .replaceAll("Customer LOI confirmed · TEST DATA simulation", "No customer commitment recorded in this test fixture")
+      .replaceAll("Customer payment overdue beyond 45 days", "Internal budget estimate pending review")
+      .replaceAll("Customer payment overdue", "Internal budget estimate pending review")
+      .replaceAll("commercial deposit", "budget estimate")
+      .replaceAll("Customer purchase order", "Commercial plan")
+      .replaceAll("purchase orders placed", "indicative sourcing options are under review")
+      .replaceAll("all TEST DATA approvals complete", "department inputs captured for workflow testing; no customer acceptance")
+      .replaceAll("approved automatically compiles", "requires human review before compiling")
+      .replaceAll("0 errors · TEST DATA verification", "review checklist pending; no DRC evidence asserted")
+      .replaceAll("All RPNs below 100 · TEST DATA assessment", "Risk scores under review · illustrative and unapproved")
+      .replaceAll("100% pass · 0 critical bugs · TEST DATA telemetry", "test results not recorded · sample placeholder")
+      .replaceAll("Customer SOR requirements accepted in full", "Customer requirements are not accepted or baselined")
+      .replaceAll("Confirmed & Locked", "Under review")
+      .replaceAll("Executed", "Draft")
+      .replaceAll("approved", "pending review")
+      .replaceAll("Approved", "In review")
+      .replaceAll("Production Release & PPAP", "Engineering review and PPAP planning")
+      .replaceAll("Type Approval & Production Authorization", "Certification readiness planning")
+      .replaceAll("PDI, Field Mounting & Commercial Invoice", "Prototype validation and service feedback")
+      .replaceAll("certified", "planned for review")
+      .replaceAll("passed", "planned for verification")
+      .replaceAll("verified", "awaiting evidence")
+      .replaceAll("100% IATF 16949 & AIS-140 compliant · 0 NCRs · TEST DATA assertion only", "Quality evidence review in progress; no compliance or certification claim")
+      .replaceAll("Stage 8 · Type Approval & SCM", "Stage 8 · readiness planning")
+      .replaceAll("Stage 8 · Type Approval & SCM Planning", "Stage 8 · readiness planning")
+      .replaceAll("production authorization is active", "pilot readiness planning is open")
+      .replaceAll("Generated · TEST DATA only", "Estimate only · not an issued invoice")
+      .replaceAll("PO-TATA", "TEST-PO-NORTHSTAR")
+      .replaceAll("RFQ-2026-TATA", "TEST-RFQ-NORTHSTAR")
+      .replaceAll("₹6.10 Cr · illustrative payment verification only", "Indicative estimate · no payment represented")
+      .replaceAll("₹20.33 Cr total value · TEST DATA only", "Indicative commercial estimate · not an offer")
+      .replaceAll("₹8,40,000", "illustrative amount")
+      .replaceAll("production", "pilot")
+      .replaceAll("Production", "Pilot");
+    if ((key === "status" || key === "lifecycle" || key === "outcome") && text === "Approved") text = "In review";
+    if (key === "loi") text = "No customer commitment recorded in this test fixture";
+    if (key === "invoice") text = "No invoice issued · budget estimate only";
+    if (key === "release") text = "Not released · candidate for review";
+    if (key === "serials") text = "No units or serial numbers represented";
+    if (key === "poGrn") text = "No purchase order or goods receipt represented";
+    if (key === "tac") text = "No external certificate or approval represented";
+    if (key === "auditReadiness") text = "Quality evidence not yet reviewed";
+    if (key === "title") {
+      text = text
+        .replace(/Customer purchase order.*$/i, "Commercial volume planning checkpoint")
+        .replace(/purchase order sync.*$/i, "Commercial volume planning checkpoint")
+        .replace(/Production BOM release/i, "Tentative BOM review")
+        .replace(/Final production BOM/i, "Tentative BOM · not released")
+        .replace(/commercial tax invoice.*$/i, "Budget estimate workflow review")
+        .replace(/advance deposit.*$/i, "Budget estimate review")
+        .replace(/^Approved schematic package$/i, "Schematic package review")
+        .replace(/^Commercial tax invoice and e-Way bill$/i, "Budget estimate and billing workflow review")
+        .replace(/^Pre-dispatch inspection and serialized EOL certificate$/i, "Prototype validation checklist")
+        .replace(/^AIS-140 evidence pack$/i, "Certification evidence plan · not submitted");
+    }
+    return text;
+  };
+  return normalizeValue("", {
+    ...seeded,
+    records: reconcileDemoProjectLifecycle(seeded.records),
+  }) as PortalState;
 };
 const createId = () => crypto.randomUUID();
 const now = () => new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
@@ -2119,6 +2129,14 @@ const readPortal = (): PortalState => {
       window.localStorage.getItem("XYZ Pvt Ltd-portal-v2");
     if (!raw) return base;
     const value = JSON.parse(raw) as Partial<PortalState>;
+    if (value.demoLoaded === true && value.sampleDataVersion !== 3) {
+      const refreshed = {
+        ...demoPortal(),
+        demoSnapshot: value.demoSnapshot ?? emptyPortal(),
+      };
+      window.localStorage.setItem(storeKey, JSON.stringify(refreshed));
+      return refreshed;
+    }
     const demoDocument = demoPortal().documents.find(
       (document) => document.id === "demo-doc-datasheet",
     );
@@ -2183,7 +2201,9 @@ const readPortal = (): PortalState => {
           : Array.isArray(value.records)
             ? value.records.map((record) => ({ ...record, area: legacyAreaMap[record.area] ?? record.area }))
             : [],
-      documents: value.demoLoaded === true ? mergeAutomotiveDemoDocuments(documents) : documents,
+      documents: value.demoLoaded === true
+        ? mergeAutomotiveDemoDocuments(mergeDemoDepartmentCommonDocuments(documents, value.departments ?? []))
+        : documents,
       audit: Array.isArray(value.audit) ? value.audit : [],
       notifications: Array.isArray(value.notifications) ? value.notifications : [],
       alerts: Array.isArray(value.alerts) ? value.alerts : [],
@@ -2202,6 +2222,11 @@ const readPortal = (): PortalState => {
     };
     const finalHydrated = {
       ...hydrated,
+      enquiriesOpportunities: reconcileSalesEnquiries(
+        hydrated.enquiriesOpportunities ?? defaultEnquiriesOpportunities,
+        hydrated.records,
+      ),
+      records: hydrated.demoLoaded ? reconcileDemoProjectLifecycle(hydrated.records) : hydrated.records,
       documents: hydrated.documents.map((document) => ({
         ...document,
         localFiles: document.localFiles?.map((file) => ({
@@ -2234,12 +2259,12 @@ const readPortal = (): PortalState => {
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "SSM New — XYZ Pvt Ltd" },
-      { name: "description", content: "Operational workspace for XYZ Pvt Ltd in Noida." },
-      { property: "og:title", content: "SSM New — XYZ Pvt Ltd" },
+      { title: "SSM One — Northstar Mobility Systems · TEST" },
+      { name: "description", content: "Fictional TEST workspace for Northstar Mobility Systems." },
+      { property: "og:title", content: "SSM One — Northstar Mobility Systems · TEST" },
       {
         property: "og:description",
-        content: "Operational workspace and setup hub for XYZ Pvt Ltd.",
+        content: "Fictional TEST workspace and sample operations for Northstar Mobility Systems.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -2256,6 +2281,7 @@ function Portal() {
   const writeSorInputs = useServerFn(mutateProjectInputs);
   const sorRun = useRef<SorImportRun | null>(null);
   const [testMembership, setTestMembership] = useState<TestMembership | null>(null);
+  const organizationConfiguration = useOrganizationConfiguration(testMembership && !testMembership.isClient ? testMembership.membershipId : undefined);
   const [testAuthReady, setTestAuthReady] = useState(false);
   const [testAuthError,setTestAuthError]=useState<string|null>(null);
   const [showSharedTestWorkspace, setShowSharedTestWorkspace] = useState(false);
@@ -2431,6 +2457,8 @@ function Portal() {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [syncHubOpen, setSyncHubOpen] = useState(false);
   const [draftHubOpen, setDraftHubOpen] = useState(false);
+  const [documentUploadRequested, setDocumentUploadRequested] = useState(false);
+  const [documentUploadProjectId, setDocumentUploadProjectId] = useState<string | undefined>(undefined);
   const [templateSettingsOpen, setTemplateSettingsOpen] = useState(false);
   const [printTemplate, setPrintTemplate] = useState<PrintableDocument | null>(null);
   const [ai4tOpen, setAi4tOpen] = useState(false);
@@ -2451,7 +2479,7 @@ function Portal() {
   const [assetLinkerProjectId, setAssetLinkerProjectId] = useState<string | null>(null);
   const [purchasingSubView, setPurchasingSubView] = useState<PurchasingSubView>("recordage");
   const [adminTab, setAdminTab] = useState<
-    "company" | "chronicles" | "departments" | "templates" | "roles" | "masters" | "cloud" | "team" | "demo"
+    "company" | "chronicles" | "lifecycle" | "departments" | "templates" | "roles" | "masters" | "cloud" | "team" | "demo"
   >("company");
   useEffect(() => {
     setPortal(readPortal());
@@ -2524,7 +2552,7 @@ function Portal() {
       | "records"
       | "deliverables" = "queue",
   ) => {
-    if (targetView !== "deliverables") setRecordTypeFilter(null);
+    if (targetView !== "deliverables" && targetView !== "records") setRecordTypeFilter(null);
     if (persona.kind === "client") {
       if (area !== "home") {
         announce("Access restricted under ISO 27001 §A.9: External OEM Clients are contained within the Client Delivery Portal.");
@@ -2937,8 +2965,8 @@ function Portal() {
     announce("Inquiry dispatched for multi-department feasibility. Its project link remains optional until a project is selected.");
     return true;
   };
-  const addRecord = async (input: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">) => {
-    if (input.area === "tst") { announce("Legacy TST is read-only pending an approved ownership mapping."); return; }
+  const addRecord = async (input: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">, originalFile?: File | null): Promise<boolean> => {
+    if (input.area === "tst") { announce("Legacy TST is read-only pending an approved ownership mapping."); return false; }
     const count = portal.records.filter((record) => record.area === input.area).length + 1;
     const prefix = areaById(input.area)
       .short.toUpperCase()
@@ -2960,23 +2988,78 @@ function Portal() {
     const record: RecordItem = {
       ...input,
       departmentId,
-      fields: { ...input.fields, ...(input.type === "Project" && portal.responsibilityVersions?.length ? { responsibilityVersion: portal.responsibilityVersions.at(-1)!.id } : {}) },
+      fields: { ...input.fields, ...(input.type === "Project" ? { lifecycleBaseline: pinLifecycleRevision(portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()) } : {}), ...(input.type === "Project" && portal.responsibilityVersions?.length ? { responsibilityVersion: portal.responsibilityVersions.at(-1)!.id } : {}) },
       id: createId(),
       reference: input.fields["controlledNumber"] || generatedNumber,
       createdAt: now(),
       updatedAt: now(),
     };
-    const saved = await update((state) => {
-      if (state.records.some(existing => existing.reference.toUpperCase() === record.reference.toUpperCase())) throw new Error("This controlled number already exists.");
-      if (input.type === "Project") validateIntakeProject(state.records, "Project", record.reference);
-      if (input.area === "sales" && isPreProjectIntake(input.type)) validateIntakeProject(state.records,input.type,input.fields["projectId"] ?? "");
-      const enquiry = input.area === "sales" && ["Enquiry", "Opportunity", "Enquiry & Opportunity"].includes(input.type);
-      return { ...state, records: [record, ...state.records],
-        ...(input.type === "Project" ? { masters: { ...state.masters, products: Array.from(new Set([...state.masters.products, record.reference])) } } : {}),
-        ...(enquiry ? { enquiriesOpportunities: [salesEnquiryFromRecord(record, state.customersRegistry ?? []), ...(state.enquiriesOpportunities ?? [])] } : {}),
+    const attachmentId = originalFile ? createId() : undefined;
+    let attachment: LocalControlledFile | undefined;
+    if (originalFile) {
+      if (originalFile.size <= 0 || originalFile.size > 25 * 1024 * 1024) throw new Error("Choose a non-empty original file up to 25 MB.");
+      attachment = {
+        id: attachmentId!, name: originalFile.name, type: originalFile.type || "application/octet-stream", size: originalFile.size,
+        uploadedAt: new Date().toISOString(), uploader: `${persona?.person ?? "Current user"} · ${department?.name ?? "Department"}`,
+        revision: "01", storage: "indexeddb", checksum: await sha256(originalFile),
       };
-    });
-    if (!saved) throw new Error("Record was not saved. Your draft is preserved.");
+      await saveLocalAttachment(attachment.id, originalFile);
+    }
+    let linkedDocument: ControlledDocument | undefined;
+    let saved = false;
+    const nowStamp = new Date().toISOString();
+    try {
+      saved = await update((state) => {
+        if (state.records.some(existing => existing.reference.toUpperCase() === record.reference.toUpperCase())) throw new Error("This controlled number already exists.");
+        if (input.type === "Project") validateIntakeProject(state.records, "Project", record.reference);
+        if (input.area === "sales" && isPreProjectIntake(input.type)) validateIntakeProject(state.records,input.type,input.fields["projectId"] ?? "");
+        const enquiry = input.area === "sales" && ["Enquiry", "Opportunity", "Enquiry & Opportunity"].includes(input.type);
+        const projectRef = input.type === "Project" ? record.reference : input.fields["projectId"] || "";
+        const project = input.type === "Project" ? record : state.records.find(item => item.type === "Project" && (item.id === projectRef || item.reference === projectRef));
+        if (attachment && projectRef && !project) throw new Error("The selected project is no longer available. Nothing was saved.");
+        if (attachment) {
+          const attachmentSpec = hardwareAttachmentForRecordType(input.type);
+          if (!attachmentSpec) throw new Error("This record type has no direct-original rule. Use its controlled Documents & Vault entry point instead.");
+          if (!project) throw new Error("Select the linked project before attaching this original.");
+          const projectStage = [project.fields["currentStage"], project.fields["lifecycleStage"], project.fields["stage"]].find(value => CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === value)) ?? "";
+          if (!recordAttachmentAllowedAtStage(input.type, projectStage, CANONICAL_STAGE_TEMPLATES)) {
+            throw new Error(`Original upload is enabled only at ${attachmentSpec.stageCode} or the immediately following project stage. Current stage: ${projectStage || "not recorded"}.`);
+          }
+          const extension = originalFile!.name.split(".").pop()?.toLowerCase() ?? "";
+          const accepted = attachmentSpec.accept.split(",").map(item => item.trim().replace(/^\./, "").toLowerCase());
+          if (!accepted.includes(extension)) throw new Error(`Choose a file type accepted for ${input.type}: ${attachmentSpec.accept}.`);
+          const projectContext = projectLifecycleContext(project.fields);
+          const recordStage = record.fields["hwStage"] || record.fields["qualityStage"] || record.fields["recordStage"] || record.fields["lifecycleStage"] || attachmentSpec.stageCode;
+          linkedDocument = {
+            id: createId(), title: `${input.title.trim()} · Original`, url: "", type: attachmentSpec.documentType, departmentId,
+            part: record.reference, revision: "01", lifecycle: "Draft", classification: "Internal",
+            phase: projectContext.phase,
+            projectStage: projectContext.stage,
+            lifecycleStage: recordStage,
+            linkedRecordRefs: [record.id, record.reference, ...(project ? [project.id, project.reference] : [])],
+            projectId: project?.id,
+            uploadScope: project ? "internal" : "department",
+            localFiles: [attachment],
+            draftSnapshot: buildDocumentDraft(input.title.trim(), record.reference, { reference: record.reference, fields: record.fields, notes: record.notes }, { reference: project.reference, fields: project.fields }, input.type),
+            history: [`${nowStamp} · ${originalFile!.name} attached with ${record.reference} · Draft only · not approved or released`],
+            releaseNotes: `Original supplied with record creation. Draft basis: selected project ${project.reference}; current project context ${projectContext.phase ?? "phase not recorded"} · ${projectContext.stage ?? "stage not recorded"}; record type ${input.type} maps to ${recordStage}. Missing source parameters remain TBD. Draft only; approval and release require their separate workflows.`,
+          };
+        }
+        return { ...state, records: [record, ...state.records, ...(input.type === "Project" ? localDefaultLifecycleTasks(state, record, "CM_01") : [])],
+          ...(linkedDocument ? { documents: [linkedDocument, ...state.documents] } : {}),
+          ...(attachment ? { audit: [{ id: createId(), at: nowStamp, action: "Original attached to draft record", detail: `${record.reference} · ${attachment.name} · Browser-local · not approved/released` }, ...state.audit].slice(0, 100) } : {}),
+          ...(input.type === "Project" ? { masters: { ...state.masters, products: Array.from(new Set([...state.masters.products, record.reference])) } } : {}),
+          ...(enquiry ? { enquiriesOpportunities: [salesEnquiryFromRecord(record, state.customersRegistry ?? []), ...(state.enquiriesOpportunities ?? [])] } : {}),
+        };
+      });
+    } catch (error) {
+      if (attachmentId) await removeLocalAttachment(attachmentId).catch(() => undefined);
+      throw error;
+    }
+    if (!saved) {
+      if (attachmentId) await removeLocalAttachment(attachmentId).catch(() => undefined);
+      throw new Error("Record and original were not saved. Your form remains open.");
+    }
     if (input.type === "Project") {
       setSelectedProjectId(record.reference);
       setProjectScopes(current => ({ ...current, [input.area]: record.reference }));
@@ -2988,6 +3071,8 @@ function Portal() {
     }
     setModal(null);
     announce(`${record.reference} created.`);
+    if (linkedDocument) announce(`Draft ${record.reference} and original ${attachment?.name} saved together. Open Documents & Vault to view it; it is not approved or released.`);
+    return true;
   };
   const handleSalesIntake: NonNullable<React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onSubmitIntake"]> = async data => {
     if (data.mode === "convert" && data.enquiryIdToConvert) {
@@ -3000,7 +3085,7 @@ function Portal() {
       notes: data.scopeSummary, status: data.dispatchFeasibility ? "In review" : "Draft", priority: "High",
       fields: { customer: data.customerName, customerCode: data.customerCode, contactPerson: data.spocName,
         email: data.spocEmail, targetVolume: data.targetVolume, targetDate: data.targetClosureDate,
-        projectTrack: data.track, feasibilityDepartments: data.feasibilityDepts.join(", "),
+        ...(data.track ? { projectTrack: data.track } : {}), feasibilityDepartments: data.feasibilityDepts.join(", "),
         ...(data.parameterValues ? { smartParameters: JSON.stringify(data.parameterValues) } : {}) },
     });
   };
@@ -3334,7 +3419,15 @@ function Portal() {
       : persona.kind === "admin"
       ? (adminDepartment || (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw"))
       : activeArea;
-  const active = areaById(effectiveArea);
+  const configuredDepartments = organizationConfiguration.data?.departments ?? portal.departments;
+  const baseActive = areaById(effectiveArea);
+  const configuredDepartment = configuredDepartments.find(d => departmentCode(d.code.replace(/^DEMO-/,'')) === departmentCode(baseActive.short));
+  const active = configuredDepartment ? {...baseActive, name: configuredDepartment.name} : baseActive;
+  const openCurrentProjectLifecycle = (projectCode = selectedProjectId) => {
+    setSelectedProjectId(projectCode);
+    setProjectScopes(current=>({...current,[effectiveArea]:projectCode}));
+    setView('project');setModal(null);
+  };
   const activeDepartmentScope = (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
     ? persona.departmentId
     : effectiveArea;
@@ -3391,7 +3484,7 @@ function Portal() {
     setModal("document");
   };
   if (!testAuthReady) return <main className="grid min-h-screen place-items-center bg-background text-foreground">Checking authenticated session…</main>;
-  if (testMembership?.role === "admin" && showSharedTestWorkspace) return <div className={darkMode ? "dark" : ""}>
+  if (testMembership && !testMembership.isClient && showSharedTestWorkspace) return <div className={darkMode ? "dark" : ""}>
     <div className="border-b border-border bg-card px-4 py-2 text-foreground">
       <button type="button" onClick={() => setShowSharedTestWorkspace(false)} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-secondary">Back to portal</button>
     </div>
@@ -3423,7 +3516,7 @@ function Portal() {
             setMobileMenu(false);
           }}
           onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
-          onOpenAi4tLifecycle={() => setAi4tOpen(true)}
+          onOpenAi4tLifecycle={() => openCurrentProjectLifecycle()}
           onOpenProjectAnalysis={() => setView("analysis")}
           onOpenDrive={openDocuments}
           onOpenDraftHub={() => setDraftHubOpen(true)}
@@ -3431,7 +3524,7 @@ function Portal() {
           onOpenLegalHub={() => setLegalHubOpen(true)}
           onOpenDecisionLog={() => setDecisionLogOpen(true)}
           onOpenAdminSettings={() => {
-            setAdminTab("chronicles");
+            setAdminTab("lifecycle");
             setModal("admin");
           }}
           onOpenWizard={() => setModal("wizard")}
@@ -3484,10 +3577,10 @@ function Portal() {
             >
               <p className="truncate text-sm font-semibold md:text-base">
                 {persona.kind === "client"
-                  ? "Tata Motors Limited · EV Fleet Solutions Delivery Portal"
+                  ? "Northstar Mobility Systems · Fleet Test Portal"
                   : (persona.kind === "lead" || persona.kind === "member")
-                  ? (portal?.departments.find((item) => item.id === (departmentContext ?? `demo-dept-${persona.departmentId}`))?.name ?? active.name).replace(/^DEMO · /, "").replace("Purchasing & SCM", "Purchasing")
-                  : (view === "index" ? "Unified index" : active.name.replace(/^DEMO · /, "").replace("Purchasing & SCM", "Purchasing"))}
+                  ? active.name.replace(/^DEMO · /, "")
+                  : (view === "index" ? "Unified index" : active.name.replace(/^DEMO · /, ""))}
               </p>
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                 {persona.kind === "client"
@@ -3497,8 +3590,15 @@ function Portal() {
                   : `Executive Admin · ${active.short} Department Access`}
               </p>
             </button>
-            {testMembership?.role === "admin" && <HeaderAction label="Data tools" icon={Layers} onClick={() => {setSharedTestInitialTab("Tasks"); setShowSharedTestWorkspace(true);}} />}
+            {testMembership && !testMembership.isClient && <Action label="Shared TEST data" onClick={() => {setSharedTestInitialTab("Tasks"); setShowSharedTestWorkspace(true);}} />}
+            {portal?.demoLoaded && !testMembership && (
+              <>
+                <span className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-warning" title="Fictional sample records stored only in this browser; no shared or production records are represented.">TEST DATA</span>
+                {persona.kind === "admin" && <Action label="Reset sample" onClick={() => { if (window.confirm("Reset the fictional sample data in this browser and restore the saved setup?")) resetDemo(); }} />}
+              </>
+            )}
             <PersonaSwitcher
+              departments={configuredDepartments}
               persona={persona}
               onSelect={switchPersona}
               onOpenAuth={() => setLoginModalOpen(true)}
@@ -3547,12 +3647,14 @@ function Portal() {
           </div>
         </header>
         <div className="mx-auto max-w-[1600px] space-y-6 px-6 py-6 pb-28 lg:pb-10">
+          {persona.kind!=='client'&&configuredDepartment&&(()=>{const rootId=configuredDepartment.workspaceDepartmentId||configuredDepartment.id;const root=configuredDepartments.find(d=>d.id===rootId);const members=configuredDepartments.filter(d=>d.active&&(d.id===rootId||d.workspaceDepartmentId===rootId));return members.length>1?<nav aria-label="Shared department workspace" className="rounded-lg border border-border bg-card p-3"><p className="mb-2 text-sm font-semibold">{root?.name||active.name} workspace</p><div className="flex flex-wrap gap-2">{members.filter(d=>persona.kind==='admin'||d.id===configuredDepartment.id).map(d=><button type="button" key={d.id} aria-current={d.id===configuredDepartment.id?'page':undefined} className={`rounded-md border border-border px-3 py-1.5 text-sm ${d.id===configuredDepartment.id?'bg-primary text-primary-foreground':'hover:bg-muted'}`} onClick={()=>navigate((DEPARTMENT_MODULES[departmentCode(d.code.replace(/^DEMO-/,''))]||effectiveArea) as AreaId,'queue')}>{d.name}</button>)}</div></nav>:null;})()}
           {persona.kind === "client" ? (
             <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
-          ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","index"].includes(view) ? (
- <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view} adminDepartment={effectiveArea} initialProjectScope={view === "project" ? selectedProjectId : undefined} recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)} onOpenTasks={() => setView("assignee")} onOpenInputs={sourceId => {setAnalysisSourceId(sourceId);setView("analysis");}} onOpenVault={(documentId,projectId)=>{setShowSharedTestWorkspace(false);setVaultDocumentId(documentId);setVaultProjectId(projectId);setView("vault");}} darkMode={darkMode} onLogout={handleLogout}/>
-          ) : view === "departments" ? (
+          ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","index","pmss"].includes(view) ? (
+ <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view === 'pmss' ? 'project' : view} adminDepartment={effectiveArea} initialProjectScope={view === "project" || view === 'pmss' ? selectedProjectId : undefined} recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)} onOpenTasks={() => setView("assignee")} onOpenInputs={sourceId => {setAnalysisSourceId(sourceId);setView("analysis");}} onOpenVault={(documentId,projectId)=>{setShowSharedTestWorkspace(false);setVaultDocumentId(documentId);setVaultProjectId(projectId);setView("vault");}} darkMode={darkMode} onLogout={handleLogout}/>
+          ) : view === 'departments' && testMembership ? <SharedOrganizationDepartments membership={testMembership} onOpen={(area,tab)=>handleAdminDepartmentChange(area as AreaId,(tab as typeof view)||'project')}/> : view === "departments" ? (
             <CommonDepartmentSearchView
+              departments={DEPARTMENTS_METADATA.flatMap(meta=>{const department=portal.departments.find(d=>d.active&&areaForDepartment(d)===meta.id);return department?[{...meta,name:department.name.replace(/^DEMO · /,''),lead:department.lead||'Unassigned',leadRole:'Department lead'}]:[];})}
               currentDepartment={adminDepartment}
               onSelectDepartment={(deptId, viewTab) => {
                 handleAdminDepartmentChange(deptId, (viewTab as typeof view) || "project");
@@ -3594,14 +3696,15 @@ function Portal() {
                 enquiries: portal.enquiriesOpportunities ?? defaultEnquiriesOpportunities,
                 onOpenNewEnquiry: () => handleOpenCreate("Enquiry"),
                 onOpenCustomerRegister: () => setCustomerRegisterOpen(true),
-                onOpenFeasibilityGate: projectCode => { setSelectedProjectId(projectCode); setAi4tInitialTab("feasibility"); setAi4tOpen(true); },
+                onOpenFeasibilityGate: projectCode => { setSelectedProjectId(projectCode); setView('analysis'); },
                 onSendForFeasibility: enquiry => setFeasibilityDispatchEnquiry(enquiry),
                 onSubmitIntake: handleSalesIntake,
                 onAddCustomer: handleCustomerCreated,
               }}
               initialTab={view === "records" ? "records" : view === "deliverables" ? "deliverables" : undefined}
               recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
-              onOpenInputs={() => setView("analysis")}
+              onOpenInputs={sourceId=>{setAnalysisSourceId(sourceId);setView("analysis");}}
+              onOpenAssetCatalog={()=>setAssetCatalogOpen(true)}
               departmentCode={active.short} departmentName={active.name} lead={leadName}
               records={leadRecords} projects={leadProjects} documents={scopedDocuments} sharedTestMembership={testMembership ?? undefined}
               approvals={portal.approvals.map(approvalScope).filter(approval => approvalInDepartment(approval, activeDepartmentScope))}
@@ -3610,16 +3713,30 @@ function Portal() {
               onProjectChange={scope => setProjectScopes(current => ({ ...current, [active.id]: scope as ProjectScope }))}
               onCreateProject={(activeDepartmentScope === "sales") ? () => handleOpenCreate("Project") : undefined}
               onCreateRecord={() => handleOpenCreate(active.recordType, (projectScopes[active.id] ?? "all") === "all" ? undefined : { projectCode: projectScopes[active.id] as string, projectId: projectScopes[active.id] as string })}
-              onCreateDeliverable={() => setDraftHubOpen(true)}
+              onCreateDeliverable={() => {
+                const scope = projectScopes[effectiveArea];
+                const project = portal.records.find(record => record.type === "Project" && !record.archived && (record.id === scope || record.reference === scope));
+                setDocumentUploadProjectId(project?.id);
+                setDocumentUploadRequested(true);
+                setModal("documents");
+              }}
               onOpenRecord={id => { const record = leadRecords.find(item => item.id === id); if (record) openRecord(record); }}
               onOpenDocument={id => { const document = scopedDocuments.find(item => item.id === id) || portal.documents.find(item => item.id === id); if (document) openDocument(document); }}
               onUpdateTask={(id,patch,action) => { const s = patch.status === "Cancelled" ? "Archived" : (patch.status as any); void updateTask(id, { ...(patch.fields ? { fields: patch.fields } : {}), ...(s ? { status: s } : {}) }, action); }}
               onCreateTask={handleCreateCustomTask}
               onAdvanceStage={async (projectId: string, targetStage: string) => {
-                setPortal(current => current ? ({
-                  ...current,
-                  records: current.records.map(r => r.id === projectId ? { ...r, stage: targetStage, fields: { ...r.fields, currentStage: targetStage, lifecycleStage: targetStage } } : r)
-                }) : current);
+                return await update(state => {
+                  const project = state.records.find(r=>r.id===projectId && r.type==='Project');
+                  if(!project) throw new Error('Project unavailable.');
+                  const track=getRecordedProjectTrack(project.fields);
+                  const baseline=readLifecycleBaseline(project.fields['lifecycleBaseline']);
+                  if(!track || !baseline) throw new Error('This legacy project needs a reviewed lifecycle baseline before changing stages.');
+                  const completed=JSON.parse(project.fields['completedStages'] || '[]') as string[];
+                  const plan=computeProgressiveStageAndTaskState({projectId:project.id,track,completedStageCodes:completed,stageDefinitions:projectLifecycleStages(baseline,track)});
+                  if(!plan.stages.some(s=>s.stageCode===targetStage && s.status==='ready')) throw new Error('Stage prerequisites and the recorded gate completion must be satisfied first.');
+                  const phase=baseline.stages.find(s=>s.code===targetStage)?.phase || '';
+                  return {...state,records:[...state.records.map(r=>r.id===projectId?{...r,stage:targetStage,fields:{...r.fields,currentStage:targetStage,lifecycleStage:targetStage,companyPhase:phase},updatedAt:now()}:r),...localDefaultLifecycleTasks(state,project,targetStage)]};
+                });
               }}
             />
           ) : view === "pmss" ? (
@@ -3630,6 +3747,9 @@ function Portal() {
               selectedProjectId={selectedProjectId}
               onSelectProject={setSelectedProjectId}
               onBack={() => navigate(activeArea)}
+              onOpenInputs={()=>setView("analysis")}
+              onOpenRecord={id=>{const r=portal.records.find(r=>r.id===id);if(r)openRecord(r);}}
+              onOpenDocument={id=>{const d=portal.documents.find(d=>d.id===id);if(d)openDocument(d);}}
               onOpenDecisionLog={() => setDecisionLogOpen(true)}
               onUpdate={(patch) =>
                 update((state) => ({
@@ -3660,7 +3780,30 @@ function Portal() {
           ) : view === "vault" && testMembership ? (
             <SharedDocumentVault key={`${testMembership.membershipId}:${vaultDocumentId || ""}:${vaultProjectId || ""}`} membership={testMembership} departmentCode={departmentCode(active.short)} initialDocumentId={vaultDocumentId} initialProjectId={vaultProjectId} onBack={()=>navigate(effectiveArea)} renderLibrary={library=><HardwareDeliverablesDrive documents={library.documents} departments={portal.departments} departmentContext={library.departmentContext} persona={persona} onSelectDocument={document=>library.onSelectDocument(document as typeof library.documents[number])} onExternalUpload={library.onUploadFile} uploadReadOnlyReason={library.readOnlyReason} sharedStorage hideProjectFilter/>}/>
           ) : view === "vault" ? (
-            <><div className="flex items-center justify-between"><div><h1 className="text-lg font-semibold">Documents & Vault</h1><p className="text-xs text-muted-foreground">Original documents and project-linked files within your department access.</p></div><div className="flex gap-2">{testMembership && <Action label="Shared documents & uploads" primary onClick={() => {setSharedTestInitialTab("Documents"); setShowSharedTestWorkspace(true);}} />}<Action label="Back to workspace" onClick={() => navigate(effectiveArea)} /></div></div><HardwareDeliverablesDrive documents={scopedDocuments} departments={portal.departments} departmentContext={departmentContext} persona={persona} portal={portal} onSelectDocument={openDocument} onOpenCustomerRegister={() => setCustomerRegisterOpen(true)} uploadReadOnlyReason={testMembership ? "This view is browser-local. Shared TEST uploads remain in Shared TEST records until the shared document contract is verified." : undefined} onDocumentCreated={async document => update(state => { const ownWork = state.records.filter(r=>!r.archived && r.area === persona.departmentId); const keys = new Set([...ownWork.flatMap(projectReferences),...state.documents.filter(d=>canDepartmentAccessDocument(d,persona,departmentContext)).flatMap(d=>d.linkedRecordRefs ?? [])]); const projects = state.records.filter(r => r.type === "Project" && (persona.kind === "admin" || keys.has(r.id) || keys.has(r.reference))); const selected = projects.find(p => p.id === document.projectId); assertUploadContextCurrent(document, projects, state.departments, sourceGerberPackages(state.documents.filter(d => canDepartmentAccessDocument(d, persona, departmentContext)), selected)); return { ...state, documents:[document,...state.documents], audit:[{id:createId(),at:now(),action:"Draft document uploaded",detail:`${document.title} · Browser-local`},...state.audit].slice(0,100) }; })} /></>
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-lg font-semibold">Documents &amp; Vault</h1>
+                  <p className="text-xs text-muted-foreground">
+                    Original documents and project-linked files within your department access.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {testMembership && (
+                    <Action
+                      label="Shared documents & uploads"
+                      primary
+                      onClick={() => {
+                        setSharedTestInitialTab("Documents");
+                        setShowSharedTestWorkspace(true);
+                      }}
+                    />
+                  )}
+                  <Action label="Back to workspace" onClick={() => navigate(effectiveArea)} />
+                </div>
+              </div>
+              <HardwareDeliverablesDrive documents={scopedDocuments} departments={portal.departments} departmentContext={departmentContext} persona={persona} portal={portal} onSelectDocument={openDocument} onOpenCustomerRegister={() => setCustomerRegisterOpen(true)} uploadReadOnlyReason={testMembership ? "This view is browser-local. Shared TEST uploads remain in Shared TEST records until the shared document contract is verified." : undefined} onDocumentCreated={async document => update(state => { const ownWork = state.records.filter(r=>!r.archived && r.area === persona.departmentId); const keys = new Set([...ownWork.flatMap(projectReferences),...state.documents.filter(d=>canDepartmentAccessDocument(d,persona,departmentContext)).flatMap(d=>d.linkedRecordRefs ?? [])]); const projects = state.records.filter(r => r.type === "Project" && (persona.kind === "admin" || keys.has(r.id) || keys.has(r.reference))); const selected = projects.find(p => p.id === document.projectId); assertUploadContextCurrent(document, projects, state.departments, sourceGerberPackages(state.documents.filter(d => canDepartmentAccessDocument(d, persona, departmentContext)), selected)); return { ...state, documents:[document,...state.documents], audit:[{id:createId(),at:now(),action:"Draft document uploaded",detail:`${document.title} · Browser-local`},...state.audit].slice(0,100) }; })} />
+            </>
           ) : view === "index" ? (
             <>
             {persona.kind === "admin" && activeArea === "rnd" && <div className="mb-4 flex items-center justify-between"><h1 className="text-xl font-semibold">Manage Projects</h1><Action label="New Project" primary onClick={() => handleOpenCreate("Project")} /></div>}
@@ -3811,6 +3954,8 @@ function Portal() {
             />
           ) : view === "tickets" ? (
             <ServiceTicketsWorkspace
+              departmentOptions={portal.departments.filter(d=>d.active).map(d=>({code:departmentCode(d.code),name:d.name}))}
+              ticketGroups={configuredTicketGroups(portal.departments.find(d=>departmentCode(d.code)==='SIT')?.settings.ticketGroups,'SIT')}
               tickets={portal.serviceTickets ?? INITIAL_SERVICE_TICKETS}
               currentUser={{
                 role: persona.kind === "admin" ? "admin" : (persona.departmentId ?? "staff"),
@@ -3822,6 +3967,13 @@ function Portal() {
               onUpdateTickets={(tickets: ServiceTicket[]) => {
                 void update((state) => ({ ...state, serviceTickets: tickets }));
               }}
+              onCreateLinkedRecord={(ticket) => handleOpenCreate("Service case follow-up", {
+                title: `Service case follow-up · ${ticket.reference}`,
+                projectId: ticket.projectId ?? "",
+                service: ticket.assetId ? `Ticket ${ticket.reference} · Asset ${ticket.assetId}` : `Ticket ${ticket.reference}`,
+                sourceTicketReference: ticket.reference,
+                scope: `Source ticket: ${ticket.reference}\nTicket type: ${ticket.category}\nReported subject: ${ticket.subject}\nReported details (review/edit before saving): ${ticket.description}\n\nDraft only. Confirm evidence, project, ownership, and next actions before using this as a controlled record. No findings, customer acceptance, or approval are inferred.`,
+              })}
               onOpenProjectDetail={(pId: string) => {
                 setSelectedProjectId(pId);
                 setView("project");
@@ -3920,23 +4072,16 @@ function Portal() {
               }}
               onOpenAnalysis={()=>setView("analysis")}
               onRunRfq={() => {
-                setRfqStep(0);
-                setRfqOpen(true);
+                openCurrentProjectLifecycle();
               }}
               onOpenSyncHub={() => setSyncHubOpen(true)}
                onOpenDraftHub={() => setDraftHubOpen(true)}
               onOpenAi4t={() => {
-                setAi4tInitialTab("stages");
-                setAi4tOpen(true);
+                openCurrentProjectLifecycle();
               }}
               onOpenFeasibilityGate={(projectCode) => {
                 setSelectedProjectId(projectCode);
-                setAi4tInitialTab("feasibility");
-                setAi4tSimulation((prev) => ({
-                  ...prev,
-                  stage: Math.max(prev.stage, 1),
-                }));
-                setAi4tOpen(true);
+                setView('analysis');
               }}
               onOpenDecisionLog={() => setDecisionLogOpen(true)}
               onOpenLegalHub={() => setLegalHubOpen(true)}
@@ -4024,12 +4169,7 @@ function Portal() {
               onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
               onOpenFeasibilityGate={(projectCode) => {
                 setSelectedProjectId(projectCode);
-                setAi4tInitialTab("feasibility");
-                setAi4tSimulation((prev) => ({
-                  ...prev,
-                  stage: Math.max(prev.stage, 1),
-                }));
-                setAi4tOpen(true);
+                setView('analysis');
               }}
               onSendForFeasibility={(enquiry) => setFeasibilityDispatchEnquiry(enquiry)}
               onOpenAssetCatalog={() => setAssetCatalogOpen(true)}
@@ -4132,7 +4272,7 @@ function Portal() {
           activeArea={activeArea}
           view={view}
           onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
-          onOpenAi4tLifecycle={() => setAi4tOpen(true)}
+          onOpenAi4tLifecycle={() => openCurrentProjectLifecycle()}
           onOpenProjectAnalysis={() => setView("analysis")}
           onOpenDrive={openDocuments}
           onOpenDraftHub={() => setDraftHubOpen(true)}
@@ -4140,7 +4280,7 @@ function Portal() {
           onOpenLegalHub={() => setLegalHubOpen(true)}
           onOpenDecisionLog={() => setDecisionLogOpen(true)}
           onOpenAdminSettings={() => {
-            setAdminTab("chronicles");
+            setAdminTab("lifecycle");
             setModal("admin");
           }}
           onOpenWizard={() => setModal("wizard")}
@@ -4189,7 +4329,6 @@ function Portal() {
           }}
           onOpenAdministration={() => setModal("admin")}
           onLoadDemo={loadDemo}
-          onResetDemo={resetDemo}
         />
       )}{" "}
       {modal === "history" && <HistoryPanel audit={portal.audit} onClose={() => setModal(null)} />}{" "}
@@ -4226,6 +4365,9 @@ function Portal() {
             log("Controlled document updated", event);
           }}
           onOpenDraftHub={() => setDraftHubOpen(true)}
+          openUploadOnMount={documentUploadRequested}
+          initialProjectId={documentUploadProjectId}
+          onUploadOpenConsumed={() => setDocumentUploadRequested(false)}
           templateBodies={portal.templateBodies ?? defaultTemplateBodies()}
           onTemplateBodiesChange={(templateBodies) => update((state) => ({ ...state, templateBodies }))}
           onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
@@ -4257,6 +4399,7 @@ function Portal() {
       )}{" "}
       {modal === "admin" && persona.kind === "admin" && (
         <AdminCommandCenter
+          sharedMembership={testMembership ?? undefined}
           portal={portal}
           activeDepartmentId={departmentContext}
           initialTab={adminTab}
@@ -4280,7 +4423,6 @@ function Portal() {
             );
           }}
           onLoadDemo={loadDemo}
-          onResetDemo={resetDemo}
         />
       )}{" "}
       {searchOpen && persona.kind !== "client" && <Dialog open onOpenChange={setSearchOpen}><DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Search</DialogTitle><DialogDescription>Search permitted documents, projects, tasks and process records. Your workspace stays open behind this popup.</DialogDescription></DialogHeader>{testMembership ? <SharedPortalSearch membership={testMembership} query={globalSearchQuery} onQueryChange={setGlobalSearchQuery} onOpen={(destination,id,title)=>{setSearchOpen(false);setShowSharedTestWorkspace(false);if(destination==="Documents"){openDocuments();setVaultDocumentId(id);}else if(destination==="Projects"){setSelectedProjectId(id);setView("project");}else if(destination==="decisions"){setDecisionInitialQuery(title);setDecisionLogOpen(true);}else if(destination==="Records"){setView("records");}else if(destination==="Tasks"){setView("assignee");}else if(destination==="Approvals"){setView("approvals");}else setView(destination as "budgets"|"tickets"|"communication");}}/> : <SharedIndex compact queryValue={globalSearchQuery} onQueryChange={setGlobalSearchQuery} records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeRecords} documents={scopedDocuments} allowedProjectIds={(persona.kind === "lead" || persona.kind === "member") ? leadProjects.map(project => project.id) : []} departments={portal.departments} departmentContext={departmentContext} onSelect={record => { setSearchOpen(false); if (record.type === "Project") { setSelectedProjectId(record.reference); if (persona.kind === "admin") setSelectedId(record.id); else setProjectScopes(current => ({ ...current, [effectiveArea]: record.reference })); setView("project"); } else openRecord(record); }} onSelectDocument={document => { setSearchOpen(false); openDocument(document); }} />}</DialogContent></Dialog>}
@@ -4415,7 +4557,7 @@ function Portal() {
       )}
       {printTemplate && (
         <PrintableTemplateView
-          document={printTemplate}
+          document={portal.demoLoaded && !testMembership ? { ...printTemplate, testOnly: true } : printTemplate}
           records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeRecords}
           settings={portal.templateSettings ?? defaultTemplateSettings()}
           onClose={() => setPrintTemplate(null)}
@@ -4624,7 +4766,7 @@ function Portal() {
           onOpenDocument={openDocument}
           chronicles={resolveProjectChronicles(portal.responsibilityVersions, portal.records.find(record => record.type === "Project" && record.reference === selectedProjectId)?.fields["responsibilityVersion"], portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES)}
           onOpenChroniclesManager={() => {
-            setAdminTab("chronicles");
+            setAdminTab("lifecycle");
             setModal("admin");
             setAi4tOpen(false);
           }}
@@ -4644,7 +4786,8 @@ function Portal() {
           onReset={() => setRfqStep(0)}
         />
       )}
-      {directoryOpen && persona.kind !== "client" && (
+      {directoryOpen && testMembership && !testMembership.isClient && <SharedCompanyDirectory membership={testMembership} onClose={()=>setDirectoryOpen(false)}/>}
+      {directoryOpen && !testMembership && persona.kind !== "client" && (
         <CompanyDirectoryModal key={persona.id} onClose={() => setDirectoryOpen(false)} initialDepartment={(persona.kind === "lead" || persona.kind === "member") ? departmentCode(persona.departmentId) : undefined} lockedDepartment={(persona.kind === "lead" || persona.kind === "member") ? departmentCode(persona.departmentId) : undefined} contacts={(persona.kind === "lead" || persona.kind === "member") ? allTeamMembers.filter(member => member.area === persona.departmentId).map((member, index) => ({ id: String(index), name: member.name, departmentCode: departmentCode(member.area), departmentName: areaById(member.area).name, designation: member.role, reportingManager: "Department lead", workEmail: "", deskExtension: "Not provided", facilityLocation: "Not provided", primarySkills: member.skills, avatarInitial: member.name.split(" ").map(part => part[0]).join("").slice(0,2) })) : undefined} />
       )}
       {decisionLogOpen && persona.kind !== "client" && testMembership && <SharedDecisionLog membership={testMembership} departmentCode={effectiveArea} activeProject={view === "project" ? selectedProjectId : undefined} initialQuery={decisionInitialQuery} onClose={()=>{setDecisionLogOpen(false);setDecisionInitialQuery("");}}/>}
@@ -4652,7 +4795,17 @@ function Portal() {
         <OfficialDecisionLogModal key={persona.id} onClose={() => setDecisionLogOpen(false)} activeProject={view === "project" ? selectedProjectId : undefined} persona={persona} authorId={persona.id} decisions={portal.decisionLogs ?? (portal.demoLoaded ? defaultDecisionLogs : [])} projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")} stageOptions={Array.from(new Set((portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES).filter(c=>persona.kind === "admin" || departmentCode(c.departmentCode) === departmentCode(persona.departmentId)).sort((a,b)=>a.stageIndex-b.stageIndex).map(c=>c.stageName)))} onSave={async entry => update(state => {
           const actorId=persona.id;
           const permittedProjects = state.records.filter(r=>r.type === "Project" && !r.archived && (persona.kind === "admin" || leadProjects.some(p=>p.id === r.id))).map(r=>r.reference);
-          const stages = (state.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES).filter(c=>persona.kind === "admin" || departmentCode(c.departmentCode) === departmentCode(persona.departmentId)).map(c=>c.stageName);
+          const decisionProject = entry.scope === "common"
+            ? undefined
+            : state.records.find(record => record.type === "Project" && record.reference === entry.projectCode);
+          const decisionBaseline = readLifecycleBaseline(decisionProject?.fields["lifecycleBaseline"]);
+          const decisionTrack = decisionProject ? getRecordedProjectTrack(decisionProject.fields) : undefined;
+          const stages = decisionBaseline
+            ? (decisionTrack
+                ? projectLifecycleStages(decisionBaseline, decisionTrack, decisionProject?.fields["certificationRequired"] === "true")
+                : decisionBaseline.stages
+              ).map(stage => stage.code)
+            : [];
           assertDecisionSubmission(entry, {id:actorId,kind:persona.kind,name:persona.person,role:persona.label,department:departmentCode(persona.departmentId) || "ADMIN"}, permittedProjects, stages);
           const entries=state.decisionLogs ?? (state.demoLoaded ? defaultDecisionLogs : []);
           if(entries.some(d=>d.id === entry.id)) throw new Error("This decision has already been recorded.");
@@ -4668,8 +4821,18 @@ function Portal() {
       {legalHubOpen && persona.kind === "admin" && (
         <OperationsLegalAndLetterheadModal onClose={() => setLegalHubOpen(false)} />
       )}
-      {assetCatalogOpen && (persona.kind === "admin" || persona.id === "ehw") && (
-        <ModularAssetCatalogModal onClose={() => setAssetCatalogOpen(false)} />
+      {assetCatalogOpen && testMembership && !testMembership.isClient && <SharedLifecycleWorkspace scopeKey={testMembership.membershipId} mode="assets" onClose={()=>setAssetCatalogOpen(false)}/>}
+      {assetCatalogOpen && !testMembership && (persona.kind === "admin" || persona.kind === "lead" || persona.kind === "member") && (
+        <ReusableAssetsWorkspace
+          assets={(portal.reusableAssetRevisions ?? []).filter(asset => persona.kind === "admin" || leadProjects.some(p => [p.id,p.reference].includes(asset.originProject)))}
+          uses={portal.projectAssetUses ?? []}
+          projects={(persona.kind === "admin" ? activeRecords.filter(r=>r.type === "Project") : leadProjects).map(p=>({id:p.reference,title:p.title}))}
+          documents={scopedDocuments.map(d=>({id:d.id,title:d.title,revision:d.revision || "00"}))}
+          inventory={(portal.inventory ?? []).map(i=>({id:i.id,title:`${i.partNumber} · ${i.description}`}))}
+          actor={persona.person}
+          onPublish={async asset=>{const saved=await update(state=>({...state,reusableAssetRevisions:[...(state.reusableAssetRevisions ?? []),asset]}));if(!saved)throw new Error("Asset revision was not saved.");}}
+          onLink={async use=>{const saved=await update(state=>({...state,projectAssetUses:linkReusableAsset(state.projectAssetUses ?? [],use,state.reusableAssetRevisions ?? [],state.records.filter(r=>r.type === "Project").map(p=>p.reference))}));if(!saved)throw new Error("Asset use was not saved.");}}
+          onClose={() => setAssetCatalogOpen(false)}/>
       )}
       {assetLinkerProjectId && (
         <ProjectAssetLinkerModal
@@ -4950,14 +5113,14 @@ function RfqCycleTest({
   const [label, title, detail] = rfqStages[step] ?? rfqStages[0];
   const complete = step === rfqStages.length - 1;
   return (
-    <Modal title="RFQ-to-production feature test" onClose={onClose} wide>
+    <Modal title="Fictional RFQ-to-pilot workflow test" onClose={onClose} wide>
       <DemoMarker />
       <p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">
-        RFQ-2026-TATA-EV-042 · Interactive walkthrough · feature test only
+        TEST-RFQ-NORTHSTAR-042 · Interactive walkthrough · fictional data
       </p>
-      <h3 className="mt-2 text-xl font-semibold">DEMO · Tata Ace EV 4G Telematics Gateway</h3>
+      <h3 className="mt-2 text-xl font-semibold">Northstar Cargo EV Gateway · Fictional Test Program</h3>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        Volume 50,000-units/year program. Commercial, engineering and manufacturing milestones with stage reviews.
+        Illustrative pilot volume under review. Commercial, engineering and prototype milestones shown for workflow testing.
       </p>
       <ol className="mt-6 grid gap-2 sm:grid-cols-3">
         {rfqStages.map(([stage, stageTitle], index) => (
@@ -7064,7 +7227,7 @@ function DepartmentWorkspace({
 }: {
   onSubmitIntake?: React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onSubmitIntake"];
   onAddCustomer?: React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onAddCustomer"];
-  area: (typeof areas)[number];
+  area: Omit<(typeof areas)[number], 'name'> & {name:string};
   records: RecordItem[];
   allRecords: RecordItem[];
   projectScope: ProjectScope;
@@ -7731,7 +7894,11 @@ function RecordDetail({
           </div>
           <div className="flex gap-2">
             {onSendForFeasibility && <Action label="Send for feasibility" primary onClick={onSendForFeasibility} />}
-            <Action onClick={() => onOpenPrintable(recordPrintable(record))} label="Open full document" primary />
+            <Action onClick={() => {
+              const projectId = record.fields["projectId"] || projectReferences(record)[0];
+              const linkedProject = projects.find((candidate) => candidate.reference === projectId);
+              onOpenPrintable(recordPrintable(record, linkedProject));
+            }} label="Open full document" primary />
             <Action onClick={() => { setTitle(record.title); setNotes(record.notes); setStatus(record.status); setLinkedProject(record.fields["projectId"] ?? ""); setSaveError(""); setEditing(true); }} label={editing ? "Cancel" : "Edit"} />
             <Action onClick={onArchive} label="Archive" />
           </div>
@@ -7747,7 +7914,7 @@ function RecordDetail({
                       <dt className="font-mono text-[10px] uppercase text-muted-foreground">
                         {key.replace(/([A-Z])/g, " $1")}
                       </dt>
-                      <dd className="mt-1 text-sm">{value}</dd>
+                      <dd className="mt-1 text-sm">{["recordStage", "hwStage", "qualityStage", "lifecycleStage"].includes(key) && record.type !== "Project" ? recordStageLabel({ ...record.fields, recordStage: String(value) }, record.type) : value}</dd>
                     </div>
                   ))}
               </dl>
@@ -7823,7 +7990,7 @@ function RecordForm({
   initialValues?: Record<string, string> | null;
   defaultAssignee: string;
   onClose: () => void;
-  onSave: (record: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">) => void;
+  onSave: (record: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">, originalFile?: File | null) => Promise<boolean>;
   onAddCustomer?: ((customer: CustomerRecord) => void) | undefined;
   onAddSupplier?: ((supplier: SupplierRecordItem) => void) | undefined;
   onAddPart?: ((part: PartRecordItem) => void) | undefined;
@@ -7847,6 +8014,8 @@ function RecordForm({
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
   const [showAddPartModal, setShowAddPartModal] = useState(false);
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const canAddCustomer = ["sales", "sal", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
   const canAddSupplier = ["pur", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
@@ -7868,6 +8037,14 @@ function RecordForm({
     }
   }, [initialType, initialValues, portal.masters.locations]);
   const field = (key: string) => values[key] ?? "";
+  const attachmentSpec = hardwareAttachmentForRecordType(type);
+  const attachmentProject = portal.records.find(record => record.type === "Project" && (record.reference === field("projectId") || record.id === field("projectId")));
+  const attachmentLifecycleContext = attachmentProject ? projectLifecycleContext(attachmentProject.fields) : undefined;
+  const attachmentProjectStageCandidates = [attachmentProject?.fields["currentStage"], attachmentProject?.fields["lifecycleStage"], attachmentProject?.fields["stage"]]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const attachmentProjectStage = attachmentProjectStageCandidates.find(value => CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === value)) ?? "";
+  const attachmentProjectStageNeedsMapping = Boolean(attachmentProject && !attachmentProjectStage && attachmentProjectStageCandidates.length);
+  const attachmentAllowedAtStage = recordAttachmentAllowedAtStage(type, attachmentProjectStage, CANONICAL_STAGE_TEMPLATES);
   const departmentCode = findAreaDepartment(portal.departments, area)?.code.replace(/^DEMO-/, "") || areaById(area).short;
   const selectedProject = field("projectId");
   const selectedDocumentType = templateDocumentTypes.includes(type.toUpperCase()) ? type.toUpperCase() : type.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 8) || "REC";
@@ -7877,12 +8054,6 @@ function RecordForm({
   const generatedId = type === "Project" ? field("projectId") : type === "Task"
     ? `TASK-${departmentCode}-${String(portal.records.filter((r) => r.type === "Task").length + 1).padStart(3, "0")}`
     : isPreProjectIntake(type) && !selectedProject ? suggestIntakeReference(portal.records,type) : documentNumber(selectedProject, departmentCode, selectedDocumentType, nextRevision, portal.templateSettings?.prefix ?? "HLPL");
-  const approvedReview = portal.records.find(
-    (record) =>
-      record.type === "Contract review" &&
-      record.status === "Approved" &&
-      record.reference === "HLPL/F/MKT/01",
-  );
   const taskFields = [
     { key: "title", label: "Task Title / Action", required: true },
     {
@@ -7905,10 +8076,31 @@ function RecordForm({
     { key: "targetDate", label: "Target date", kind: "date" as const },
     { key: "quantity", label: "Target annual volume" },
   ];
-  const visibleFields = type === "Project" ? projectFields : type === "Task" ? taskFields : [
+  const visibleFields: import("@/lib/record-form-catalogue").RecordField[] = (type === "Project" ? projectFields : type === "Task" ? taskFields : [
     { key: "projectId", label: isPreProjectIntake(type) ? "Existing project (optional)" : "Project", required: !isPreProjectIntake(type), kind: "select" as const, options: projectOptions },
-    ...spec.fields.filter(item => item.key !== "controlledNumber" && item.key !== "projectId" && item.master !== "locations" && (type !== "PRS" || item.key !== "hwStage")),
-  ];
+    { key: "title", label: isPreProjectIntake(type) ? `${type} title` : "Record title", required: true },
+    ...recordFields(spec, type),
+  ]).map((item) => {
+    const stage = item.key === "hwStage" ? hardwareStageForRecordType(type) : undefined;
+    return stage ? { ...item, readOnly: true, automaticValue: stage.code, automaticLabel: stage.label } : item;
+  });
+  const persistRecord = async (record: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">) => {
+    if (originalFile && !attachmentAllowedAtStage) {
+      setError(`Original upload is locked. It is available at ${attachmentSpec?.stageCode ?? "the mapped record stage"} and the immediately following stage; current project stage: ${attachmentProjectStage || "not recorded"}. You may save the draft record without a file.`);
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const saved = await onSave(record, originalFile);
+      if (!saved) return;
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Record and original could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const scopedValues = scopeRecordDefaults(values, visibleFields.map(item => item.key));
@@ -7919,7 +8111,7 @@ function RecordForm({
     if (type === "Task") {
       const taskTitle = field("title").trim();
       if (!taskTitle) return setError("Task title is required.");
-      onSave({
+      void persistRecord({
         area,
         type: "Task",
         title: taskTitle,
@@ -7936,23 +8128,19 @@ function RecordForm({
       });
       return;
     }
-    if (type === "PRS" && !approvedReview) {
-      return setError("PRS is generated only after an approved Contract Review HLPL/F/MKT/01.");
-    }
     const finalControlledNumber = type === "Project" ? field("projectId") : field("controlledNumber") || generatedId;
     const preparedValues = {
       ...(type === "PRS"
         ? {
             ...scopedValues,
             controlledNumber: finalControlledNumber || "HLPL-SLCT-EHW-PRS-01",
-            projectId: values["projectId"] || "HLPL-SLCT-01",
-            lifecycleStage: "Stage 3 · Requirement Freeze & Commercial Confirmation",
-            generatedFrom: "Generated automatically from approved Contract Review HLPL/F/MKT/01",
-            baseline: "Frozen · automated baseline · changes require PMSS amendment",
+            hwStage: hardwareStageForRecordType(type)?.code || field("hwStage"),
+            generatedFrom: "Editable draft prepared from the selected project context; verify and complete source requirements before review.",
+            baseline: "Operational draft · editable until submitted for review",
           }
         : scopedValues),
       controlledNumber: finalControlledNumber,
-      ...(type === "Project" ? { lifecycleStage: "Stage 1", currentStage: "Stage 1" } : {}),
+      ...(type === "Project" ? { lifecycleStage: "CM_01", currentStage: "CM_01", companyPhase: "TG_0" } : {}),
     };
     const missing = visibleFields.find(
       (item) => item.required && item.key !== "controlledNumber" && !field(item.key).trim(),
@@ -7971,7 +8159,7 @@ function RecordForm({
         ),
     );
     if (invalid) return setError(`Select a managed ${invalid.label.toLowerCase()} option.`);
-    onSave({
+    void persistRecord({
       area,
       type,
       title: field("title").trim(),
@@ -7990,7 +8178,7 @@ function RecordForm({
             : isPreProjectIntake(type) ? "Capture the customer requirement first. A new inquiry can be saved without a project; link an existing project only when relevant." : type === "Project" ? "Create a project with a unique code and a separate descriptive title. The suggested code can be changed before saving; existing projects are not renamed."
             : `This ${areaById(area).name} record is linked to a managed project, people, suppliers and customers where applicable. The portal generates an HLPL document number when you leave the controlled number blank.`}
         </p>
-        <SelectField label="Record type" value={type} options={availableTypes} onChange={next => { setType(next); setValues(previous => ({ ...previous, controlledNumber: "", projectId: next === "Project" ? suggestProjectCode(portal.records, portal.templateSettings?.prefix) : type === "Project" ? "" : previous["projectId"] ?? "" })); }} />
+        <SelectField label="Record type" value={type} options={availableTypes} onChange={next => { setType(next); setOriginalFile(null); setValues(previous => ({ ...previous, controlledNumber: "", hwStage: hardwareStageForRecordType(next)?.code || previous["hwStage"] || "HW_01", projectId: next === "Project" ? suggestProjectCode(portal.records, portal.templateSettings?.prefix) : type === "Project" ? "" : previous["projectId"] ?? "" })); }} />
         <section className="rounded-lg border border-steel/35 bg-panel p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -8004,15 +8192,17 @@ function RecordForm({
         </section>
         {type === "PRS" && (
           <div className="rounded-lg border border-moss/30 bg-accent p-4 text-sm">
-            <p className="font-semibold">Auto-compiled, frozen PRS baseline</p>
+            <p className="font-semibold">Project-linked PRS draft</p>
             <p className="mt-1 text-muted-foreground">
-              Generated automatically from approved Contract Review HLPL/F/MKT/01. No stage selection is required.
+              The stage is assigned automatically from the record type. This draft remains editable; source requirements and approvals are never assumed.
             </p>
-            <p className="mt-2 font-mono text-xs text-steel">
-              {approvedReview ? "Feasibility approvals complete" : "Awaiting approved feasibility review"}
-            </p>
+            <p className="mt-2 font-mono text-xs text-steel">{hardwareStageForRecordType(type)?.label || "Stage assigned by record type"}</p>
           </div>
         )}
+        {initialValues?.["sourceTicketReference"] && <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-xs">
+          <p className="font-semibold">Linked from ticket {initialValues["sourceTicketReference"]}</p>
+          <p className="mt-1 text-muted-foreground">Ticket context is prefilled for review and remains editable. Saving creates a browser-local operational draft only; no controlled document, approval, release, measurement, or customer response is generated.</p>
+        </div>}
         <div className="grid gap-4 md:grid-cols-2">
           {visibleFields.map((item) =>
             item.master ? (
@@ -8021,7 +8211,7 @@ function RecordForm({
                 item={item}
                 value={field(item.key)}
                 options={portal.masters[item.master] ?? []}
-                onChange={(value) => setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value })}
+                onChange={(value) => { if (item.key === "projectId") setOriginalFile(null); setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value }); }}
                 onAddCustomer={item.master === "customers" && canAddCustomer ? () => setShowAddCustomerModal(true) : undefined}
                 onAddSupplier={item.master === "suppliers" && canAddSupplier ? () => setShowAddSupplierModal(true) : undefined}
                 onAddPart={item.master === "parts" && canAddPart ? () => setShowAddPartModal(true) : undefined}
@@ -8030,13 +8220,21 @@ function RecordForm({
               />
             ) : item.key === "projectId" && isPreProjectIntake(type) ? (
               <div key={item.key} className="space-y-1"><p className="text-sm font-medium">Existing project (optional)</p><CompactFilterSelect label="Inquiry project link" shortLabel="Project" icon={Layers} value={selectedProject} onChange={value=>setValues(previous=>({...previous,projectId:value,controlledNumber:""}))} options={[{value:"",label:"New requirement — no project yet"},...portal.records.filter(record=>record.type === "Project" && !record.archived).map(record=>({value:record.reference,label:`${record.reference} · ${record.title}`}))]}/><p className="text-xs text-muted-foreground">Link an existing project only for a change, extension or repeat requirement. No project is created by saving this inquiry.</p></div>
+            ) : item.readOnly ? (
+              <TextField
+                key={item.key}
+                label={item.label}
+                value={item.automaticLabel || item.automaticValue || ""}
+                onChange={() => undefined}
+                readOnly
+              />
             ) : item.kind === "select" ? (
               <SelectField
                 key={item.key}
                 label={`${item.label}${item.required ? " *" : ""}`}
                 value={field(item.key)}
                 options={["", ...(item.options ?? [])]}
-                onChange={(value) => setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value })}
+                onChange={(value) => { if (item.key === "projectId") setOriginalFile(null); setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value }); }}
               />
             ) : (
               <TextField
@@ -8045,11 +8243,17 @@ function RecordForm({
                 type={item.kind === "date" ? "date" : "text"}
                 required={item.required === true}
                 value={field(item.key)}
-                onChange={(value) => setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value })}
+                onChange={(value) => { if (item.key === "projectId") setOriginalFile(null); setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value }); }}
               />
             ),
           )}
         </div>
+        {attachmentSpec && <section aria-label="Automatic project phase and stage" className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
+          <p className="font-semibold">Project phase and stage · automatic</p>
+          <p className="mt-1">{field("projectId") ? `${attachmentProject?.reference || field("projectId")} · ${attachmentProject?.title || "Project"}` : "Choose a project to load its current lifecycle context."}</p>
+          <p className="text-muted-foreground">{attachmentLifecycleContext?.phase || "Phase not recorded"} · {attachmentLifecycleContext?.stage || "Stage not recorded"}</p>
+          <p className="text-muted-foreground">Record stage: {hardwareStageForRecordType(type)?.label || attachmentSpec.stageCode} · assigned from record type; the project stage remains unchanged.</p>
+        </section>}
         <label className="block text-sm font-medium">
           Requirements / scope
           <textarea
@@ -8058,6 +8262,19 @@ function RecordForm({
             className="mt-1.5 min-h-28 w-full border border-input bg-background p-3 text-sm"
           />
         </label>
+        {attachmentSpec && <label className="block rounded-lg border border-border bg-card/60 p-3 text-sm font-medium">
+          {attachmentSpec.label} <span className="font-normal text-muted-foreground">(optional; attached in this save)</span>
+          <input
+            aria-label="Original file for record"
+            type="file"
+            accept={attachmentSpec.accept}
+            onChange={(event) => setOriginalFile(event.target.files?.[0] ?? null)}
+            className="mt-2 block w-full text-xs"
+            disabled={saving || !attachmentAllowedAtStage || !field("projectId")}
+          />
+          {originalFile && <p className="mt-1 text-xs text-muted-foreground">{originalFile.name} · {(originalFile.size / 1024).toFixed(0)} KB · SHA-256 verified when saved</p>}
+          <p className="mt-1 text-xs text-muted-foreground">{attachmentAllowedAtStage ? `Project stage ${attachmentProjectStage} permits this original. It remains a draft and does not approve, release or advance the project.` : `Upload unlocks at ${attachmentSpec.stageCode} or the immediately following project stage. ${attachmentProjectStageNeedsMapping ? "The project has a legacy stage label that is not mapped to the current lifecycle catalog." : `Current stage: ${attachmentProjectStage || "not recorded"}.`} You can still save the draft record.`} Browser-local TEST storage; cloud sharing is not implied.</p>
+        </label>}
         {error && (
           <p role="alert" className="text-sm text-danger">
             {error}
@@ -8065,7 +8282,7 @@ function RecordForm({
         )}
         <div className="flex justify-end gap-2">
           <Action onClick={onClose} label="Cancel" />
-          <Action label={type === "Task" ? "Save Task" : `Save ${type}`} primary submit />
+          <button type="submit" disabled={saving} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{saving ? "Saving draft…" : originalFile ? `Save ${type} & original` : type === "Task" ? "Save Task" : `Save ${type}`}</button>
         </div>
       </form>
       {showAddCustomerModal && (
@@ -8213,6 +8430,7 @@ function ManagedField({
 }
 
 function AdminCommandCenter({
+  sharedMembership,
   portal,
   activeDepartmentId,
   initialTab = "company",
@@ -8221,13 +8439,14 @@ function AdminCommandCenter({
   onLog,
   onContext,
   onLoadDemo,
-  onResetDemo,
 }: {
   portal: PortalState;
+  sharedMembership?: TestMembership | undefined;
   activeDepartmentId: string | null;
   initialTab?:
     | "company"
     | "chronicles"
+    | "lifecycle"
     | "departments"
     | "templates"
     | "roles"
@@ -8236,17 +8455,16 @@ function AdminCommandCenter({
     | "team"
     | "demo";
   onClose: () => void;
-  onUpdate: (recipe: (state: PortalState) => PortalState) => void;
+  onUpdate: (recipe: (state: PortalState) => PortalState) => void | boolean | Promise<boolean>;
   onLog: (action: string, detail: string) => void;
   onContext: (id: string | null) => void;
   onLoadDemo: () => void;
-  onResetDemo: () => void;
 }) {
   const [tab, setTab] = useState<
-    "company" | "chronicles" | "departments" | "templates" | "roles" | "masters" | "cloud" | "team" | "demo"
+    "company" | "chronicles" | "lifecycle" | "departments" | "templates" | "roles" | "masters" | "cloud" | "team" | "demo"
   >(
-    initialTab === ("raci" as any)
-      ? "chronicles"
+    initialTab === ("raci" as any) || initialTab === 'chronicles'
+      ? "lifecycle"
       : initialTab === ("settings" as any)
         ? "departments"
         : (initialTab ?? "company")
@@ -8325,7 +8543,7 @@ function AdminCommandCenter({
   return (
     <Modal title="Administration command center" onClose={onClose} wide>
       <div className="mb-5 flex flex-wrap gap-2 border-b border-border pb-4">
-        {(["company", "chronicles", "departments", "templates", "roles", "masters", "cloud", "team", "demo"] as const).map(
+        {(["company", "lifecycle", "departments", "templates", "roles", "masters", "cloud", "team", "demo"] as const).map(
           (item) => (
             <button
               key={item}
@@ -8337,8 +8555,8 @@ function AdminCommandCenter({
             >
               {item === "company"
                 ? "Company & calendar"
-                : item === "chronicles"
-                  ? "Department chronicles & RACI"
+                : item === "lifecycle"
+                  ? "Phases, stages & RACI"
                 : item === "departments"
                   ? "Department governance & SLA"
                   : item === "templates"
@@ -8361,7 +8579,16 @@ function AdminCommandCenter({
           Acting role · Administrator
         </span>
       </div>
-      {tab === "chronicles" ? (
+      {tab === "lifecycle" && sharedMembership ? (<SharedLifecycleWorkspace scopeKey={sharedMembership.membershipId} mode="settings" onClose={onClose}/>) : tab === "lifecycle" ? (
+        <LifecycleSettingsEditor departments={portal.departments} revision={portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()} onActivate={async revision => {
+          const saved = await onUpdate(state => {
+            const previous = state.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision();
+            return { ...state, lifecycleRevisions: [...(state.lifecycleRevisions ?? [previous]), revision], records: state.records.map(record => record.type === "Project" && !record.fields["lifecycleBaseline"] && previous.stages.some(stage => stage.code === (record.fields["currentStage"] || record.fields["stage"])) ? { ...record, fields: { ...record.fields, lifecycleBaseline: pinLifecycleRevision(previous) } } : record) };
+          });
+          if(saved === false) throw new Error("Lifecycle defaults were not saved.");
+          onLog("Lifecycle defaults saved", `New revision ${revision.id}; existing project baselines preserved`);
+        }}/>
+      ) : tab === "chronicles" ? (
         <><p className="mb-3 text-sm text-muted-foreground">Local draft configuration changes apply to new projects. Existing projects retain their recorded version; changes to an existing baseline require a separate reviewed change. Backend authorization and signer acceptance remain unverified.</p><DepartmentChroniclesManager
           chronicles={portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES}
           onUpdateChronicles={(updated) => {
@@ -8378,7 +8605,7 @@ function AdminCommandCenter({
       ) : tab === "team" ? (
         <TeamCompetencyPanel members={demoTeam} />
       ) : tab === "demo" ? (
-        <DemoDataPanel loaded={portal.demoLoaded} onLoad={onLoadDemo} onReset={onResetDemo} />
+        <DemoDataPanel loaded={portal.demoLoaded} onLoad={onLoadDemo} />
       ) : tab === "templates" ? (
         <TemplateSettingsEditor
           settings={portal.templateSettings ?? defaultTemplateSettings()}
@@ -8445,7 +8672,7 @@ function AdminCommandCenter({
         </div>
       ) : tab === "masters" ? (
         <MasterManager portal={portal} onUpdate={onUpdate} onLog={onLog} />
-      ) : tab === "departments" ? (
+      ) : tab === "departments" && sharedMembership ? <SharedDepartmentConfiguration scopeKey={sharedMembership.membershipId}/> : tab === "departments" ? (
         managedDeptId ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-border pb-3">
@@ -8464,6 +8691,7 @@ function AdminCommandCenter({
               </div>
             </div>
             <DepartmentSettingsManager
+              departments={portal.departments}
               department={portal.departments.find((d) => d.id === managedDeptId) ?? selected}
               onUpdate={onUpdate}
               onLog={onLog}
@@ -8823,10 +9051,12 @@ function RoleManager({
   );
 }
 function DepartmentSettingsManager({
+  departments,
   department,
   onUpdate,
   onLog,
 }: {
+  departments: Department[];
   department: Department | undefined;
   onUpdate: (recipe: (state: PortalState) => PortalState) => void;
   onLog: (action: string, detail: string) => void;
@@ -8865,6 +9095,8 @@ function DepartmentSettingsManager({
         Managing {department.name}. These controls define local activity options and controlled
         numbering.
       </p>
+      <label className="mb-4 grid gap-1 text-xs">Main department workspace<select className="h-9 rounded border border-input bg-background px-2 text-sm" value={department.workspaceDepartmentId||''} onChange={e=>{const workspaceDepartmentId=e.target.value||null;onUpdate(state=>({...state,departments:state.departments.map(d=>d.id===department.id?{...d,workspaceDepartmentId}:d)}));onLog('Department workspace grouping updated',department.code);}}><option value="">Own department workspace</option>{departments.filter(d=>d.active&&d.id!==department.id&&!d.workspaceDepartmentId&&!departments.some(child=>child.workspaceDepartmentId===department.id)).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
+      <fieldset className="mb-4 rounded-lg border border-border bg-panel p-4"><legend className="px-1 text-sm font-semibold">Workspace responsibilities</legend><p className="mb-3 text-xs text-muted-foreground">Selected responsibilities share this department workspace, with separate ticket tabs.</p><div className="flex flex-wrap gap-4">{(['service','it'] as const).map(key=><label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={configuredTicketGroups(department.settings.ticketGroups,department.code).includes(key)} onChange={event=>{const current=configuredTicketGroups(department.settings.ticketGroups,department.code);const ticketGroups=event.target.checked?[...current,key]:current.filter(item=>item!==key);onUpdate(state=>({...state,departments:state.departments.map(item=>item.id===department.id?{...item,settings:{...item.settings,ticketGroups}}:item)}));onLog('Workspace responsibilities updated',department.code);}}/>{key==='service'?'Service & Field':'IT & Facilities'}</label>)}</div></fieldset>
       <div className="grid gap-3 border border-border bg-panel p-4 md:grid-cols-3">
         <SelectField
           label="Setting group"
@@ -8947,8 +9179,8 @@ function CloudSyncPanel({
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
-  const supabaseUrl = import.meta.env["VITE_SUPABASE_URL"] || "https://rzskhndweihuczbdhoxk.supabase.co";
-  const supabaseProjectId = import.meta.env["VITE_SUPABASE_PROJECT_ID"] || "rzskhndweihuczbdhoxk";
+  const supabaseUrl = import.meta.env["VITE_SUPABASE_URL"];
+  const supabaseProjectId = import.meta.env["VITE_SUPABASE_PROJECT_ID"];
 
   const pingSupabase = async () => {
     setPingStatus("checking");
@@ -9294,14 +9526,12 @@ function Wizard({
   onSave,
   onOpenAdministration,
   onLoadDemo,
-  onResetDemo,
 }: {
   portal: PortalState;
   onClose: () => void;
   onSave: (next: PortalState) => void;
   onOpenAdministration: () => void;
   onLoadDemo: () => void;
-  onResetDemo: () => void;
 }) {
   const [step, setStep] = useState(portal.setupStep);
   const [setup, setSetup] = useState(() => ({
@@ -9367,7 +9597,7 @@ function Wizard({
         />
       </div>
       <div className="mt-5">
-        <DemoDataPanel loaded={portal.demoLoaded} onLoad={onLoadDemo} onReset={onResetDemo} />
+        <DemoDataPanel loaded={portal.demoLoaded} onLoad={onLoadDemo} />
       </div>
       <div className="mt-5 grid gap-5 md:grid-cols-[15rem_1fr]">
         <div className="grid grid-cols-2 gap-1 md:block">
@@ -9604,111 +9834,17 @@ function SharedIndex({
     </div>
   );
 }
-function PMSSWorkspace({
-  portal,
-  project,
-  projects,
-  selectedProjectId,
-  onSelectProject,
-  onBack,
-  onOpenDecisionLog,
-  onUpdate,
-  onLog,
-}: {
-  portal: PortalState;
-  project: RecordItem | undefined;
-  projects: RecordItem[];
-  selectedProjectId: string;
-  onSelectProject: (projectId: string) => void;
-  onBack: () => void;
-  onOpenDecisionLog?: (() => void) | undefined;
-  onUpdate: (patch: Record<string, string>) => void;
-  onLog: (action: string, detail: string) => void;
+function PMSSWorkspace({portal,project,projects,selectedProjectId,onSelectProject,onBack,onOpenInputs,onOpenRecord,onOpenDocument}:{
+ portal:PortalState;project:RecordItem|undefined;projects:RecordItem[];selectedProjectId:string;
+ onSelectProject:(id:string)=>void;onBack:()=>void;onOpenInputs?: (()=>void)|undefined;onOpenRecord:(id:string)=>void;onOpenDocument:(id:string)=>void;
+ onOpenDecisionLog?: (()=>void)|undefined;onUpdate:(patch:Record<string,string>)=>void;onLog:(action:string,detail:string)=>void;
 }) {
-  const config = portal.setup.configuration;
-  const [amendment, setAmendment] = useState(config["pmssStatus"] === "Under Amendment");
-  const fields = [
-    ["Nominal voltage", project?.fields["voltage"] ?? config["pmssVoltage"] ?? "12V / 24V"],
-    ["Operating temperature", project?.fields["temperature"] ?? config["pmssTemperature"] ?? "-40°C to +85°C"],
-    ["Enclosure rating", project?.fields["enclosure"] ?? config["pmssIp"] ?? "IP67 / IP68"],
-    ["Target BOM", project?.fields["actualBom"] ?? config["pmssActualBom"] ?? "Not set"],
-  ];
-  const trigger = () => {
-    setAmendment(true);
-    onUpdate({
-      pmssStatus: "Under Amendment",
-      pmssGate: "Lifecycle gates held pending human scope review",
-    });
-    onLog(
-      "PMSS scope-change trigger",
-      "Loop 1 triggered: PMSS marked Under Amendment; subsequent phase gates are held.",
-    );
-  };
-  return (
-    <>
-      <button
-        onClick={onBack}
-        className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-steel"
-      >
-        <ArrowLeft className="size-4" />
-        Back to workspace
-      </button>
-      <PageHeader
-        eyebrow="Project master spec sheet · SSOT"
-        title="PMSS control"
-        description="The shared project baseline for engineering, compliance and lifecycle gate decisions."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {onOpenDecisionLog && (
-              <Action onClick={onOpenDecisionLog} label="Official Decision Log" />
-            )}
-            <Action onClick={trigger} label="Trigger scope change" primary />
-          </div>
-        }
-      />
-      <label className="mb-5 block max-w-xl text-sm font-medium">
-        Active project
-        <select
-          value={selectedProjectId}
-          onChange={(event) => onSelectProject(event.target.value)}
-          className="mt-1.5 h-11 w-full rounded-lg border border-input bg-background px-3 text-sm"
-        >
-          {projects.map((item) => (
-            <option key={item.id} value={item.reference}>
-              {item.reference} · {item.title.replace(/^DEMO · /, "")}
-            </option>
-          ))}
-        </select>
-      </label>
-      <section className="surface-card border border-border bg-card p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
-          <div>
-            <p className="font-mono text-[10px] uppercase text-muted-foreground">PMSS status</p>
-            <p className="mt-1 font-semibold">
-              {amendment ? "Under Amendment" : project?.fields["currentStage"] ?? "Controlled baseline"}
-            </p>
-          </div>
-          <Status status={amendment ? "In review" : "Approved"} />
-        </div>
-        <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-          {fields.map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-border bg-panel p-4">
-              <dt className="font-mono text-[10px] uppercase tracking-[.08em] text-muted-foreground">
-                {label}
-              </dt>
-              <dd className="mt-2 text-sm font-semibold">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-5 text-sm text-muted-foreground">
-          Loop 1 controls customer scope amendments. A human review is required before any lifecycle
-          gate can advance after the PMSS is marked Under Amendment.
-        </p>
-      </section>
-    </>
-  );
+ const related=project?portal.records.filter(r=>projectReferences(r).some(ref=>[project.id,project.reference].includes(ref))):[];
+ const docs=project?portal.documents.filter(d=>d.linkedRecordRefs?.some(ref=>[project.id,project.reference,...related.map(r=>r.id),...related.map(r=>r.reference)].includes(ref))):[];
+ return <div className="space-y-4"><button onClick={onBack} className="rounded border border-border px-3 py-2 text-sm">Back to workspace</button>
+ <label className="block text-sm">Project<select className="ml-3 rounded border border-input bg-background p-2" value={selectedProjectId} onChange={e=>onSelectProject(e.target.value)}>{projects.map(p=><option key={p.id} value={p.reference}>{p.reference} · {p.title}</option>)}</select></label>
+ {project?<ProjectMasterSpecSheet project={project} records={related} documents={docs} onOpenInputs={onOpenInputs} canViewCommercial={false} onOpenRecord={onOpenRecord} onOpenDocument={onOpenDocument}/>:<p>Select an available project.</p>}</div>;
 }
-
 function IndexWorkspace({
   records,
   projectsOnly = false,
@@ -9760,44 +9896,42 @@ function IndexWorkspace({
   );
 }
 function DemoMarker() {
- return <span className="inline-flex rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-semibold text-warning" title="Browser-local examples. No production approvals, certifications or shared saves are represented.">DEMO</span>;
+  return <span className="inline-flex rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-warning" title="Fictional sample records stored only in this browser. No customer, production, certification or shared records are represented.">TEST DATA</span>;
 }
 function DemoDataPanel({
   loaded,
   onLoad,
-  onReset,
 }: {
   loaded: boolean;
   onLoad: () => void;
-  onReset: () => void;
 }) {
   return (
     <div className="space-y-5">
       <DemoMarker />
       <div className="border border-border bg-panel p-4">
-        <h3 className="font-semibold">Authorized demo workspace</h3>
+        <h3 className="font-semibold">Fictional test data</h3>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Loads the complete automotive telematics gateway lifecycle baseline
+          Loads a fictional integrated-device lifecycle sample
           requirement, design, sourcing, material kit, serialised prototype units, test, NCR/CAPA,
-          pending human quality release, dispatch hold and a controlled client-update draft. All
-          technical values are illustrative and NOT VALIDATED. Loading is idempotent and keeps a
-          private browser-local snapshot of the real setup; Remove demo setup restores that snapshot
-          without treating demo identities as authenticated users.
+          covering enquiry, hardware, firmware, software, sourcing, prototype validation and service
+          follow-up. Values and workflow outcomes are illustrative; no customer acceptance, issued
+          certificate, production release, purchase, invoice or shipment is represented. The sample
+          is stored in this browser only. Reset sample restores the browser state saved before loading;
+          it does not affect shared TEST or production records.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           {loaded ? (
-            <Action label="Reload demo setup" onClick={onLoad} />
+            <Action label="Reload sample data" onClick={onLoad} />
           ) : (
-            <Action label="Load demo setup" onClick={onLoad} primary />
+            <Action label="Load sample data" onClick={onLoad} primary />
           )}
-          {loaded && <Action label="Remove demo setup & restore real setup" onClick={onReset} />}
         </div>
       </div>
       <div className="border border-border p-4 text-sm">
         <p className="font-semibold">Protected decision check</p>
         <p className="mt-2 leading-6 text-muted-foreground">
           Quality release and financial commitment examples remain pending and require a human
-          decision. The demo does not auto-approve, release, send client data, move stock, or make
+          decision. The sample cannot approve or release work, send client data, move stock, or make
           financial decisions.
         </p>
       </div>
@@ -9858,6 +9992,9 @@ function DocumentsPanel({
   onSelectDocument,
   onUploadDocument,
   onOpenDraftHub,
+  openUploadOnMount = false,
+  initialProjectId,
+  onUploadOpenConsumed,
   templateBodies,
   onTemplateBodiesChange,
   onOpenCustomerRegister,
@@ -9874,6 +10011,9 @@ function DocumentsPanel({
   onSelectDocument: (document: ControlledDocument) => void;
   onUploadDocument: (document: ControlledDocument) => void;
   onOpenDraftHub: () => void;
+  openUploadOnMount?: boolean;
+  initialProjectId?: string | undefined;
+  onUploadOpenConsumed?: (() => void) | undefined;
   templateBodies: Record<string, string>;
   onTemplateBodiesChange: (templates: Record<string, string>) => void;
   onOpenCustomerRegister?: (() => void) | undefined;
@@ -9931,6 +10071,9 @@ function DocumentsPanel({
         onDocumentCreated={onDocumentCreated}
         uploadReadOnlyReason={uploadReadOnlyReason}
         onDocumentUpdated={onDocumentUpdated}
+        openUploadOnMount={openUploadOnMount}
+        initialProjectId={initialProjectId}
+        onUploadOpenConsumed={onUploadOpenConsumed}
       />
     </Modal>
   );
@@ -10031,6 +10174,9 @@ function HardwareDeliverablesDrive({
   onDocumentCreated,
   uploadReadOnlyReason,
   onDocumentUpdated,
+  openUploadOnMount = false,
+  initialProjectId,
+  onUploadOpenConsumed,
   onExternalUpload,
   sharedStorage=false,
   hideProjectFilter=false,
@@ -10045,6 +10191,9 @@ function HardwareDeliverablesDrive({
   onDocumentCreated?: ((document: ControlledDocument) => Promise<boolean>) | undefined;
   uploadReadOnlyReason?: string | undefined;
   onDocumentUpdated?: ((document: ControlledDocument, event: string) => void) | undefined;
+  openUploadOnMount?: boolean;
+  initialProjectId?: string | undefined;
+  onUploadOpenConsumed?: (() => void) | undefined;
   onExternalUpload?: ((file:File|null)=>void) | undefined;
   sharedStorage?: boolean;
   hideProjectFilter?: boolean;
@@ -10093,6 +10242,18 @@ function HardwareDeliverablesDrive({
     if(onExternalUpload){onExternalUpload(file);return;}
     setPendingFile(file); setUploadDialogOpen(true);
   };
+  useEffect(() => {
+    if (!openUploadOnMount) return;
+    if (uploadDisabled) setUploadNotice(uploadReadOnlyReason ?? "Select an authorized department before uploading.");
+    else {
+      const allowedProject = uploadProjects.find(project => project.id === initialProjectId);
+      setProjectFilter(allowedProject?.id ?? "all");
+      setDriveGroup(allowedProject ? "03 Client projects" : "All Deliverables");
+      setPendingFile(null);
+      setUploadDialogOpen(true);
+    }
+    onUploadOpenConsumed?.();
+  }, [openUploadOnMount, uploadDisabled, uploadReadOnlyReason, onUploadOpenConsumed, initialProjectId, uploadProjects]);
   const saveUploadDraft = async (document: UploadDraft) => {
     if (uploadDisabled || !onDocumentCreated) return false;
     const saved = await onDocumentCreated(document);
@@ -10172,8 +10333,8 @@ function HardwareDeliverablesDrive({
         </div>
       </section>
 
-      {/* Direct Drag & Drop / File Uploader Dropzone */}
-      <section
+      {/* The shared TEST vault uses one project-scoped Add document flow above. */}
+      {!sharedStorage && <section
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragging(true);
@@ -10212,7 +10373,7 @@ function HardwareDeliverablesDrive({
 
         {uploadReadOnlyReason && <p className="mt-2 text-left text-xs text-muted-foreground">{uploadReadOnlyReason}</p>}
         {uploadNotice && <p role="status" className="mt-2 text-center text-xs text-muted-foreground">{uploadNotice}</p>}
-      </section>
+      </section>}
 
       {/* Artifact Register Table / List */}
       <section className="ops-section overflow-hidden">
@@ -10331,12 +10492,12 @@ function HardwareDeliverablesDrive({
             })
           ) : !((folder === "01_Governance_and_QMS" || folder === "00_Root_Audit_Repository") && onOpenCustomerRegister) ? (
             <p className="p-8 text-center text-sm text-muted-foreground">
-              No authorized deliverables in /{driveGroup}/{folder}. Use the uploader above to add files.
+              No authorized deliverables in /{driveGroup}/{folder}. {sharedStorage ? "Select a project above, then choose Add document to add its details and original file together." : "Use the uploader above to add a file."}
             </p>
           ) : null}
         </div>
       </section>
-      {uploadDialogOpen && persona && <DocumentUploadPilotDialog initialFile={pendingFile} projects={uploadProjects} departments={uploadDepartments} documents={documents.filter(canSee)} initialScope={driveGroup === "01 Common documents" ? "common" : driveGroup === "02 Internal projects" ? "internal" : driveGroup === "04 Other department work" ? "department" : "client"} actor={{ id: persona.id, kind: persona.kind, name: persona.person, departmentId: actorDepartment?.id }} onClose={() => { setUploadDialogOpen(false); setPendingFile(null); }} onSave={saveUploadDraft} />}
+      {uploadDialogOpen && persona && <DocumentUploadPilotDialog initialFile={pendingFile} initialProjectId={projectFilter === "all" ? undefined : projectFilter} projects={uploadProjects} departments={uploadDepartments} documents={documents.filter(canSee)} initialScope={driveGroup === "01 Common documents" ? "common" : driveGroup === "02 Internal projects" ? "internal" : driveGroup === "04 Other department work" ? "department" : driveGroup === "03 Client projects" ? "client" : "internal"} actor={{ id: persona.id, kind: persona.kind, name: persona.person, departmentId: actorDepartment?.id }} onClose={() => { setUploadDialogOpen(false); setPendingFile(null); }} onSave={saveUploadDraft} />}
     </section>
   );
 }
@@ -10556,7 +10717,10 @@ function DocumentDetail({
               label="Part / revision"
               value={`${document.part ?? "Not set"} · Rev ${document.revision ?? "—"}`}
             />
-            <DocumentField label="Phase" value={document.phase ?? "Not set"} />
+            <DocumentField label="Project phase" value={document.phase ?? (document.projectStage ? "Unmapped · review required" : "Not set")} />
+            <DocumentField label="Project current stage" value={document.projectStage ?? "Not recorded"} />
+            <DocumentField label="Record stage" value={document.lifecycleStage ?? "Not recorded"} />
+            <DocumentField label="Auto-draft basis" value={document.draftSnapshot ? `${document.draftSnapshot.completionPercentage}% populated from linked source records; missing parameters remain TBD.` : document.releaseNotes ?? "No draft basis recorded."} />
             <DocumentField label="Status" value={document.lifecycle ?? "Draft"} />
             <DocumentField label="Effective date" value={document.effectiveDate ?? "Not set"} />
             <DocumentField
@@ -10574,7 +10738,7 @@ function DocumentDetail({
               <div>
                 <p className="font-semibold">Private file storage</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {document.uploadType ? "This pilot original is stored in this browser. It is not a shared or approved release." : "Lovable Cloud is the active backend. Google Drive is optional and not connected."}
+                  {document.cloudDocumentId ? "This original is linked to the signed-in TEST organization’s private storage. It remains a draft and is not approved or released." : "This original is stored in this browser only. It is not shared, cloud-synced, approved or released."}
                 </p>
               </div>
               <span className="rounded border border-border px-2 py-1 text-xs">{document.lifecycle ?? "Draft"}</span>
@@ -10669,7 +10833,7 @@ function DocumentDetail({
                     />
                   </label>
                   <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                     {document.uploadType ? "Pilot originals are retained unchanged. Add a new draft through Documents & Deliverables; shared storage and approval are separate steps." : <>{isHardwareDeliverable ? "Attach PDF, Gerber ZIP, STEP/STP, HEX/BIN, CSV/XLSX, or DOCX deliverables. " : "Drop PDF, DOCX, XLSX, STEP/STP, Gerber ZIP, JSON, or CSV here. "}Attachments persist in this browser session; secure Cloud transfer activates automatically when this document is organization-linked.</>}
+                    {document.uploadType ? "Pilot originals are retained unchanged. Add a new draft through Documents & Deliverables; shared storage and approval are separate steps." : <>{isHardwareDeliverable ? "Attach PDF, Gerber ZIP, STEP/STP, HEX/BIN, CSV/XLSX, or DOCX deliverables. " : "Drop PDF, DOCX, XLSX, STEP/STP, Gerber ZIP, JSON, or CSV here. "}{document.cloudDocumentId ? "This original is held in the signed-in TEST organization's private storage; approval and release remain separate." : "This original stays in this browser only; it is not cloud-synced or visible to Android or Lovable from this upload."}</>}
                   </p>
                   {fileState === "uploading" && <div className="mt-3" aria-live="polite"><div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${uploadProgress}%` }} /></div><p className="mt-1 text-xs text-muted-foreground">Securing & Verifying SHA-256 Hash… {uploadProgress}%</p></div>}
                   {fileMessage && <p className={`mt-3 text-sm ${fileState === "error" ? "text-danger" : "text-moss"}`}>{fileMessage}</p>}
@@ -10762,6 +10926,7 @@ type PrintableDocument = {
   status: RecordStatus;
   project: string;
   stage: string;
+  testOnly?: boolean;
 };
 
 function createPrintableDocument(template: readonly [string, string, string], settings: TemplateSettings, project = "HLPL-AI4T-01"): PrintableDocument {
@@ -10773,14 +10938,24 @@ function createPrintableDocument(template: readonly [string, string, string], se
 
 function controlledDocumentPrintable(document: ControlledDocument, department: string): PrintableDocument {
   const inferredProject = document.linkedRecordRefs?.find(reference => /^HLPL-[A-Z0-9]+-\d+$/.test(reference)) || "Unlinked";
-  return { title: document.title.toUpperCase(), documentId: document.part || document.id, source: { reference: document.part || document.id, fields: {}, notes: document.releaseNotes }, populatedDraft: document.draftSnapshot, department, revision: `Rev ${document.revision ?? "01"}`, status: document.lifecycle === "Approved" ? "Approved" : document.lifecycle === "In review" ? "In review" : "Draft", project: inferredProject, stage: autoDraftStage(`${document.title} ${document.type}`) };
+  const recordStage = CANONICAL_STAGE_TEMPLATES.find(stage => stage.stageCode === document.lifecycleStage);
+  const stage = [document.phase ? `Project phase: ${document.phase}` : undefined, document.projectStage ? `Project current stage: ${document.projectStage}` : undefined, document.lifecycleStage ? `Record stage: ${recordStage ? `${recordStage.stageCode} · ${recordStage.name}` : document.lifecycleStage}` : undefined].filter(Boolean).join(" · ") || autoDraftStage(`${document.title} ${document.type}`);
+  return { title: document.title.toUpperCase(), documentId: document.part || document.id, source: { reference: document.part || document.id, fields: {}, notes: document.releaseNotes }, populatedDraft: document.draftSnapshot, department, revision: `Rev ${document.revision ?? "01"}`, status: document.lifecycle === "Approved" ? "Approved" : document.lifecycle === "In review" ? "In review" : "Draft", project: inferredProject, stage, testOnly: !document.cloudDocumentId };
 }
 
-function recordPrintable(record: RecordItem): PrintableDocument {
+function recordPrintable(record: RecordItem, linkedProject?: RecordItem): PrintableDocument {
   const documentId = record.reference || record.fields["controlledNumber"] || `HLPL-AI4T-${record.area.toUpperCase()}-DOC-01`;
   const project = projectReferences(record)[0] || "Unlinked";
   const department = record.area === "ehw" ? "EHW" : (record.area === "fw" || record.area === "efw") ? "FW" : (record.area === "sw" || record.area === "csw") ? "SW" : record.area === "esw" ? "ESW" : record.area === "mech" ? "MECH" : record.area === "pur" ? "PUR" : record.area === "quality" ? "QA" : record.area === "emf" ? "EMF" : record.area === "tst" || record.area === "production" ? "TST" : record.area === "fin" ? "FIN" : record.area === "sit" ? "SIT" : record.area === "hrops" || record.area === "people" ? "HR" : "SAL";
-  return { title: record.title.toUpperCase(), documentId, source: { reference: record.reference, fields: record.fields, notes: record.notes }, department, revision: "Rev 01", status: record.status, project, stage: autoDraftStage(`${record.type} ${record.title} ${documentId}`) };
+  const projectContext = linkedProject ? projectLifecycleContext(linkedProject.fields) : undefined;
+  const recordStage = recordStageLabel(record.fields, record.type, linkedProject?.fields);
+  const stage = [
+    projectContext?.phase ? `Project phase: ${projectContext.phase}` : undefined,
+    projectContext?.stage ? `Project current stage: ${projectContext.stage}` : undefined,
+    recordStage !== "Operational · stage not recorded" ? `Record stage: ${recordStage}` : undefined,
+  ].filter(Boolean).join(" · ") || autoDraftStage(`${record.type} ${record.title} ${documentId}`);
+  const localTestDraft = /synthetic|local\s+test|browser\s+test/i.test(`${record.notes} ${Object.values(record.fields).join(" ")}`);
+  return { title: record.title.toUpperCase(), documentId, source: { reference: record.reference, fields: record.fields, notes: record.notes }, department, revision: "Rev 01", status: record.status, project, stage, testOnly: localTestDraft };
 }
 
 function autoDraftStage(title: string) {
@@ -10814,6 +10989,12 @@ function PrintableTemplateView({ document, settings, records, onClose, onOpenSet
   const projectSource = records.find(record => record.type === "Project" && record.reference === document.project);
   const source = document.source ?? records.find(record => record.reference === document.documentId);
   const draft = document.populatedDraft ?? buildDocumentDraft(document.title, document.documentId, source, projectSource, document.templateType);
+  const printableSettings = document.testOnly ? {
+    ...settings,
+    accreditationMarks: "Fictional TEST data · certification status unverified",
+    confidentialityNotice: "Fictional TEST document preview. No legal, confidentiality, certification, approval, release, or customer acceptance status is established.",
+    complianceFooter: "Browser-local TEST draft. Certification, approval, release, and customer acceptance are not verified.",
+  } : settings;
 
   return (
     <DocumentStandardViewer
@@ -10826,7 +11007,7 @@ function PrintableTemplateView({ document, settings, records, onClose, onOpenSet
       }}
       draft={draft}
       source={source}
-      settings={settings}
+      settings={printableSettings}
       onClose={onClose}
       onOpenSettings={onOpenSettings}
     />
@@ -10923,12 +11104,14 @@ function TextField({
   onChange,
   required,
   type = "text",
+  readOnly = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
   type?: string;
+  readOnly?: boolean;
 }) {
   return (
     <label className="block font-mono text-[10px] font-medium uppercase tracking-[.08em] text-muted-foreground">
@@ -10937,6 +11120,7 @@ function TextField({
       <input
         type={type}
         required={required}
+        readOnly={readOnly}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 h-10 w-full rounded-lg border border-input bg-background px-3 text-sm font-normal normal-case tracking-normal text-foreground transition-colors placeholder:text-muted-foreground hover:border-ring/60 focus:border-ring"
@@ -11137,6 +11321,7 @@ function HeaderAction({
   );
 }
 function PersonaSwitcher({
+  departments,
   persona,
   onSelect,
   onOpenAuth,
@@ -11145,6 +11330,7 @@ function PersonaSwitcher({
   onAdminDepartmentChange,
   onOpenDepartmentsDirectory,
 }: {
+  departments?: {code:string;name:string;active:boolean}[];
   persona: Persona;
   onSelect: (persona: Persona) => void;
   onOpenAuth?: () => void;
@@ -11249,18 +11435,7 @@ function PersonaSwitcher({
           onChange={(event) => onAdminDepartmentChange?.(event.target.value as AreaId)}
           className="min-w-0 bg-transparent text-xs font-bold text-foreground outline-none cursor-pointer [&>option]:bg-background [&>option]:text-foreground"
         >
-          <option value="ehw">EHW · Embedded Hardware</option>
-          <option value="fw">FW · Firmware</option>
-          <option value="sw">SW · Cloud & Application Software</option>
-          <option value="mech">MECH · Mechanical Engineering</option>
-          <option value="pur">PUR · Purchasing & SCM</option>
-          <option value="qa">QA · Quality Assurance & APQP</option>
-          <option value="emf">EMF · Electronics Manufacturing</option>
-          <option value="mmf">MMF · Mechanical Manufacturing</option>
-          <option value="sales">SAL · Sales & Business Development</option>
-          <option value="fin">FIN · Accounts & Finance</option>
-          <option value="sit">SIT · Service & IT</option>
-          <option value="hrops">HR · HR & Operations</option>
+          {(departments ?? Object.entries(DEPARTMENT_MODULES).map(([code,area])=>({code,name:areaById(area as AreaId).name,active:true}))).filter(d=>d.active && DEPARTMENT_MODULES[departmentCode(d.code.replace(/^DEMO-/,''))]).map(d=>{const code=departmentCode(d.code.replace(/^DEMO-/,''));return <option key={code} value={DEPARTMENT_MODULES[code]}>{code} · {d.name.replace(/^DEMO · /,'')}</option>;})}
         </select>
         {onOpenDepartmentsDirectory && (
           <button
@@ -11291,6 +11466,21 @@ function PersonaSwitcher({
     </div>
   );
 }
+function localDefaultLifecycleTasks(state: PortalState, project: RecordItem, stage: string): RecordItem[] {
+  const baseline=readLifecycleBaseline(project.fields['lifecycleBaseline']);
+  const track=getRecordedProjectTrack(project.fields);
+  if(!baseline || !track)return [];
+  const definition=projectLifecycleStages(baseline,track).find(s=>s.code===stage);
+  if(!definition)return [];
+  return definition.tasks.flatMap((task,index)=>{
+    const identity=`${project.id}:${stage}:${task.id}`;
+    if(state.records.some(r=>r.id===identity || r.fields['templateTaskKey']===identity))return [];
+    const department=state.departments.find(d=>d.code.replace(/^DEMO-/,'')===task.department);
+    if(!department)throw new Error(`Task owner department ${task.department} is unavailable.`);
+    return [{id:identity,reference:`${project.reference}-${stage}-${index+1}`,area:areaForDepartment(department),departmentId:department.id,type:'Task',title:task.title,notes:task.description,status:'Open' as RecordStatus,priority:'Normal' as RecordItem['priority'],createdAt:now(),updatedAt:now(),fields:{projectId:project.reference,projectCode:project.reference,lifecycleStage:stage,stageCode:stage,templateTaskKey:identity,lifecycleRevision:baseline.id,assignee:department.lead,workStatus:'To do'}}];
+  });
+}
+
 function ThemeToggle({ darkMode, onToggle, expanded = false }: { darkMode: boolean; onToggle: () => void; expanded?: boolean }) {
   const Icon = darkMode ? Sun : Moon;
   const label = darkMode ? "Switch to light mode" : "Switch to dark mode";
@@ -11299,7 +11489,7 @@ function ThemeToggle({ darkMode, onToggle, expanded = false }: { darkMode: boole
       aria-label={label}
       title={label}
       onClick={onToggle}
-      className={expanded ? "mt-3 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent" : "grid size-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"}
+      className={expanded ? "mt-3 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent" : "mx-auto grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"}
     >
       <Icon className="size-4 text-steel" />
       {expanded && <span>{darkMode ? "Light mode" : "Dark mode"}</span>}
@@ -11342,7 +11532,7 @@ function AreaNav({
   expanded = true,
   openCount,
 }: {
-  area: (typeof areas)[number];
+  area: Omit<(typeof areas)[number], 'name'> & {name:string};
   active: boolean;
   onClick: () => void;
   expanded?: boolean;

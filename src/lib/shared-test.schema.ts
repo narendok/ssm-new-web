@@ -34,6 +34,10 @@ export const sharedTestMutationSchema = z.object({
   payload: z.record(jsonSchema),
   requestId: z.string().uuid(),
 });
+export const sharedTestResetSchema = z.object({
+  runId: z.literal("LC2-2026-10-28"),
+  requestId: z.string().uuid(),
+});
 const id = z.string().uuid();
 const nullableId = id.nullable();
 export const sharedTestSnapshotSchema = z.object({
@@ -83,6 +87,7 @@ export const sharedTestSnapshotSchema = z.object({
       priority: z.string(),
       stage_code: z.string().nullable().optional(),
       template_task_key: z.string().nullable().optional(),
+      description:z.string().optional(),
       assignee_id: nullableId,
       due_at: z.string().nullable(),
       updated_at: z.string(),

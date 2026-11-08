@@ -180,7 +180,8 @@ Commercial Lead: Sales alone handles contract and quotation
       projectTrack: "ready_made",
       targetVolume: "5,000 units / year",
       targetClosureDate: "2026-12-15",
-      feasibilityDepartments: ["SAL", "FIN"], // Technical departments waived for ready-made track
+      // This is a customer preference only; technical reviewers decide applicability during feasibility.
+      feasibilityDepartments: ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"],
       parameterValues: {
         system_voltage: "12V DC (Passenger Vehicle / Light Commercial)",
         operating_range: "9V – 18V DC (12V Automotive Standard)",

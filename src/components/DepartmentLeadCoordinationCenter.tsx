@@ -146,7 +146,7 @@ export function DepartmentLeadCoordinationCenter({
   departmentLead,
   records,
   teamMembers,
-  projects = DEFAULT_PROJECTS,
+  projects = [],
   projectScope,
   onProjectScopeChange,
   onUpdateTaskAssignee,

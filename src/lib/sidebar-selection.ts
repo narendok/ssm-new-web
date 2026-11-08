@@ -17,5 +17,7 @@ export function matchesWorkspaceDocument(
   if (filter === "PRS") return /\bprs\b|requirement|technical spec/i.test(text);
   if (filter === "SCHEMATIC") return /schematic|\bbom\b/i.test(text);
   if (filter === "DFMEA") return /dfmea|gerber|pcb layout/i.test(text);
+  if (filter === "DVP&R") return /DVP\s*&?\s*R|design verification|verification plan/i.test(text);
+  if (filter === "8D CAPA") return /8D|CAPA|non[-\s]?conformance|corrective action/i.test(text);
   return false;
 }

@@ -84,6 +84,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     "20261025110000_saved_lifecycle_disposition",
     "20261025111644_project_input_feasibility_sheet",
     "20261025152001_link_approved_input_baseline",
+    "20261101023755_customer_requirement_change_workflow",
     "20261026090000_preproject_sales_intake",
     "20261026100000_atomic_sales_intake",
     "20261026110000_shared_document_registration",
@@ -115,7 +116,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     [hwLead, "hw@example.com"],
     [qaLead, "qa@example.com"],
     [salLead, "sal@example.com"],
-    [emp, "emp@example.com"],
+    [emp, "employee.ehw@example.com"],
     [mechLead,"mech.fixture@example.test"],[fwLead,"fw.fixture@example.test"],[swLead,"sw.fixture@example.test"],[finLead,"fin.fixture@example.test"],[sitLead,"sit.fixture@example.test"],[emfLead,"emf.fixture@example.test"],
   ]) {
     await db.query("INSERT INTO auth.users VALUES($1, $2)", [id, email]);
@@ -159,6 +160,8 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
       [id, org, code, mids[lead]]
     );
   }
+  const employeeRole=(await db.query("INSERT INTO department_roles(organization_id,department_id,name,role_key) VALUES($1,$2,'TEST employee','test_employee') RETURNING id",[org,dEhw])).rows[0];
+  await db.query("INSERT INTO department_role_assignments(role_id,member_id,assigned_by) VALUES($1,$2,$3)",[employeeRole.id,mids[emp],admin]);
 
   async function asUser(user, callback) {
     await db.query("SELECT set_config('request.jwt.claim.sub', $1, false)", [user ?? ""]);
@@ -273,7 +276,13 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   const docKey=crypto.randomUUID(),gerber=await registerDoc(hwLead,docPayload,docKey);
   assert.equal((await registerDoc(hwLead,docPayload,docKey)).id,gerber.id);
   await assert.rejects(registerDoc(hwLead,{...docPayload,title:'Changed retry'},docKey),/REQUEST_ID_REUSED/);
-  await assert.rejects(registerDoc(emp,docPayload),/DOCUMENT_REGISTER_DENIED/);
+  const employeeDoc=await registerDoc(emp,{title:'Employee project attachment',documentType:'Technical document',scope:'internal',projectId:project});
+  assert.equal(employeeDoc.status,'Draft');
+  const employeeDocRow=(await db.query('SELECT department_id,record_id,metadata FROM documents WHERE id=$1',[employeeDoc.id])).rows[0];
+  assert.equal(employeeDocRow.department_id,dEhw);assert.equal(employeeDocRow.record_id,project);assert.equal(employeeDocRow.metadata.status,'Draft');
+  const employeeScopedDoc=await registerDoc(emp,{...docPayload,departmentId:dQa,title:'Employee scoped to own department'});
+  assert.equal((await db.query('SELECT department_id FROM documents WHERE id=$1',[employeeScopedDoc.id])).rows[0].department_id,dEhw,
+    'member input cannot route a document outside its assigned department');
   await assert.rejects(registerDoc(null,docPayload),/DOCUMENT_REGISTER_DENIED/);
   await assert.rejects(registerDoc(hwLead,{...docPayload,scope:'common',projectId:undefined,recordId:project}),/DOCUMENT_NONPROJECT_SCOPE/);
   await assert.rejects(registerDoc(hwLead,{...docPayload,projectId:crypto.randomUUID()}),/DOCUMENT_PROJECT_REQUIRED/);
@@ -781,10 +790,10 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   ).rows[0];
   assert.ok(s06Inspection, "S06 Inspection record persisted in operational_records");
   const f = s06Inspection.fields;
-  assert.equal(f.acceptedUnits, 150, "S06: 150 accepted units");
+  assert.equal(f.acceptedUnits, 150, "S06: 150 internal QA pass placeholders in the TEST fixture");
   assert.equal(f.heldUnits, 5, "S06: 5 held units");
   assert.equal(f.pendingInspectionUnits, 45, "S06: 45 pending inspection units");
-  assert.equal(f.acceptedUnits + f.heldUnits + f.pendingInspectionUnits, f.lotQuantity, "150 + 5 + 45 === 200 lot 1 units");
+  assert.equal(f.acceptedUnits + f.heldUnits + f.pendingInspectionUnits, f.lotQuantity, "150 + 5 + 45 === 200 simulated lot units");
   assert.equal(f.totalPlannedUnits - f.lotQuantity, f.remainingPlannedUnits, "500 - 200 === 300 remaining planned units");
   assert.equal(f.reconciliationCheckPassed, true, "Arithmetic reconciliation verified");
 
@@ -840,7 +849,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
       assert.equal((await db.query("SELECT notes FROM operational_records WHERE id=$1",[created.id])).rows[0].notes,"Verified edit roundtrip",label);
     }
   }
-  assert.equal(coverage,88,"All current catalogue entries exercised; changing catalogue requires deliberate coverage update");
+  assert.equal(coverage,89,"All current catalogue entries, including the QA Certificate record, exercised");
 
   async function sheetCall(user,action,payload){return asUser(user,async()=> (await db.query("SELECT mutate_project_input_sheet($1,$2::jsonb) result",[action,JSON.stringify(payload)])).rows[0].result);}
   let sheet=await sheetCall(salLead,"create",{sourceId:project,scope:"Client"});
@@ -885,6 +894,285 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   pre=await sheetCall(admin,"approve",{sheetId:pre.id,expectedVersion:pre.version});
   const accepted=await call(salLead,"create_project",{title:"Accepted after input approval",reference:"HLPL-INPUT-ACCEPTED-01"});
   pre=await sheetCall(salLead,"link_project",{sheetId:pre.id,expectedVersion:pre.version,projectId:accepted.id});assert.equal(pre.project_record_id,accepted.id);assert.equal(pre.status,"Approved");
+  pre=await sheetCall(salLead,"revise",{sheetId:pre.id,expectedVersion:pre.version,reason:"Seed a real departmental review for the change approval regression."});
+  pre=await sheetCall(hwLead,"respond",{sheetId:pre.id,expectedVersion:pre.version,parameterId:"system_voltage",department:"EHW",status:"Feasible",remarks:"Synthetic hardware baseline reviewed."});
+  pre=await sheetCall(hwLead,"review_response",{sheetId:pre.id,expectedVersion:pre.version,parameterId:"system_voltage",department:"EHW"});
+  pre=await sheetCall(admin,"approve",{sheetId:pre.id,expectedVersion:pre.version});assert.equal(pre.status,"Approved");
   await assert.rejects(sheetCall(salLead,"input",{sheetId:pre.id,expectedVersion:pre.version,parameterId:"system_voltage",input:"Unauthorized baseline rewrite"}),/INPUT_BASELINE_LOCKED/);
+
+  async function changeCall(user, action, payload, operationId = crypto.randomUUID()) {
+    return asUser(user, async () => (
+      await db.query(
+        "SELECT mutate_customer_change_request($1, $2::jsonb, $3::uuid) result",
+        [action, JSON.stringify(payload), operationId]
+      )
+    ).rows[0].result);
+  }
+  async function changeRead(user, projectId = null) {
+    return asUser(user, async () => (
+      await db.query("SELECT get_customer_change_requests($1::uuid) result", [projectId])
+    ).rows[0].result);
+  }
+  const impactScope = {
+    tracks: ["hardware"],
+    stages: ["Stage 2"],
+    documents: ["TEST-DOC-01"],
+    bom: ["TEST-BOM-01"],
+    reusableAssets: ["TEST-ASSET-01"],
+  };
+  const makeChangePayload = (sheetSnapshot, projectId, title = "Synthetic requirements change") => {
+    const proposedValues = JSON.parse(JSON.stringify(sheetSnapshot.parameter_values));
+    proposedValues.system_voltage.input = "Synthetic 24 V requirement";
+    return {
+      projectId,
+      sheetId: sheetSnapshot.id,
+      expectedSheetVersion: sheetSnapshot.version,
+      expectedSheetRevision: sheetSnapshot.revision,
+      title,
+      customerReference: "TEST-CHANGE-01",
+      description: "Synthetic request to change the system voltage requirement.",
+      rationale: "Isolated regression test; not a customer record.",
+      proposedValues,
+      impacts: [
+        { departmentCode: "EHW", scope: impactScope },
+        { departmentCode: "PUR", scope: { ...impactScope, tracks: [], bom: ["TEST-BOM-02"] } },
+      ],
+    };
+  };
+  let changePayload = makeChangePayload(pre, accepted.id);
+  const staleSheetPayload = { ...changePayload, expectedSheetVersion: pre.version - 1 };
+  await assert.rejects(
+    changeCall(salLead, "create", staleSheetPayload),
+    /CUSTOMER_CHANGE_STALE_BASELINE/
+  );
+  await assert.rejects(
+    changeCall(emp, "create", changePayload),
+    /CUSTOMER_CHANGE_CREATE_DENIED/
+  );
+  const createOperation = crypto.randomUUID();
+  let change = await changeCall(salLead, "create", changePayload, createOperation);
+  assert.equal(change.status, "Draft");
+  assert.equal(change.requested_by, mids[salLead], "requester is derived from authenticated membership");
+  assert.equal(change.baseline_revision, pre.revision);
+  assert.deepEqual(change.before_values.system_voltage, pre.parameter_values.system_voltage);
+  await assert.rejects(
+    changeRead(client, accepted.id),
+    /CUSTOMER_CHANGE_ACCESS_DENIED/,
+    "viewer/client membership cannot read customer-change requests"
+  );
+  await assert.rejects(
+    changeCall(client, "submit", { requestId: change.id, expectedVersion: change.version }),
+    /CUSTOMER_CHANGE_WRITE_DENIED/,
+    "viewer/client membership cannot mutate customer-change requests"
+  );
+  assert.equal((await changeCall(salLead, "create", changePayload, createOperation)).id, change.id, "create retry is idempotent");
+  await assert.rejects(
+    changeCall(salLead, "create", { ...changePayload, title: "Changed retry payload" }, createOperation),
+    /CUSTOMER_CHANGE_RETRY_PAYLOAD_CHANGED/
+  );
+  await assert.rejects(
+    asUser(qaLead, () => db.query("SELECT * FROM customer_change_requests")),
+    /permission denied/
+  );
+  const hardwareRead = await changeRead(hwLead, accepted.id);
+  const hardwareRequest = hardwareRead.requests.find((request) => request.id === change.id);
+  assert.equal(hardwareRequest.impacts.length, 1, "department reviewer sees only its own assignment");
+  assert.equal(hardwareRequest.impacts[0].department_code, "EHW");
+  assert.deepEqual(hardwareRequest.events, [], "department reviewer does not see requester/admin event details");
+  const notAssigned = await changeRead(qaLead, accepted.id);
+  assert.equal(notAssigned.requests.some((request) => request.id === change.id), false, "unassigned department cannot read the request");
+  await assert.rejects(
+    changeCall(qaLead, "assess_impact", {
+      requestId: change.id, expectedVersion: change.version, expectedImpactVersion: 1,
+      outcome: "No impact", assessment: "No impact found in this test.",
+    }),
+    /CUSTOMER_CHANGE_ACCESS_DENIED/
+  );
+  await assert.rejects(
+    changeCall(salLead, "submit", { requestId: change.id, expectedVersion: change.version + 1 }),
+    /CUSTOMER_CHANGE_STALE_VERSION/
+  );
+  change = await changeCall(salLead, "submit", { requestId: change.id, expectedVersion: change.version });
+  assert.equal(change.status, "Impact review");
+  await assert.rejects(
+    changeCall(hwLead, "assess_impact", {
+      requestId: change.id, expectedVersion: change.version, expectedImpactVersion: 99,
+      outcome: "Impact identified", assessment: "Stale department impact version.",
+    }),
+    /CUSTOMER_CHANGE_STALE_IMPACT/
+  );
+  change = await changeCall(hwLead, "assess_impact", {
+    requestId: change.id, expectedVersion: change.version, expectedImpactVersion: 1,
+    outcome: "Impact identified", assessment: "Hardware requirement delta assessed.",
+  });
+  assert.equal(change.status, "Impact review", "request waits for each assigned department");
+  const staleDepartmentDecision = change.version - 1;
+  await assert.rejects(
+    changeCall(purLead, "assess_impact", {
+      requestId: change.id, expectedVersion: staleDepartmentDecision, expectedImpactVersion: 1,
+      outcome: "Impact identified", assessment: "Purchasing impact assessed.",
+    }),
+    /CUSTOMER_CHANGE_STALE_VERSION/
+  );
+  change = await changeCall(purLead, "assess_impact", {
+    requestId: change.id, expectedVersion: change.version, expectedImpactVersion: 1,
+    outcome: "Impact identified", assessment: "Purchasing impact assessed.",
+  });
+  assert.equal(change.status, "Pending approval");
+  change = await changeCall(admin, "decide", {
+    requestId: change.id, expectedVersion: change.version,
+    decision: "return", notes: "Clarify the proposed implementation before approval.",
+  });
+  assert.equal(change.status, "Returned");
+  changePayload = makeChangePayload(pre, accepted.id, "Synthetic requirements change after rework");
+  change = await changeCall(salLead, "update_draft", {
+    ...changePayload, requestId: change.id, expectedVersion: change.version,
+  });
+  assert.equal(change.status, "Draft");
+  assert.equal(change.before_values.system_voltage.input, pre.parameter_values.system_voltage.input, "rework preserves the original approved baseline snapshot");
+  change = await changeCall(salLead, "submit", { requestId: change.id, expectedVersion: change.version });
+  change = await changeCall(hwLead, "assess_impact", {
+    requestId: change.id, expectedVersion: change.version, expectedImpactVersion: 1,
+    outcome: "Return for rework", assessment: "Hardware evidence needs a clearer test reference.",
+  });
+  assert.equal(change.status, "Returned", "department impact review can route for rework");
+  changePayload = makeChangePayload(pre, accepted.id, "Synthetic requirements change after second rework");
+  change = await changeCall(salLead, "update_draft", {
+    ...changePayload, requestId: change.id, expectedVersion: change.version,
+  });
+  change = await changeCall(salLead, "submit", { requestId: change.id, expectedVersion: change.version });
+  change = await changeCall(hwLead, "assess_impact", {
+    requestId: change.id, expectedVersion: change.version, expectedImpactVersion: 1,
+    outcome: "Impact identified", assessment: "Hardware requirement delta assessed.",
+  });
+  change = await changeCall(purLead, "assess_impact", {
+    requestId: change.id, expectedVersion: change.version, expectedImpactVersion: 1,
+    outcome: "No impact", assessment: "No purchasing impact for this synthetic change.",
+  });
+  const requesterCreated = await changeCall(admin, "create", makeChangePayload(pre, accepted.id, "Admin requester cannot self-approve"));
+  let adminRequest = await changeCall(admin, "submit", {
+    requestId: requesterCreated.id, expectedVersion: requesterCreated.version,
+  });
+  adminRequest = await changeCall(hwLead, "assess_impact", {
+    requestId: adminRequest.id, expectedVersion: adminRequest.version, expectedImpactVersion: 1,
+    outcome: "Impact identified", assessment: "Hardware impact assessed for self-approval guard.",
+  });
+  adminRequest = await changeCall(purLead, "assess_impact", {
+    requestId: adminRequest.id, expectedVersion: adminRequest.version, expectedImpactVersion: 1,
+    outcome: "No impact", assessment: "No purchasing impact in self-approval guard.",
+  });
+  await assert.rejects(
+    changeCall(admin, "decide", {
+      requestId: adminRequest.id, expectedVersion: adminRequest.version,
+      decision: "approve", notes: "Self approval must be denied.",
+    }),
+    /CUSTOMER_CHANGE_DECISION_DENIED/
+  );
+  change = await changeCall(admin, "decide", {
+    requestId: change.id, expectedVersion: change.version,
+    decision: "approve", notes: "Synthetic impact reviews complete; approve revision.",
+  });
+  assert.equal(change.status, "Approved");
+  assert.equal(change.approved_revision, pre.revision + 1);
+  pre = (await db.query("SELECT * FROM project_input_sheets WHERE id=$1", [pre.id])).rows[0];
+  assert.equal(pre.status, "Draft", "approval atomically opens the next canonical input revision");
+  assert.equal(pre.revision, change.approved_revision);
+  assert.equal(pre.parameter_values.system_voltage.input, "Synthetic 24 V requirement");
+  assert.equal(pre.parameter_values.system_voltage.responses.EHW.reviewedBy, "", "approval invalidates prior departmental confirmations");
+  const approvalEvent = (await db.query(
+    "SELECT details FROM project_input_events WHERE sheet_id=$1 AND action='customer_change_approved' ORDER BY created_at DESC LIMIT 1",
+    [pre.id]
+  )).rows[0];
+  assert.equal(approvalEvent.details.requestId, change.id);
+  assert.equal(approvalEvent.details.previousRevision, change.baseline_revision);
+  assert.equal(
+    approvalEvent.details.baseline.system_voltage.input,
+    change.before_values.system_voltage.input,
+    "approval history retains the pre-change baseline, not the newly applied values"
+  );
+  const changeSnapshot = await changeRead(salLead, accepted.id);
+  const contractModule = { exports: {} };
+  const contractSource = fs.readFileSync(path.join(root, "src/lib/customer-change.schema.ts"), "utf8");
+  const contractJs = ts.transpileModule(contractSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  new Function("require", "module", "exports", contractJs)(
+    require,
+    contractModule,
+    contractModule.exports
+  );
+  const decodedSnapshot = contractModule.exports.customerChangeSnapshotSchema.parse(changeSnapshot);
+  const savedChange = decodedSnapshot.requests.find((request) => request.id === change.id);
+  assert.equal(savedChange.events.at(-1).action, "approved");
+  assert.equal(savedChange.impacts.length, 2);
+  assert.equal(savedChange.impacts.find((impact) => impact.department_code === "EHW").outcome, "Impact identified");
+  await assert.rejects(
+    db.query("UPDATE customer_change_events SET details='{}'::jsonb WHERE request_id=$1", [change.id]),
+    /CUSTOMER_CHANGE_AUDIT_IMMUTABLE/
+  );
+  pre = await sheetCall(admin, "approve", { sheetId: pre.id, expectedVersion: pre.version });
+  const rejectedPayload = makeChangePayload(pre, accepted.id, "Synthetic request to verify rejection");
+  rejectedPayload.proposedValues.system_voltage.input = "Synthetic 36 V requirement";
+  let rejected = await changeCall(salLead, "create", rejectedPayload);
+  rejected = await changeCall(salLead, "submit", { requestId: rejected.id, expectedVersion: rejected.version });
+  rejected = await changeCall(hwLead, "assess_impact", {
+    requestId: rejected.id, expectedVersion: rejected.version, expectedImpactVersion: 1,
+    outcome: "Impact identified", assessment: "Hardware impact assessed before rejection.",
+  });
+  rejected = await changeCall(purLead, "assess_impact", {
+    requestId: rejected.id, expectedVersion: rejected.version, expectedImpactVersion: 1,
+    outcome: "No impact", assessment: "No purchasing impact before rejection.",
+  });
+  const unchangedRevision = pre.revision;
+  rejected = await changeCall(admin, "decide", {
+    requestId: rejected.id, expectedVersion: rejected.version,
+    decision: "reject", notes: "Synthetic request rejected for test coverage.",
+  });
+  assert.equal(rejected.status, "Rejected");
+  assert.equal((await db.query("SELECT revision FROM project_input_sheets WHERE id=$1", [pre.id])).rows[0].revision, unchangedRevision, "rejected request does not alter the canonical baseline");
+  const stalePayload = makeChangePayload({
+    ...pre, status: "Approved", version: pre.version, revision: pre.revision,
+  }, accepted.id, "Stale baseline request");
+  stalePayload.proposedValues.system_voltage.input = "Synthetic 48 V requirement";
+  const staleDraft = await changeCall(salLead, "create", stalePayload);
+  const revised = await sheetCall(salLead, "revise", {
+    sheetId: pre.id, expectedVersion: pre.version, reason: "Synthetic input changed after the request was opened.",
+  });
+  await assert.rejects(
+    changeCall(salLead, "submit", { requestId: staleDraft.id, expectedVersion: staleDraft.version }),
+    /CUSTOMER_CHANGE_STALE_BASELINE/
+  );
+  assert.equal(revised.revision, pre.revision + 1);
+
+  // Dispatch and its generated work use the same saved responsibility/task definition.
+  await db.exec('CREATE TABLE IF NOT EXISTS storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint)');
+  for(const migration of ['20261028120000_lifecycle_and_sample_pack_sync','20261028120001_canonical_stage_completion_reviews','20261104010000_versioned_lifecycle_and_asset_reuse','20261104030000_shared_test_original_storage','20261104040000_reviewed_project_lifecycle_configuration','20261106125525_stage_raci_execution_contract','20261106224031_settings_driven_feasibility_dispatch'])
+    await db.exec(fs.readFileSync(path.join(root,'supabase/migrations',migration+'.sql'),'utf8'));
+  const settingsV1={id:'TEST-FEASIBILITY-RACI-v1',createdAt:'2026-11-07T00:00:00Z',stages:[{code:'CM_02',name:'Configured feasibility',phase:'TG_0',gate:'Intake review',department:'EHW',prerequisites:[],exitTypes:[],optional:false,raci:{R:['EHW'],A:['SAL'],C:['QA'],I:['PUR']},tasks:[{id:'F01',title:'Configured technical assessment',description:'Synthetic test scope',department:'EHW'},{id:'F02',title:'Configured dependency review',description:'Synthetic test dependencies',department:'EHW'}]}]};
+  const publishSettings=async(definition,expectedRevision)=>(await asUser(admin,()=>db.query("SELECT public.mutate_lifecycle_workspace('save_revision',$1::jsonb,$2) result",[JSON.stringify({definition,expectedRevision}),crypto.randomUUID()]))).rows[0].result;
+  const settingsSave=await publishSettings(settingsV1,null);
+  const dispatchRequest=crypto.randomUUID();
+  const configuredPayload={mode:'opportunity',title:'Settings-bound feasibility fixture',scopeSummary:'Synthetic RACI dispatch test only',dispatchFeasibility:true,feasibilityDepts:['QA'],feasibilityRaciRevision:settingsV1.id};
+  const configuredDispatch=await salesCall(salLead,configuredPayload,dispatchRequest);
+  assert.equal(configuredDispatch.reviewCount,1);
+  const dispatched=(await db.query('SELECT * FROM operational_records WHERE id=$1',[configuredDispatch.id])).rows[0];
+  assert.equal(dispatched.fields.requiredDepartments,'EHW');
+  assert.deepEqual(dispatched.fields.feasibilityRaci,settingsV1.stages[0].raci);
+  const generated=(await db.query('SELECT * FROM tasks WHERE record_id=$1',[configuredDispatch.id])).rows;
+  assert.equal(generated.length,2);
+  assert.ok(generated.every(task=>task.department_id===dEhw && task.template_task_key.startsWith('FEASIBILITY:TEST-FEASIBILITY-RACI-v1:')));
+  assert.ok(generated.some(task=>task.title.startsWith('Configured dependency review')));
+  const configuredApproval=(await db.query('SELECT * FROM approvals WHERE record_id=$1',[configuredDispatch.id])).rows[0];
+  await assert.rejects(()=>call(hwLead,'decide_approval',{id:configuredApproval.id,outcome:'approved',expected_updated_at:configuredApproval.updated_at}),/CONFIGURED_FEASIBILITY_WORK_INCOMPLETE/);
+  for(const task of generated)await call(hwLead,'update_task',{id:task.id,status:'Complete',expected_updated_at:task.updated_at});
+  await call(hwLead,'decide_approval',{id:configuredApproval.id,outcome:'approved',expected_updated_at:configuredApproval.updated_at,notes:'Synthetic fixture tasks checked'});
+  const settingsV2=structuredClone(settingsV1);settingsV2.id='TEST-FEASIBILITY-RACI-v2';settingsV2.stages[0].department='QA';settingsV2.stages[0].raci.R=['QA'];for(const task of settingsV2.stages[0].tasks)task.department='QA';
+  await publishSettings(settingsV2,settingsSave.id);
+  assert.equal((await salesCall(salLead,configuredPayload,dispatchRequest)).id,configuredDispatch.id,'Retry retains its original settings and does not duplicate work');
+  assert.equal((await db.query('SELECT count(*)::int n FROM tasks WHERE record_id=$1',[configuredDispatch.id])).rows[0].n,2);
+  await assert.rejects(()=>salesCall(salLead,{...configuredPayload,title:'Stale settings preview'}),/FEASIBILITY_SETTINGS_CHANGED/);
+  const nextDispatch=await salesCall(salLead,{...configuredPayload,title:'Updated settings fixture',feasibilityRaciRevision:settingsV2.id});
+  assert.equal((await db.query('SELECT fields FROM operational_records WHERE id=$1',[nextDispatch.id])).rows[0].fields.requiredDepartments,'QA');
+  assert.equal((await db.query('SELECT fields FROM operational_records WHERE id=$1',[configuredDispatch.id])).rows[0].fields.feasibilityRaciRevision,settingsV1.id);
 
 });

@@ -1,6 +1,8 @@
 import React, { useState } from "react";
+import { configuredTicketGroups, departmentTicketGroups, type DepartmentTicketGroup } from '@/lib/department-ticket-groups';
 import {
   ServiceTicket,
+  DepartmentHelpRequest,
   TicketPriority,
   TicketStatus,
   TicketCategory,
@@ -8,6 +10,7 @@ import {
   TicketReply,
   filterAuthorizedTickets,
   filterAuthorizedReplies,
+  findRecurringIssueSignals,
 } from "../lib/service-tickets";
 import {
   LifeBuoy,
@@ -26,7 +29,10 @@ import {
 } from "lucide-react";
 
 export type ServiceTicketsWorkspaceProps = {
-  sharedActions?: {onCreate:()=>void;onStatus:(id:string)=>void;onReply:(id:string,text:string,internal:boolean)=>Promise<boolean>} | undefined;
+  departmentOptions?: { code: string; name: string }[] | undefined;
+  ticketGroups?: DepartmentTicketGroup[] | undefined;
+  sharedActions?: {onCreate:(category?: TicketCategory)=>void;onStatus:(id:string)=>void;onReply:(id:string,text:string,internal:boolean)=>Promise<boolean>} | undefined;
+  onCreateLinkedRecord?: (ticket: ServiceTicket) => void;
   tickets: ServiceTicket[];
   currentUser: {
     role: string;
@@ -43,6 +49,9 @@ export type ServiceTicketsWorkspaceProps = {
 
 export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = ({
   sharedActions,
+  onCreateLinkedRecord,
+  ticketGroups,
+  departmentOptions,
   tickets,
   currentUser,
   onUpdateTickets,
@@ -63,7 +72,12 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
     organization: currentUser.organization,
     department: currentUser.department,
   });
+  const recurringSignals = isServiceOrAdmin ? findRecurringIssueSignals(authorizedTickets) : [];
 
+  const groups = configuredTicketGroups(ticketGroups, 'SIT');
+  const [ticketGroup, setTicketGroup] = useState<string>('all');
+  const activeGroup = groups.includes(ticketGroup as DepartmentTicketGroup) ? ticketGroup as DepartmentTicketGroup : null;
+  const helpInbox = ticketGroup === "help" && !isServiceOrAdmin && !isClient;
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("All");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -87,6 +101,13 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
   // Reopen modal
   const [isReopenOpen, setIsReopenOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
+  const [helpDialogOpen, setHelpDialogOpen] = useState(false);
+  const [helpDepartment, setHelpDepartment] = useState("");
+  const [helpSummary, setHelpSummary] = useState("");
+  const [helpResponse, setHelpResponse] = useState("");
+
+  const localDepartments = (departmentOptions ?? []).filter(dept => dept.code.toUpperCase() !== "SIT");
+  const ownDepartmentCode = (currentUser.department ?? "").toUpperCase();
 
   const filteredTickets = authorizedTickets.filter((t) => {
     const matchesSearch =
@@ -96,10 +117,59 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
       (t.projectId && t.projectId.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesStatus = selectedStatus === "All" || t.status === selectedStatus;
     const matchesCategory = selectedCategory === "All" || t.category === selectedCategory;
-    return matchesSearch && matchesStatus && matchesCategory;
+    const receivedHelpRequest = Boolean(t.requesterEmail === "" && t.departmentHelpRequests?.some(request => request.departmentCode.toUpperCase() === ownDepartmentCode && request.status !== "Closed"));
+    const requestMatchesInbox = isServiceOrAdmin || (helpInbox ? receivedHelpRequest : !receivedHelpRequest);
+    return matchesSearch && matchesStatus && matchesCategory && requestMatchesInbox && (!activeGroup || departmentTicketGroups[activeGroup].categories.includes(t.category));
   });
 
-  const activeTicket = authorizedTickets.find((t) => t.id === selectedTicketId) || (sharedActions ? authorizedTickets[0] : undefined);
+  const activeTicket = filteredTickets.find((t) => t.id === selectedTicketId) || filteredTickets[0];
+  const activeHelpRequest = activeTicket?.departmentHelpRequests?.find(request => request.departmentCode.toUpperCase() === ownDepartmentCode && request.status !== "Closed");
+
+  const updateOriginalTicket = (ticketId: string, transform: (ticket: ServiceTicket) => ServiceTicket) => {
+    onUpdateTickets(tickets.map(ticket => ticket.id === ticketId ? transform(ticket) : ticket));
+  };
+
+  const handleDispatchHelp = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!activeTicket || !helpDepartment || helpSummary.trim().length < 8) return;
+    const department = localDepartments.find(item => item.code === helpDepartment);
+    if (!department) return;
+    const requests = activeTicket.departmentHelpRequests ?? [];
+    if (requests.some(request => request.departmentCode === department.code && request.status !== "Closed")) return;
+    const request: DepartmentHelpRequest = {
+      id: `help-${Date.now()}`,
+      departmentCode: department.code,
+      departmentName: department.name,
+      summary: helpSummary.trim(),
+      status: "Requested",
+      requestedBy: `${currentUser.name} (SIT)`,
+      createdAt: new Date().toISOString(),
+    };
+    updateOriginalTicket(activeTicket.id, ticket => ({
+      ...ticket,
+      departmentHelpRequests: [...(ticket.departmentHelpRequests ?? []), request],
+      updatedAt: request.createdAt,
+      history: [...ticket.history, { timestamp: request.createdAt, actor: request.requestedBy, action: `Department help requested · ${department.code}`, note: request.summary }],
+    }));
+    setHelpDialogOpen(false);
+    setHelpDepartment("");
+    setHelpSummary("");
+  };
+
+  const handleHelpResponse = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!activeTicket || !activeHelpRequest || helpResponse.trim().length < 3) return;
+    const at = new Date().toISOString();
+    updateOriginalTicket(activeTicket.id, ticket => ({
+      ...ticket,
+      departmentHelpRequests: (ticket.departmentHelpRequests ?? []).map(request => request.id === activeHelpRequest.id
+        ? { ...request, response: helpResponse.trim(), respondedBy: currentUser.name, respondedAt: at, status: "Responded" }
+        : request),
+      updatedAt: at,
+      history: [...ticket.history, { timestamp: at, actor: `${currentUser.name} (${ownDepartmentCode})`, action: `Help response sent · ${ticket.reference}`, note: helpResponse.trim() }],
+    }));
+    setHelpResponse("");
+  };
 
   const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();
@@ -260,7 +330,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold tracking-tight text-foreground">
-                Service Tickets
+                IT & Service Tickets
               </h1>
               <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-muted border border-border">
                 {currentUser.role.toUpperCase()} View
@@ -286,7 +356,11 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
             </button>
           )}
           <button
-            onClick={() => sharedActions ? sharedActions.onCreate() : setIsCreateOpen(true)}
+            onClick={() => {
+              const category = (activeGroup ? departmentTicketGroups[activeGroup].categories[0] : undefined) as TicketCategory | undefined;
+              if (sharedActions) sharedActions.onCreate(category);
+              else { if (category) setNewCategory(category); setIsCreateOpen(true); }
+            }}
             className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -295,6 +369,35 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
         </div>
       </div>
 
+      {(groups.length > 0 || (!isServiceOrAdmin && !isClient)) && <div role="tablist" aria-label="Department ticket responsibilities" className="flex flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-1">
+        {[
+          ...(!isServiceOrAdmin && !isClient ? [{id:'all',label:'My Tickets'},{id:'help',label:'Requests to My Department'}] : [{id:'all',label:'All Tickets'}]),
+          ...(isServiceOrAdmin ? groups.map(id=>({id,label:departmentTicketGroups[id].label})) : []),
+        ].map(group=><button key={group.id} type="button" role="tab" aria-selected={group.id===(helpInbox?'help':activeGroup||'all')} className={`rounded-md px-3 py-1.5 text-sm ${group.id===(helpInbox?'help':activeGroup||'all')?'bg-background font-semibold shadow-sm':'text-muted-foreground hover:bg-background/60'}`} onClick={()=>{setTicketGroup(group.id);setSelectedCategory('All');setSelectedTicketId(null);}}>{group.label}</button>)}
+      </div>}
+      {isServiceOrAdmin && <section aria-label="Recurring issue signals" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xs font-semibold">Recurring issue signals</h2>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Repeated ticket subjects in the same category are highlighted for technical review. Signals are suggestions, not confirmed root causes or version plans.</p>
+          </div>
+          <span className="rounded-full border border-amber-500/30 px-2 py-0.5 text-[10px]">{recurringSignals.length} signal{recurringSignals.length === 1 ? "" : "s"}</span>
+        </div>
+        {recurringSignals.length === 0 ? <p className="mt-2 text-[11px] text-muted-foreground">No repeat pattern yet. A signal appears after the same normalized issue title is reported on at least two distinct tickets in the same category.</p> : <div className="mt-2 grid gap-2 md:grid-cols-2">
+          {recurringSignals.map((signal) => <article key={signal.key} className="rounded-md border border-border bg-background/70 p-2.5 text-xs">
+            <div className="flex items-center justify-between gap-2"><strong>{signal.subject}</strong><span className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px]">{signal.reportCount} reports</span></div>
+            <p className="mt-1 text-[11px] text-muted-foreground">{signal.category} · {signal.ticketReferences.join(", ")} · suggested review: {signal.suggestedDepartment}</p>
+            <button type="button" className="mt-2 rounded border border-border px-2 py-1 text-[11px] hover:bg-muted" onClick={() => {
+              const example = authorizedTickets.find((ticket) => ticket.id === signal.exampleTicketId);
+              if (!example) return;
+              setSelectedTicketId(example.id);
+              setHelpDepartment(localDepartments.some((department) => department.code === signal.suggestedDepartment) ? signal.suggestedDepartment : "");
+              setHelpSummary("Recurring issue signal from " + signal.reportCount + " tickets (" + signal.ticketReferences.join(", ") + "). Please review the reported " + signal.category.toLowerCase() + " pattern for a possible next-version improvement. This is a triage candidate only; validate evidence and root cause before planning.");
+              setHelpDialogOpen(true);
+            }}>Request technical review</button>
+          </article>)}
+        </div>}
+      </section>}
       {/* Filters and search */}
       <div className="flex flex-wrap items-center gap-2 bg-muted/40 p-2.5 rounded-lg border border-border/50 text-xs">
         <div className="relative flex-1 min-w-[200px]">
@@ -342,7 +445,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
         {/* Left Column: Tickets Register Table / List */}
         <div className="lg:col-span-5 flex flex-col space-y-2 border border-border rounded-lg bg-card p-3 shadow-xs overflow-y-auto max-h-[750px]">
           <div className="flex items-center justify-between pb-2 border-b border-border/40 text-xs font-semibold text-muted-foreground">
-            <span>Ticket Register ({filteredTickets.length})</span>
+            <span>{helpInbox ? "Department Help Requests" : "Ticket Register"} ({filteredTickets.length})</span>
             <span className="text-[10px]">Strict Role Scoped</span>
           </div>
 
@@ -488,7 +591,14 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
                     )}
                   </div>
                 ))}
+                {isServiceOrAdmin && !sharedActions && localDepartments.length > 0 && <button onClick={() => setHelpDialogOpen(true)} className="rounded border border-sky-500/40 bg-sky-500/5 px-3 py-1.5 text-xs text-sky-700 dark:text-sky-300">Request department help</button>}
+                {isServiceOrAdmin && !sharedActions && onCreateLinkedRecord && <button onClick={() => onCreateLinkedRecord(activeTicket)} className="rounded border border-border px-3 py-1.5 text-xs">Create linked record</button>}
               </div>
+
+              {helpInbox && activeHelpRequest && <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-xs space-y-1">
+                <p className="font-semibold">Limited linked help request · {activeHelpRequest.departmentName}</p>
+                <p>This department sees only the request below, not the original ticket thread or internal notes.</p>
+              </div>}
 
               {/* Metadata strip */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 rounded-lg bg-muted/30 border border-border/40 text-xs">
@@ -544,8 +654,23 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
                 </p>
               </div>
 
+              {isServiceOrAdmin && !sharedActions && (activeTicket.departmentHelpRequests?.length ?? 0) > 0 && <section className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 space-y-2 text-xs">
+                <h3 className="font-semibold">Linked department help requests</h3>
+                {activeTicket.departmentHelpRequests?.map(request => <article key={request.id} className="rounded border border-border bg-background/70 p-2">
+                  <div className="flex flex-wrap justify-between gap-2"><b>{request.departmentName} · {request.status}</b><span>{new Date(request.createdAt).toLocaleString()}</span></div>
+                  <p className="mt-1">{request.summary}</p>
+                  {request.response && <p className="mt-1 border-t pt-1"><b>Response · {request.respondedBy}:</b> {request.response}</p>}
+                </article>)}
+              </section>}
+
+              {helpInbox && activeHelpRequest && <form onSubmit={handleHelpResponse} className="rounded-lg border border-border p-3 space-y-2">
+                {activeHelpRequest.response && <p className="text-xs"><b>Latest response:</b> {activeHelpRequest.response} · {activeHelpRequest.respondedBy}</p>}
+                <label className="grid gap-1 text-xs font-medium">Response to Service & IT<textarea rows={2} value={helpResponse} onChange={event=>setHelpResponse(event.target.value)} className="rounded border bg-background p-2" placeholder="Share the help, findings, or next action from your department." /></label>
+                <button disabled={helpResponse.trim().length < 3} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50">Send help response</button>
+              </form>}
+
               {/* Activity / Discussion History */}
-              <div className="space-y-2 pt-2">
+              <div hidden={helpInbox} className="space-y-2 pt-2">
                 <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground pb-1 border-b border-border/30">
                   <span className="flex items-center gap-1.5">
                     <MessageSquare className="w-3.5 h-3.5" />
@@ -592,7 +717,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
               </div>
 
               {/* Reply Box */}
-              <form onSubmit={handleAddReply} className="space-y-2 pt-2 border-t border-border/40">
+              <form hidden={helpInbox} onSubmit={handleAddReply} className="space-y-2 pt-2 border-t border-border/40">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-medium text-foreground">
                     Add Response / Update
@@ -651,7 +776,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
               <div className="flex items-center gap-2">
                 <LifeBuoy className="w-4 h-4 text-primary" />
                 <h3 className="font-bold text-sm text-foreground">
-                  Create New Service Ticket
+                  {activeGroup === 'it' ? 'Create IT Ticket' : activeGroup === 'service' ? 'Create Service Ticket' : 'Create Ticket'}
                 </h3>
               </div>
               <button
@@ -773,6 +898,15 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
           </div>
         </div>
       )}
+
+      {helpDialogOpen && activeTicket && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <form onSubmit={handleDispatchHelp} className="w-full max-w-lg space-y-4 rounded-xl border bg-card p-5 shadow-xl">
+          <div><h3 className="text-sm font-bold">Request help from another department</h3><p className="mt-1 text-xs text-muted-foreground">Linked to {activeTicket.reference}. Only the request details are shared; the ticket thread and internal notes stay with Service & IT.</p></div>
+          <label className="grid gap-1 text-xs font-medium">Receiving department<select required value={helpDepartment} onChange={event=>setHelpDepartment(event.target.value)} className="rounded border bg-background p-2"><option value="">Select department</option>{localDepartments.map(department=><option key={department.code} value={department.code}>{department.code} · {department.name}</option>)}</select></label>
+          <label className="grid gap-1 text-xs font-medium">What help is needed?<textarea required minLength={8} rows={4} value={helpSummary} onChange={event=>setHelpSummary(event.target.value)} className="rounded border bg-background p-2" placeholder="State the question or action, relevant evidence reference, and needed response." /></label>
+          <div className="flex justify-end gap-2"><button type="button" onClick={()=>setHelpDialogOpen(false)} className="rounded border px-3 py-1.5 text-xs">Cancel</button><button disabled={!helpDepartment || helpSummary.trim().length < 8} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50">Send linked request</button></div>
+        </form>
+      </div>}
 
       {/* Reopen Reason Modal */}
       {isReopenOpen && (

@@ -13,6 +13,8 @@ import { departmentCode } from "@/lib/department-scope";
 import type { Persona } from "@/components/RoleAwareSidebar";
 import type { DecisionRecord } from "@/components/CompanyDirectoryAndLegalHub";
 import { SharedMasterSelect } from "./SharedMasterSelect";
+import { COMPANY_PHASES, projectLifecycleStages, readLifecycleBaseline } from "@/lib/lifecycle-baseline";
+import { getRecordedProjectTrack } from "@/lib/canonical-lifecycle";
 type Scope = "common" | "internal" | "client";
 export function OfficialDecisionLogModal({
   onClose,
@@ -38,7 +40,7 @@ export function OfficialDecisionLogModal({
   persona?: Persona | undefined;
   authorId?: string | undefined;
   decisions?: DecisionRecord[];
-  projects?: { id: string; reference: string; title: string }[];
+  projects?: { id: string; reference: string; title: string; fields?: Record<string,string> }[];
   stageOptions?: string[];
   readOnlyReason?: string | undefined;
   onSave?: (record: DecisionRecord) => Promise<boolean>;
@@ -59,6 +61,26 @@ export function OfficialDecisionLogModal({
   const [scope, setScope] = useState<Scope | null>(null);
   const [project, setProject] = useState(activeProject ?? "");
   const [stage, setStage] = useState("");
+  const selectedProject=projects.find(p=>p.reference===project);
+  const pinned=readLifecycleBaseline(selectedProject?.fields?.["lifecycleBaseline"]);
+  const recordedTrack=getRecordedProjectTrack(selectedProject?.fields);
+  const lifecycleStages=pinned
+    ? (recordedTrack
+        ? projectLifecycleStages(pinned,recordedTrack,selectedProject?.fields?.["certificationRequired"]==="true")
+        : pinned.stages
+      ).map(s=>({code:s.code,label:s.name,phase:s.phase}))
+    : [];
+  const decisionStageFilterOptions = new Map<string, string>();
+  for (const legacyStage of stageOptions) decisionStageFilterOptions.set(legacyStage, legacyStage);
+  for (const candidate of projects) {
+    const baseline = readLifecycleBaseline(candidate.fields?.["lifecycleBaseline"]);
+    if (!baseline) continue;
+    const track = getRecordedProjectTrack(candidate.fields);
+    const stages = track
+      ? projectLifecycleStages(baseline, track, candidate.fields?.["certificationRequired"] === "true")
+      : baseline.stages;
+    for (const item of stages) decisionStageFilterOptions.set(item.code, `${item.code} · ${item.name}`);
+  }
   const [title, setTitle] = useState("");
   const [reason, setReason] = useState("");
   const [source, setSource] = useState("");
@@ -109,8 +131,8 @@ export function OfficialDecisionLogModal({
       setError("Choose an existing permitted project.");
       return;
     }
-    if (scope !== "common" && !stageOptions.includes(stage)) {
-      setError("Choose the applicable workflow stage.");
+    if (scope !== "common" && !lifecycleStages.some((item) => item.code === stage)) {
+      setError("Choose a stage from the selected project’s pinned lifecycle.");
       return;
     }
     setBusy(true);
@@ -230,7 +252,7 @@ export function OfficialDecisionLogModal({
               options={[
                 { value: "all", label: "All stages" },
                 { value: "na", label: "Not applicable (Common)" },
-                ...stageOptions.map((value) => ({ value, label: value })),
+                ...Array.from(decisionStageFilterOptions, ([value, label]) => ({ value, label })),
               ]}
             />
           </ResponsiveFilterBar>
@@ -369,10 +391,9 @@ export function OfficialDecisionLogModal({
                         className="mt-1 h-9 w-full rounded-lg border border-input bg-background px-2"
                       >
                         <option value="">Choose stage…</option>
-                        {stageOptions.map((s) => (
-                          <option key={s}>{s}</option>
-                        ))}
+                        {pinned ? COMPANY_PHASES.map(([phase,title])=><optgroup key={phase} label={`Phase ${phase.slice(3)} · ${phase.replace("_","-")} — ${title}`}>{lifecycleStages.filter(s=>s.phase===phase).map(s=><option key={s.code} value={s.code}>{s.code} · {s.label}</option>)}</optgroup>) : <option value="" disabled>Lifecycle is not pinned; ask an admin to configure it</option>}
                       </select>
+                      <span className="text-[11px] text-muted-foreground">Choose the project’s department stage within its pinned phase. Tollgate decisions are recorded separately.</span>
                     </label>
                   </>
                 )}

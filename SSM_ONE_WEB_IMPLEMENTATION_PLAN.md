@@ -8,7 +8,7 @@
 - [Cross-platform master plan](https://github.com/narendok/SSM-new/blob/main/SSM_ONE_MASTER_PLAN.md) — shared scope, phase names, departments, RACI, lifecycle and acceptance authority.
 - [Document catalogue](https://github.com/narendok/SSM-new/blob/main/SSM%20One%20Document%20Catalogue%20-%20Auto-Drafting%20Audit%20and%20Native%20Upload%20Rules.md) — the single document-family, drafting, revision, upload and release reference.
 - [Android implementation plan](https://github.com/narendok/SSM-new-app/blob/main/docs/planning/SSM_ONE_ANDROID_BUILD_PLAN.md) — mobile implementation and parity checks.
-- Web evidence: `docs/evidence/`. Evidence is dated and environment-specific; it does not replace acceptance below.
+- Verification evidence is not retained in the repository. Repeatable checks and acceptance criteria are listed below; generated temporary artifacts stay outside the project folder.
 
 Older portal-master, lifecycle-only and Antigravity review documents are superseded by these sources. Do not use them as active instructions or copy their old assumptions into code.
 

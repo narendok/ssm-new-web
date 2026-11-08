@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { saveLocalAttachment, removeLocalAttachment } from "@/lib/local-attachments";
+import { projectLifecycleContext } from "@/lib/lifecycle-record-presentation";
 import {
   prepareUploadDraft,
   sourceGerberPackages,
@@ -22,6 +23,7 @@ import {
 export type UploadDraft = ReturnType<typeof prepareUploadDraft>;
 type Props = {
   initialFile: File | null;
+  initialProjectId?: string | undefined;
   projects: UploadProject[];
   departments: UploadDepartment[];
   documents: UploadDocument[];
@@ -34,6 +36,7 @@ const fieldClass =
   "mt-1 h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground";
 export function DocumentUploadPilotDialog({
   initialFile,
+  initialProjectId,
   projects,
   departments,
   documents,
@@ -47,7 +50,7 @@ export function DocumentUploadPilotDialog({
     title: initialFile?.name.replace(/\.[^.]+$/, "") ?? "",
     type: "FILE",
     scope: initialScope,
-    projectId: "",
+    projectId: initialProjectId ?? "",
     departmentId: actor.departmentId ?? "",
     revision: "01",
     sourceDocumentId: "",
@@ -56,6 +59,7 @@ export function DocumentUploadPilotDialog({
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const project = projects.find((p) => p.id === metadata.projectId);
+  const lifecycleContext = project ? projectLifecycleContext(project.fields ?? {}) : undefined;
   const packages = sourceGerberPackages(documents, project);
   const needsSource = metadata.type === "PANEL" || metadata.type === "STENCIL";
   const needsProject = metadata.scope === "internal" || metadata.scope === "client";
@@ -203,6 +207,7 @@ export function DocumentUploadPilotDialog({
             </label>
           </div>
           {needsProject && (
+            <div className="space-y-1">
             <label className="block text-xs font-medium">
               Project
               <select
@@ -221,6 +226,8 @@ export function DocumentUploadPilotDialog({
                 ))}
               </select>
             </label>
+            {metadata.projectId && <p className="text-[11px] text-muted-foreground">Project context: {lifecycleContext?.phase ?? "Phase not mapped"} · {lifecycleContext?.stage ?? "Stage not recorded"}. Upload remains Draft; this does not complete a stage or approve the file.</p>}
+            </div>
           )}
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs font-medium">

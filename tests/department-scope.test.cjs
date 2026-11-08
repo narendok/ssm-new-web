@@ -7,7 +7,7 @@ const filename = path.resolve(__dirname, '../src/lib/department-scope.ts');
 const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const scope = { exports: {} };
 new Function('module', 'exports', compiled)(scope, scope.exports);
-const { departmentCode, approvalInDepartment, approvalScope, canDepartmentSign, projectReferences } = scope.exports;
+const { departmentCode, approvalInDepartment, approvalScope, canDepartmentSign, projectReferences, taskProjectId } = scope.exports;
 const departments = ['sales', 'ehw', 'fw', 'sw', 'mech', 'pur', 'qa', 'emf', 'mmf', 'fin', 'sit', 'hrops'];
 
 test('all twelve leads see their requests and assigned cross-department reviews, but no unrelated requests', () => {
@@ -65,7 +65,27 @@ test('legacy compatibility is limited to known demo IDs and preserves explicit a
 test('project links use structured fields, supporting multiple legacy link separators without title inference', () => {
   assert.deepEqual(projectReferences({ reference: 'TASK-1', type: 'Task', fields: { linkedRecords: 'HLPL-SLCT-01 · HLPL-AI4T-01, HLPL-XLINK-03' } }), ['HLPL-SLCT-01', 'HLPL-AI4T-01', 'HLPL-XLINK-03']);
   assert.deepEqual(projectReferences({ reference: 'HLPL-SLCT-01', type: 'Task', fields: {} }), []);
-  assert.deepEqual(projectReferences({ reference: 'TASK-2', type: 'Task', fields: { projectId: 'project-uuid', projectCode: 'VCU' } }), ['project-uuid', 'VCU']);
+  assert.deepEqual(projectReferences({ reference: 'TASK-2', type: 'Task', fields: { project_id: 'project-uuid', projectCode: 'VCU' } }), ['project-uuid', 'VCU']);
+});
+
+test('task project scope resolves direct and linked-record project IDs without title inference', () => {
+  const project = { id: 'project-uuid', reference: 'HLPL-AI4T-01', type: 'Project', fields: {} };
+  const linkedTaskRecord = {
+    id: 'task-record',
+    reference: 'TASK-1',
+    type: 'Task',
+    fields: { project_id: project.id },
+  };
+  const unrelatedRecord = {
+    id: 'unrelated-record',
+    reference: 'Task mentions HLPL-AI4T-01 in its title',
+    type: 'Task',
+    fields: {},
+  };
+
+  assert.equal(taskProjectId({ recordId: project.id }, [project]), project.id);
+  assert.equal(taskProjectId({ recordId: linkedTaskRecord.id }, [project, linkedTaskRecord]), project.id);
+  assert.equal(taskProjectId({ recordId: unrelatedRecord.id }, [project, unrelatedRecord]), null);
 });
 
 test('repairing an incomplete demo snapshot preserves saved drafts, revisions, tasks, approvals and roster', () => {

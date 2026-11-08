@@ -42,6 +42,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [employee, "employee.ehw@example.com"],
     [fw, "fw@example.com"],
     [viewer, "client@example.com"],
+    [uuid(7), "procurement@example.com"],
   ])
     await db.query("INSERT INTO auth.users VALUES($1,$2)", [id, email]);
   await db.query(
@@ -58,6 +59,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [fw, "department_lead"],
     [employee, "member"],
     [viewer, "viewer"],
+    [uuid(7), "department_lead"],
   ])
     mids[id] = (
       await db.query(
@@ -70,6 +72,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [qd, "QA", qa],
     [fd, "FW", fw],
     [sd, "SAL", admin],
+    [uuid(15), "PUR", uuid(7)],
   ])
     await db.query(
       "INSERT INTO departments(id,organization_id,name,department_type,code,lead_member_id) VALUES($1,$2,$3,$3,$3,$4)",
@@ -97,6 +100,12 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
       "utf8",
     ),
   );
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104120000_expense_request_routing.sql"),"utf8"));
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104121500_repair_expense_request_routing_patch.sql"),"utf8"));
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104123000_validate_expense_request_details.sql"),"utf8"));
+  const patchedBusinessFn=(await db.query("SELECT pg_get_functiondef('mutate_business_workspace(text,jsonb,uuid)'::regprocedure) AS definition")).rows[0].definition;
+  assert.match(patchedBusinessFn,/Pending_Procurement/);
+  assert.match(patchedBusinessFn,/COALESCE\(data->>'requestType','travel'\)/);
   async function as(user, callback) {
     await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [user ?? ""]);
     await db.exec("SET ROLE authenticated");
@@ -146,6 +155,10 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     }),
     /INVALID_EXPENSE/,
   );
+  const validBase={category:"Travel & Transport",amount:100,currency:"INR",purpose:"Customer / Supplier / Site Visit",requiredDate:new Date(Date.now()+86400000).toISOString().slice(0,10)};
+  await assert.rejects(call(employee,"request_expense",{data:{...validBase,requestType:"travel"}}),/INVALID_TRAVEL_DETAILS/);
+  await assert.rejects(call(employee,"request_expense",{data:{...validBase,requestType:"reimbursement",merchant:"TEST rail"}}),/INVALID_REIMBURSEMENT_DETAILS/);
+  await assert.rejects(call(employee,"request_expense",{data:{...validBase,requestType:"purchase",purchaseKind:"goods",itemOrService:"TEST component order"}}),/INVALID_PURCHASE_QUANTITY/);
   const alloc = (
     await call(admin, "allocate", {
       data: {
@@ -167,6 +180,9 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
       currency: "INR",
       purpose: "Synthetic test trip",
       requiredDate: end,
+      requestType: "reimbursement",
+      merchant: "Synthetic rail operator",
+      expenseDate: end,
     },
   };
   const req = (await call(employee, "request_expense", payload, requestKey)).id;
@@ -176,8 +192,8 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     /RETRY_PAYLOAD_CHANGED/,
   );
   let row = (await load(employee)).items.find((i) => i.id === req);
-  assert.equal(row.data.status, "Pending_Dept_Review");
-  assert.ok((await load(hw)).notifications.some((n) => n.itemId === req));
+  assert.equal(row.data.status, "Pending_Finance");
+  assert.ok((await load(admin)).notifications.some((n) => n.itemId === req));
   assert.equal(
     (await load(qa)).notifications.some((n) => n.itemId === req),
     false,
@@ -190,8 +206,6 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     call(employee, "approve_expense", { id: req, version: row.version, data: {} }),
     /SELF_APPROVAL/,
   );
-  await call(hw, "approve_expense", { id: req, version: row.version, data: {} });
-  row = (await load(admin)).items.find((i) => i.id === req);
   await call(admin, "approve_expense", {
     id: req,
     version: row.version,
@@ -206,12 +220,12 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
       version: row.version,
       data: { actualAmount: 500, postingRef: "TEST-01", evidenceRef: "fixture" },
     }),
-    /POSTING_AUTHORITY/,
+    /ITEM_UNAVAILABLE/,
   );
   const second = (await call(employee, "request_expense", payload)).id;
-  await call(hw, "approve_expense", { id: second, version: 1, data: {} });
+  assert.equal((await load(employee)).items.find(i=>i.id===second).data.status,"Pending_Finance");
   await assert.rejects(
-    call(admin, "approve_expense", { id: second, version: 2, data: { allocationId: alloc } }),
+    call(admin, "approve_expense", { id: second, version: 1, data: { allocationId: alloc } }),
     /INSUFFICIENT_BUDGET/,
   );
   await call(admin, "post_expense", {
@@ -230,6 +244,14 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     }),
     /STALE_VERSION/,
   );
+  const purchase=(await call(employee,"request_expense",{data:{...payload.data,requestType:"purchase",purchaseKind:"goods",itemOrService:"TEST sensor evaluation quantity",quantity:4}})).id;
+  assert.equal((await load(employee)).items.find(i=>i.id===purchase).data.status,"Pending_Procurement");
+  assert.ok((await load(uuid(7))).items.some(i=>i.id===purchase));
+  assert.equal((await load(hw)).items.some(i=>i.id===purchase),false);
+  await assert.rejects(call(hw,"approve_expense",{id:purchase,version:1,data:{}}),/ITEM_UNAVAILABLE/);
+  const procurementItem=(await load(uuid(7))).items.find(i=>i.id===purchase);
+  await call(uuid(7),"approve_expense",{id:purchase,version:procurementItem.version,data:{}});
+  assert.equal((await load(employee)).items.find(i=>i.id===purchase).data.status,"Pending_Finance");
   const ticket = (
     await call(employee, "ticket_create", {
       data: {

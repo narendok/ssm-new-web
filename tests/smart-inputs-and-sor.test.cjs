@@ -76,17 +76,16 @@ test('STANDARD_SOR_TEMPLATES provides realistic OEM templates with pre-filled Op
   assert.equal(tata.parsed.customerCode, 'TATA-EV');
   assert.equal(tata.parsed.projectTrack, 'turnkey');
   assert.equal(tata.parsed.targetVolume, '50,000 units / year');
-  assert.equal(tata.parsed.feasibilityDepartments.length, 8, 'All 8 departments selected by default for turnkey');
+  assert.equal(tata.parsed.feasibilityDepartments.length, 8, 'All 8 applicable engineering departments review before track selection');
   assert.ok(tata.parsed.parameterValues.system_voltage.includes('12V'));
   assert.ok(tata.parsed.parameterValues.ip.includes('IP67'));
 
   const readyMade = STANDARD_SOR_TEMPLATES.find(t => t.id === 'sor-ready-made-obd');
   assert.ok(readyMade, 'Ready-made commercial template must exist');
   assert.equal(readyMade.parsed.projectTrack, 'ready_made');
-  // For ready_made, technical depts are waived; SAL and FIN lead
-  assert.ok(readyMade.parsed.feasibilityDepartments.includes('SAL'));
-  assert.ok(readyMade.parsed.feasibilityDepartments.includes('FIN'));
-  assert.equal(readyMade.parsed.feasibilityDepartments.includes('EHW'), false);
+  // A customer preference for catalog hardware does not waive technical feasibility review.
+  assert.equal(readyMade.parsed.feasibilityDepartments.length, 8);
+  assert.ok(readyMade.parsed.feasibilityDepartments.includes('EHW'));
 });
 
 test('parseSorText extracts structured parameters from raw client text', () => {

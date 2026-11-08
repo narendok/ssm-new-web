@@ -94,6 +94,25 @@ export function ClientOEMPortal({
   }, [focusDeliverables]);
 
   if (!demoMode) return <section className="rounded-xl border border-border bg-card p-6"><h1 className="text-xl font-semibold">Customer Deliverables</h1><p className="mt-3 text-sm text-muted-foreground">No verified customer release is available in this workspace. An authorized owner must release the project document and grant recipient access before it appears here.</p></section>;
+  if (demoMode) return (
+    <section className="space-y-5 rounded-xl border border-border bg-card p-6">
+      <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+        <strong>TEST DATA · FICTIONAL PROJECT VIEW</strong>
+        <p className="mt-1">This sample helps exercise the portal layout. It contains no customer acceptance, executed agreement, issued invoice, shipment, certification or approved release.</p>
+      </div>
+      <div>
+        <p className="font-mono text-xs uppercase tracking-wide text-muted-foreground">TEST-PROJ-NORTHSTAR-01 · Phase 0 · Feasibility</p>
+        <h1 className="mt-1 text-xl font-semibold">Northstar Mobility Systems · Fleet Gateway feasibility</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">Fictional enquiry with open hardware, firmware, software, mechanical, sourcing, quality and budget assumptions. No customer-facing documents have been released.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-border p-4"><p className="text-xs text-muted-foreground">Requirements</p><p className="mt-1 font-medium">Draft scope under review</p></div>
+        <div className="rounded-lg border border-border p-4"><p className="text-xs text-muted-foreground">Engineering</p><p className="mt-1 font-medium">HW / FW / SW PoC planning</p></div>
+        <div className="rounded-lg border border-border p-4"><p className="text-xs text-muted-foreground">External release</p><p className="mt-1 font-medium">None · human authorization required</p></div>
+      </div>
+      <p className="text-xs text-muted-foreground">To test project work, use the internal portal’s Projects, Tasks and Documents views. This screen is not a real client account or a customer-acceptance record.</p>
+    </section>
+  );
 
   const deliverables: DeliverableDoc[] = [
     {

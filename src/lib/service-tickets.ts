@@ -33,6 +33,19 @@ export type TicketReply = {
   createdAt: string;
 };
 
+export type DepartmentHelpRequest = {
+  id: string;
+  departmentCode: string;
+  departmentName: string;
+  summary: string;
+  status: "Requested" | "In Progress" | "Responded" | "Closed";
+  requestedBy: string;
+  createdAt: string;
+  response?: string | undefined;
+  respondedBy?: string | undefined;
+  respondedAt?: string | undefined;
+};
+
 export type ServiceTicket = {
   id: string;
   reference: string; // TKT-2026-XXXX
@@ -55,6 +68,7 @@ export type ServiceTicket = {
   resolvedAt?: string | undefined;
   reopenReason?: string | undefined;
   replies: TicketReply[];
+  departmentHelpRequests?: DepartmentHelpRequest[] | undefined;
   history: Array<{
     timestamp: string;
     actor: string;
@@ -62,6 +76,61 @@ export type ServiceTicket = {
     note?: string | undefined;
   }>;
 };
+
+export type RecurringIssueSignal = {
+  key: string;
+  category: TicketCategory;
+  subject: string;
+  reportCount: number;
+  ticketReferences: string[];
+  suggestedDepartment: string;
+  exampleTicketId: string;
+};
+
+const ISSUE_TITLE_STOP_WORDS = new Set(["a", "an", "and", "at", "during", "for", "from", "in", "intermittently", "on", "the", "to", "with"]);
+
+/** Conservative repeat detection: only matching normalized titles within a category count. */
+export function findRecurringIssueSignals(tickets: ServiceTicket[], minimumReports = 2): RecurringIssueSignal[] {
+  const departmentByCategory: Record<TicketCategory, string> = {
+    "Hardware Fault": "EHW",
+    "Firmware / Telemetry": "FW",
+    "Cloud & Gateway": "SW",
+    "Field RMA & Replacement": "QA",
+    "IT Workstation & Network": "SIT",
+    "Facility & Power": "HROPS",
+  };
+  const groups = new Map<string, ServiceTicket[]>();
+  for (const ticket of tickets) {
+    const normalizedTitle = ticket.subject
+      .toLowerCase()
+      .replace(/tkt-\d{4}-\d+/g, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .split(/\s+/)
+      .filter((word) => word.length > 2 && !ISSUE_TITLE_STOP_WORDS.has(word))
+      .map((word) => word === "regenerative" ? "regen" : word)
+      .sort()
+      .join(" ");
+    if (!normalizedTitle) continue;
+    const key = `${ticket.category.toLowerCase()}::${normalizedTitle}`;
+    groups.set(key, [...(groups.get(key) ?? []), ticket]);
+  }
+  return [...groups.entries()]
+    .filter(([, reports]) => new Set(reports.map((ticket) => ticket.id)).size >= minimumReports)
+    .map(([key, reports]) => {
+      const distinctReports = [...new Map(reports.map((ticket) => [ticket.id, ticket])).values()];
+      const firstReport = distinctReports[0]!;
+      return {
+        key,
+        category: firstReport.category,
+        subject: firstReport.subject,
+        reportCount: distinctReports.length,
+        ticketReferences: distinctReports.map((ticket) => ticket.reference),
+        suggestedDepartment: departmentByCategory[firstReport.category],
+        exampleTicketId: firstReport.id,
+      };
+    })
+    .sort((a, b) => b.reportCount - a.reportCount || a.subject.localeCompare(b.subject));
+}
 
 export const INITIAL_SERVICE_TICKETS: ServiceTicket[] = [
   {
@@ -223,12 +292,33 @@ export function filterAuthorizedTickets(
   }
 
   // 4. Other internal employees (EHW, PUR, QA, MECH, FIN, HROPS, etc.):
-  // Only see tickets where they are the requester or explicitly assigned owner
-  return tickets.filter(
-    (t) =>
-      t.requesterEmail.toLowerCase() === normalizedEmail ||
-      (t.assignedOwner && t.assignedOwner.toLowerCase().includes(normalizedEmail))
-  );
+  // Only see tickets where they are the requester, explicitly assigned owner,
+  // or received an explicitly addressed department-help request. The latter is
+  // projected to a minimal request-only view: no original ticket thread/notes.
+  const departmentCode = userContext.department?.toUpperCase();
+  return tickets.flatMap((ticket) => {
+    if (ticket.requesterEmail.toLowerCase() === normalizedEmail ||
+      (ticket.assignedOwner && ticket.assignedOwner.toLowerCase().includes(normalizedEmail))) return [ticket];
+    const request = ticket.departmentHelpRequests?.find((item) => item.departmentCode.toUpperCase() === departmentCode && item.status !== "Closed");
+    if (!request) return [];
+    return [{
+      ...ticket,
+      source: "Internal" as const,
+      requesterName: `Service & IT · ${ticket.reference}`,
+      requesterEmail: "",
+      requesterDepartment: "SIT",
+      clientOrganization: undefined,
+      subject: `Department help · ${ticket.reference}`,
+      description: request.summary,
+      projectId: undefined,
+      assetId: undefined,
+      assignedOwner: request.departmentName,
+      status: request.status === "Requested" ? "Open" as const : request.status === "Closed" ? "Closed" as const : "In Progress" as const,
+      replies: request.response ? [{ id: `${request.id}-response`, authorName: request.respondedBy || request.departmentName, authorRole: request.departmentCode, isInternalNote: false, message: request.response, createdAt: request.respondedAt || request.createdAt }] : [],
+      history: [{ timestamp: request.createdAt, actor: request.requestedBy, action: `Help requested from ${request.departmentName}` }],
+      departmentHelpRequests: [request],
+    }];
+  });
 }
 
 /**

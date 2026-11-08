@@ -1,18 +1,20 @@
 /**
- * Six Realistic Lifecycle Scenarios (§14.14) & Connected Fixture Contract (§14.13)
+ * Six baseline scenarios plus LC2-P10 offline telematics (§14.14) & Connected Fixture Contract (§14.13)
  * Reference: ANTIGRAVITY_READY_TO_USE_CONSOLIDATED_HANDOFF_2026-10-21.md §14.12 - §14.14
  * 
  * S01: INTERNAL-JIG       (Internal Harness & EOL Jig; internal equipment, no external client)
  * S02: DECLINED-ENQUIRY   (Extended-Temperature Tracker; terminal declined enquiry; NO project created)
  * S03: CLIENT-POC         (Fleet OBD Tracker PoC; 10 devices, client feedback pending)
  * S04: SYSTEM-PILOT       (Vehicle Gateway Integration Pilot; HSI and customer pilot underway)
- * S05: PILOT-REFINEMENT   (Cold-Chain Tracker Pilot Refinement; alert duplication under regression review)
- * S06: BULK-PRODUCTION    (Rugged Fleet Tracker Production; 500 planned, 200 lot 1: 150 accepted, 5 held, 45 inspection)
+ * S05: PILOT-REFINEMENT   (fictional cold-chain workflow; synthetic alert issue under regression review)
+ * S06: BULK-PRODUCTION    (fictional production workflow; simulated QA counts, no customer acceptance or shipment)
+ * S10: OFFLINE-TELEMATICS (Fictional 4G/GNSS + local LoRa research PoC; feasibility not frozen)
  * 
  * Safety note: All records are synthetic non-manufacturing test fixtures.
  */
 
 export type ScenarioState =
+  | "Not attached"
   | "Missing"
   | "Submitted"
   | "Under Review"
@@ -55,7 +57,7 @@ export interface ProductionReconciliation {
 }
 
 export interface LifecycleScenario {
-  id: "S01" | "S02" | "S03" | "S04" | "S05" | "S06";
+  id: "S01" | "S02" | "S03" | "S04" | "S05" | "S06" | "S10";
   fixtureKey: string;
   title: string;
   projectCode?: string | undefined; // S02 has NO project code
@@ -78,7 +80,7 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
     title: "TEST Internal Harness & EOL Jig",
     projectCode: "TEST-JIG-01",
     isExternalClient: false,
-    clientName: "Internal Hexense Labs — Production Tooling",
+    clientName: "Northstar Sample Labs · internal fictional TEST",
     businessStory:
       "Internal equipment improvement, no external client. Originates from shopfloor need to accelerate wire harness continuity testing and automated EOL flashing.",
     currentPosition:
@@ -153,7 +155,7 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
     enquiryCode: "ENQ-2026-EXT-01",
     projectCode: undefined, // Explicitly NO project created!
     isExternalClient: true,
-    clientName: "Nordic Fleet Logistics AB",
+    clientName: "Maple Harbor Fleet Services · fictional TEST client",
     businessStory:
       "Customer requested -40°C to +85°C certified refrigerated trailer telematics. Technical feasibility identified that required environmental and battery qualification cannot fit the customer's 6-week window. Commercial opportunity declined cleanly.",
     currentPosition:
@@ -218,26 +220,26 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
     projectCode: "TEST-POC-01",
     enquiryCode: "ENQ-2026-POC-01",
     isExternalClient: true,
-    clientName: "Tata Motors Limited · EV Fleet Division",
+    clientName: "Northstar Mobility Works · fictional TEST client",
     businessStory:
-      "Client-facing proof of concept for an illustrative 10 prototype devices. Bench evaluation demonstrated reporting, but ignition debounce timing needs clarification before customer trial.",
+      "Local workflow for an illustrative 10-unit proof of concept. A synthetic bench checklist and ignition debounce question are under review; no devices were delivered and no external feedback is recorded.",
     currentPosition:
-      "Enquiry → qualified opportunity → accepted scoped feasibility → explicit project gate → requirements/PRS draft and reviewed baseline → prototype BOM/design/build → initial bench evidence → PoC delivery/evaluation.",
+      "Fictional enquiry → draft feasibility → internal requirements review → prototype planning → synthetic bench checklist and interface clarification. No customer decision or delivery is represented.",
     stageRemark:
-      "Basic reporting demonstrated on the agreed test setup; ignition-state debounce feedback remains pending. PoC acceptance does not authorize mass production.",
+      "Illustrative bench workflow only; the 50ms vs 200ms ignition debounce assumption remains unverified. No customer acceptance, test result, or production release is represented.",
     currentNextAction:
-      "Await client PoC feedback and one interface clarification regarding ignition debounce threshold.",
+      "Resolve the internal test question and define evidence needed before any external trial is considered.",
     stageHistory: [
       {
         stageId: "POC-STG-1",
-        stageName: "Enquiry & Contract Review Gate",
+        stageName: "Enquiry & Opportunity Review",
         status: "Completed",
         startDate: "2026-08-01",
         endDate: "2026-08-10",
-        prerequisite: "Customer SOR and pilot scope agreed",
-        stageRemark: "Contract review HLPL/F/MKT/01 approved for 10-unit PoC.",
-        decisionOrReason: "Project TEST-POC-01 authorized by MD & Sales Lead.",
-        nextAction: "Draft PRS and tentative BOM.",
+        prerequisite: "Fictional test brief entered; scope remains illustrative",
+        stageRemark: "Local TEST intake record assembled; no customer SOR or approval is represented.",
+        decisionOrReason: "Sample fixture only; no real project authorization or customer decision.",
+        nextAction: "Draft PRS and tentative BOM for internal review.",
       },
       {
         stageId: "POC-STG-2",
@@ -245,20 +247,20 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         status: "Completed",
         startDate: "2026-08-12",
         endDate: "2026-09-05",
-        prerequisite: "Reviewed schematic and 10 hand-assembled proto units",
-        stageRemark: "10 proto units built in Lab 1. CAN telemetry operational.",
-        decisionOrReason: "Bench test report accepted by QA.",
-        nextAction: "Deploy to client test vehicle fleet for field validation.",
+        prerequisite: "Draft schematic checklist and illustrative prototype plan",
+        stageRemark: "Synthetic bench checklist is in progress; no prototype build, test result, or QA disposition is claimed.",
+        decisionOrReason: "Local test workflow only; no controlled approval.",
+        nextAction: "Resolve internal interface questions before any external trial is considered.",
       },
       {
         stageId: "POC-STG-3",
-        stageName: "PoC Field Trial Evaluation",
+        stageName: "Internal PoC Evaluation Checklist",
         status: "In_Progress",
         startDate: "2026-09-10",
-        prerequisite: "Customer trial observation period",
-        stageRemark: "Basic reporting demonstrated on the agreed test setup; ignition-state debounce feedback remains pending. PoC acceptance does not authorize mass production.",
-        decisionOrReason: "Customer feedback collection active.",
-        nextAction: "Review ignition line debounce response from Tata engineers.",
+        prerequisite: "Repeatable internal test and clarified evidence criteria",
+        stageRemark: "Synthetic debounce question remains under internal review; no customer trial or acceptance is recorded.",
+        decisionOrReason: "Local fixture review only.",
+        nextAction: "Review the debounce assumption with fictional sample owners.",
       },
     ],
     dependencies: [
@@ -280,8 +282,8 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         providerDept: "Service & IT",
         providerLead: "Kai Morgan",
         waitingDept: "Executive Command",
-        state: "Approved/Frozen",
-        nextAction: "Signed delivery challan on file in Vault",
+        state: "Not attached",
+        nextAction: "No delivery is represented; keep the local receipt checklist empty.",
         criticalPath: false,
       },
     ],
@@ -293,15 +295,15 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
     projectCode: "TEST-PILOT-01",
     enquiryCode: "ENQ-2026-VGW-01",
     isExternalClient: true,
-    clientName: "Ashok Leyland Limited · Commercial Trucks",
+    clientName: "Pinecone Fleetworks · fictional TEST client",
     businessStory:
-      "Full vehicle gateway system integration and customer pilot underway. Hardware, firmware, and mechanical baselines frozen; integration bench complete; multi-department dependencies visible.",
+      "Fictional HW+FW+SW gateway integration workflow. Internal interface checks and synthetic evidence rows are in progress; no customer pilot, approval, or release is represented.",
     currentPosition:
-      "Requirements → technical feasibility → approved project → hardware/firmware/mechanical design baselines → validation → HSI/system integration → controlled pilot candidate → customer pilot.",
+      "Draft requirements → cross-track feasibility → internal HW/FW/SW design review → synthetic integration checklist → conditional test planning. External pilot and release remain unauthorized.",
     stageRemark:
-      "Bench integration complete for the agreed sample configuration; customer pilot observation period remains open.",
+      "Internal integration checklist is illustrative and incomplete; no customer observation or acceptance is recorded.",
     currentNextAction:
-      "Complete 30-day customer pilot observation period across 5 trial commercial trucks.",
+      "Complete internal interface review before proposing any external trial.",
     stageHistory: [
       {
         stageId: "PLT-STG-1",
@@ -309,10 +311,10 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         status: "Completed",
         startDate: "2026-07-01",
         endDate: "2026-08-15",
-        prerequisite: "Hardware Schematics Rev B + J1939 Telemetry Spec approved",
-        stageRemark: "All 5 technical HODs signed off HSI interface baseline.",
-        decisionOrReason: "Approved for SMT pilot staging.",
-        nextAction: "Fabricate 50 pilot units on SMT Line 2.",
+        prerequisite: "Draft schematic checklist and interface assumptions",
+        stageRemark: "Local TEST interface checklist assembled; departmental review remains pending.",
+        decisionOrReason: "No manufacturing or pilot authorization is represented.",
+        nextAction: "Resolve interface questions before any build is proposed.",
       },
       {
         stageId: "PLT-STG-2",
@@ -320,20 +322,20 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         status: "Completed",
         startDate: "2026-08-20",
         endDate: "2026-09-30",
-        prerequisite: "ISO 7637-2 electrical transient test pass",
-        stageRemark: "Passed 16 of 18 DVP&R items; temperature chambers certified.",
-        decisionOrReason: "Pilot release candidate accepted by QA.",
-        nextAction: "Begin vehicle installation and telemetry observation.",
+        prerequisite: "Synthetic DVP&R checklist and test plan",
+        stageRemark: "Illustrative checklist has 16 of 18 placeholder items; no measured result or certification is claimed.",
+        decisionOrReason: "No QA disposition or release is recorded.",
+        nextAction: "Complete internal test planning before considering a controlled trial.",
       },
       {
         stageId: "PLT-STG-3",
-        stageName: "Customer Fleet Pilot Trial",
+        stageName: "Conditional Integration Review",
         status: "In_Progress",
         startDate: "2026-10-01",
-        prerequisite: "30-day live CAN logging without gateway reboot",
-        stageRemark: "Bench integration complete for the agreed sample configuration; customer pilot observation period remains open.",
-        decisionOrReason: "Active customer field observation in Hosur test track.",
-        nextAction: "Daily OTA telemetry error rate monitoring.",
+        prerequisite: "Repeatable internal CAN logging and reset test",
+        stageRemark: "Synthetic integration work remains in progress; no external vehicle or customer observation is represented.",
+        decisionOrReason: "Local TEST fixture status only.",
+        nextAction: "Review internal test-bench telemetry and error logs.",
       },
     ],
     dependencies: [
@@ -344,19 +346,19 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         providerDept: "Service & IT",
         providerLead: "Kai Morgan",
         waitingDept: "QA (Compliance)",
-        state: "Approved/Frozen",
-        nextAction: "MQTT 3.1.1 broker operational; 99.98% packet receipt verified",
+        state: "Under Review",
+        nextAction: "Synthetic target only; no server connection or receipt measurement is represented.",
         criticalPath: false,
       },
       {
         id: "dep-s04-2",
-        whatNeeded: "Customer Pilot 30-Day Field Sign-off",
+        whatNeeded: "Internal Pilot Evidence Review",
         deliverableCode: "HLPL-VGW-QA-PILOT-01",
         providerDept: "Quality Assurance",
         providerLead: "Jordan Blake",
         waitingDept: "Executive Admin",
         state: "Under Review",
-        nextAction: "Day 19 of 30 currently logged with zero fatal resets",
+        nextAction: "Fictional progress marker only; no external fleet trial or customer sign-off.",
         criticalPath: true,
       },
     ],
@@ -364,17 +366,17 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
   {
     id: "S05",
     fixtureKey: "PILOT-REFINEMENT",
-    title: "TEST Cold-Chain Tracker Pilot Refinement",
+    title: "TEST Cold-Chain Tracker Regression Refinement",
     projectCode: "TEST-REFINEMENT-01",
     enquiryCode: "ENQ-2026-CCT-01",
     isExternalClient: true,
-    clientName: "TransFresh Cold Chain Solutions",
+    clientName: "Frostline Cargo Systems · fictional TEST client",
     businessStory:
-      "Planned engineering and prototype build completed, but customer pilot identified intermittent alert duplication during LTE cell handover. Corrective firmware candidate is under regression review.",
+      "Fictional engineering workflow with a synthetic alert-duplication issue during simulated LTE handover. Corrective firmware candidate is under internal regression review; no real pilot or customer feedback is represented.",
     currentPosition:
-      "Requirements/design/build/validation → pilot issue → actual simulated feedback → linked engineering change/NCR as applicable → refinement tasks/retest plan.",
+      "Requirements/design/build/validation → synthetic issue log → linked engineering change/NCR fixture → refinement tasks/retest plan.",
     stageRemark:
-      "Pilot feedback identified intermittent alert duplication; corrective candidate is under regression review. Final customer acceptance and bulk release remain blocked.",
+      "Synthetic test fixture records intermittent alert duplication; corrective candidate is under regression review. No customer acceptance or release is represented.",
     currentNextAction:
       "QA regression re-test of firmware patch v2.1.2 on cell handover test bench.",
     stageHistory: [
@@ -384,20 +386,20 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         status: "Completed",
         startDate: "2026-06-01",
         endDate: "2026-08-30",
-        prerequisite: "All engineering CAD, schematics, and pilot batch verified",
-        stageRemark: "Initial pilot hardware build delivered to customer fleet.",
-        decisionOrReason: "Historical engineering phase completed.",
-        nextAction: "Customer pilot observation.",
+        prerequisite: "Illustrative engineering CAD and schematic checklist",
+        stageRemark: "Fictional prototype workflow only; no hardware was built or delivered.",
+        decisionOrReason: "Sample lifecycle state for UI testing only.",
+        nextAction: "Review synthetic test observations internally.",
       },
       {
         stageId: "REF-STG-2",
-        stageName: "Pilot Observation & Issue Logging",
+        stageName: "Synthetic Observation & Issue Logging",
         status: "Completed",
         startDate: "2026-09-01",
         endDate: "2026-09-20",
-        prerequisite: "Customer anomaly report logged in NCR system",
-        stageRemark: "Customer reported duplicate high-temperature excursion SMS alerts.",
-        decisionOrReason: "ECR-2026-042 raised by QA for cellular queue debounce.",
+        prerequisite: "Synthetic anomaly report fixture",
+        stageRemark: "Test fixture records duplicate high-temperature alert messages in simulated LTE handover; no customer report is represented.",
+        decisionOrReason: "Sample ECR raised for cellular queue debounce testing.",
         nextAction: "Firmware team patch and regression verification.",
       },
       {
@@ -406,8 +408,8 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         status: "Under_Review",
         startDate: "2026-09-25",
         prerequisite: "Zero alert duplication on cell border simulated handover",
-        stageRemark: "Pilot feedback identified intermittent alert duplication; corrective candidate is under regression review. Final customer acceptance and bulk release remain blocked.",
-        decisionOrReason: "Patch v2.1.2 under dual testing by FW and QA.",
+        stageRemark: "Synthetic test fixture records intermittent alert duplication; corrective candidate is under internal regression review. No real customer feedback or acceptance is represented.",
+        decisionOrReason: "Patch v2.1.2 is a sample candidate under an internal FW/QA workflow; no result is represented.",
         nextAction: "Complete 48-hour continuous cellular tower roaming loop test.",
       },
     ],
@@ -425,13 +427,13 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
       },
       {
         id: "dep-s05-2",
-        whatNeeded: "Engineering Change Order ECR-2026-042 Sign-off",
+        whatNeeded: "Engineering Change Order ECR-2026-042 Internal Review",
         deliverableCode: "HLPL-CCT-QA-ECR-042",
         providerDept: "Quality Assurance",
         providerLead: "Jordan Blake",
-        waitingDept: "Manufacturing & Client",
+        waitingDept: "Manufacturing & Systems Test",
         state: "Under Review",
-        nextAction: "Reviewing regression delta before authorizing client release",
+        nextAction: "Review synthetic regression delta; no external release is authorized or represented.",
         criticalPath: true,
       },
     ],
@@ -443,15 +445,15 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
     projectCode: "TEST-PROD-01",
     enquiryCode: "ENQ-2026-RFT-01",
     isExternalClient: true,
-    clientName: "Bharat Fleet Telematics Limited",
+    clientName: "Willow Ridge Fleet Labs · fictional TEST client",
     businessStory:
-      "Released product now in ongoing bulk production. Reviewed requirements, design baselines, and pilot acceptance complete. Currently executing 500-unit planned order with strict quantity reconciliation.",
+      "Fictional lifecycle simulation of a production-stage HW+FW program. Quantities represent sample records only; there is no real production, customer decision, shipment, or revenue.",
     currentPosition:
-      "Reviewed requirements and design → verified validation → recorded pilot acceptance → authorized production release → released BOM/process/control-plan baseline → production orders/lots → receiving/inspection/EOL/release evidence → dispatch/receivables.",
+      "Requirements/design → internal validation checklist → simulated production-readiness review → sample lot/receiving/inspection records. No real customer acceptance, authorization, shipment, or invoice is represented.",
     stageRemark:
-      "Hold disposition pending for five units; only accepted quantity is eligible for release.",
+      "Simulation only: 150 internal QA-pass placeholders, 5 held placeholders, and 45 inspection placeholders; no customer acceptance or dispatch is represented.",
     currentNextAction:
-      "QA material review board disposition on 5 held units; release 150 accepted units to dispatch.",
+      "Complete the internal sample MRB and inspection workflow; do not dispatch or infer customer acceptance from local fixture data.",
     productionReconciliation: {
       totalPlannedUnits: 500,
       lotQuantity: 200,
@@ -468,10 +470,10 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         status: "Completed",
         startDate: "2026-05-01",
         endDate: "2026-07-31",
-        prerequisite: "PPAP Level 3, Control Plan, and Line 1 Qualification",
-        stageRemark: "PPAP warrant signed by client. SMT reflow profile validated.",
-        decisionOrReason: "Formal mass production release authorized by MD.",
-        nextAction: "Issue Work Order for Lot 1 (200 units).",
+        prerequisite: "Illustrative PPAP, control plan, and line-qualification checklist",
+        stageRemark: "Fictional checklist entries only; no PPAP submission, client warrant, line validation, or release is represented.",
+        decisionOrReason: "Sample lifecycle state only; no management or customer authorization.",
+        nextAction: "Review sample work-order fields without initiating production.",
       },
       {
         stageId: "PRD-STG-2",
@@ -479,9 +481,9 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
         status: "In_Progress",
         startDate: "2026-08-01",
         prerequisite: "Automated test jig flashing and AOI inspection",
-        stageRemark: "Hold disposition pending for five units; only accepted quantity is eligible for release.",
-        decisionOrReason: "150 units passed 100% EOL (accepted); 5 units held pending MRB disposition; 45 units pending final inspection.",
-        nextAction: "Execute MRB disposition and ship first 150 units with commercial invoice.",
+        stageRemark: "Simulated QA placeholders: 150 internal-pass, 5 held, 45 pending inspection; no customer acceptance or shipment.",
+        decisionOrReason: "Illustrative quantity reconciliation only; no real EOL result or disposition exists.",
+        nextAction: "Complete local sample review; no invoice or dispatch action is available.",
       },
     ],
     dependencies: [
@@ -498,13 +500,109 @@ export const LIFECYCLE_SCENARIOS: LifecycleScenario[] = [
       },
       {
         id: "dep-s06-2",
-        whatNeeded: "Commercial Tax Invoice for 150 Accepted Units",
+        whatNeeded: "Sample Invoice Record (not issued)",
         deliverableCode: "HLPL-RFT-FIN-INV-01",
         providerDept: "Finance",
         providerLead: "Priya Voss",
         waitingDept: "Client Logistics & Dispatch",
         state: "Submitted",
-        nextAction: "Ready for GST e-way bill generation upon release",
+        nextAction: "Metadata-only test fixture; no tax invoice, e-way bill, or shipment is generated.",
+        criticalPath: true,
+      },
+    ],
+  },
+  {
+    id: "S10",
+    fixtureKey: "LC2-P10-OFFLINE-TELEMATICS",
+    title: "DEMO_ONLY Offline-Capable 4G/GNSS Tracker PoC",
+    projectCode: "DEMO-PROJ-010",
+    enquiryCode: "DEMO-ENQ-010",
+    isExternalClient: true,
+    clientName: "Northstar Field Systems (fictional)",
+    businessStory:
+      "Synthetic client PoC for a 4G/GNSS field tracker with NavIC/IRNSS receiver support to be assessed and a local LoRa path researched for operation without public internet. This is a reference walkthrough, not a validated design or approved customer project.",
+    currentPosition:
+      "Fictional intake + draft OMS → feasibility and requirements under review → freeze gate pending → conditional HW/FW/SW design, PoC build, verification, client demo and closeout. No pilot or production authorization.",
+    stageRemark:
+      "DEMO_ONLY · CM_02 feasibility is not approved or frozen. Receiver/NavIC capability, local LoRa topology and legal limits, power/storage targets, carrier/backhaul and PoC acceptance criteria remain open; no measured results are asserted.",
+    currentNextAction:
+      "Resolve owner/client questions in the feasibility table, attach evidence, and record an authorized requirements-freeze decision before enabling downstream development tasks.",
+    stageHistory: [
+      {
+        stageId: "DEMO-CM-01",
+        stageName: "Fictional client intake and PoC boundary",
+        status: "Completed",
+        startDate: "2026-10-29",
+        endDate: "2026-10-29",
+        prerequisite: "Synthetic enquiry DEMO-ENQ-010; draft OMS DEMO-OMS-010",
+        stageRemark: "PoC only. Quantity, commercial values, delivery promise and production scope are not recorded.",
+        decisionOrReason: "Reference scenario created for product walkthrough; no real customer decision or order.",
+        nextAction: "Review feasibility questions with the relevant department owners.",
+      },
+      {
+        stageId: "DEMO-CM-02",
+        stageName: "Cross-department feasibility and requirement draft",
+        status: "Under_Review",
+        startDate: "2026-10-29",
+        prerequisite: "Fictional intake and project scope",
+        stageRemark: "No requirement baseline is frozen. Public internet independence, local LoRa reachability, remote sync, GNSS/NavIC support, power and storage are separate questions.",
+        decisionOrReason: "Open by design; do not infer technical feasibility, certification applicability or client acceptance.",
+        nextAction: "Gather owner responses and evidence; freeze a versioned PMSS only after blockers are resolved.",
+      },
+      {
+        stageId: "DEMO-HW-FW-SW-PLAN",
+        stageName: "Conditional HW + FW + SW development and PoC",
+        status: "Pending",
+        startDate: "2026-10-29",
+        prerequisite: "Authorized v1.0 requirement freeze and approved PoC scope",
+        stageRemark: "Planned lifecycle preview only. Hardware, firmware, software, integration, test, documentation and client-demo tasks must activate through their real gates.",
+        decisionOrReason: "No development work, test result or release is represented as completed.",
+        nextAction: "Keep stages and tasks planned until the prerequisite freeze is approved.",
+      },
+    ],
+    dependencies: [
+      {
+        id: "dep-s10-ehw-1",
+        whatNeeded: "Receiver, antenna and NavIC/IRNSS capability assessment",
+        deliverableCode: "DEMO-PROD-010-EHW-FEAS",
+        providerDept: "Electronics Manufacturing / EHW",
+        providerLead: "DEMO_ONLY · owner TBD",
+        waitingDept: "Firmware, Testing & Sales",
+        state: "Submitted",
+        nextAction: "Confirm candidate receiver documentation, supported constellations, antenna constraints and test method; do not claim a fix or performance value before measurements.",
+        criticalPath: true,
+      },
+      {
+        id: "dep-s10-lora-1",
+        whatNeeded: "Local LoRa topology, gateway and offline data-flow research",
+        deliverableCode: "DEMO-PROD-010-SW-LO-RESEARCH",
+        providerDept: "SW / Systems Engineering",
+        providerLead: "DEMO_ONLY · owner TBD",
+        waitingDept: "Electronics, Firmware & Client",
+        state: "Under Review",
+        nextAction: "Define whether local peer or gateway exchange is intended; verify coverage, capacity, regional band and duty-cycle constraints before freeze.",
+        criticalPath: true,
+      },
+      {
+        id: "dep-s10-pur-1",
+        whatNeeded: "Candidate cellular, GNSS and LoRa component availability and lead-time",
+        deliverableCode: "DEMO-PROD-010-PUR-FEAS",
+        providerDept: "Purchasing",
+        providerLead: "DEMO_ONLY · owner TBD",
+        waitingDept: "Electronics & Finance",
+        state: "Submitted",
+        nextAction: "Return sourced candidate evidence and indicative lead-time; no quotation, order or stock commitment is implied.",
+        criticalPath: false,
+      },
+      {
+        id: "dep-s10-qa-1",
+        whatNeeded: "PoC verification criteria and conditional certification applicability",
+        deliverableCode: "DEMO-PROD-010-QA-PLAN",
+        providerDept: "Quality & Testing",
+        providerLead: "DEMO_ONLY · owner TBD",
+        waitingDept: "All technical owners & Client",
+        state: "Submitted",
+        nextAction: "Separate internal PoC evidence from any market certification; establish applicable markets and evidence before naming required certificates.",
         criticalPath: true,
       },
     ],
@@ -522,7 +620,7 @@ export function getScenario(idOrKey: string): LifecycleScenario | undefined {
 
 /**
  * Validate that S06 Production reconciliation satisfies the mathematical equality:
- * acceptedUnits + heldUnits + pendingInspectionUnits === lotQuantity
+ * acceptedUnits (internal QA only in TEST fixtures) + heldUnits + pendingInspectionUnits === lotQuantity
  * totalPlannedUnits - lotQuantity === remainingPlannedUnits
  */
 export function verifyProductionReconciliation(rec: ProductionReconciliation): boolean {
@@ -661,7 +759,7 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
       priority: "Normal",
       fields: {
         revision: "01",
-        customer: "Tata Motors Limited · EV Fleet Division",
+        customer: "Northstar Mobility Works · fictional TEST client",
         currentStage: "Stage 3",
       },
     },
@@ -674,7 +772,7 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
         status: "Approved",
         area: "sales",
         priority: "Normal",
-        fields: { projectId: "TEST-POC-01", customer: "Tata Motors Limited", revision: "01" },
+        fields: { projectId: "TEST-POC-01", customer: "Northstar Mobility Works · fictional TEST client", revision: "01" },
       },
       {
         id: "fix-s03-rec-2",
@@ -729,7 +827,7 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
       priority: "Normal",
       fields: {
         revision: "01",
-        customer: "Apex Telematics Corp",
+        customer: "Pinecone Fleetworks · fictional TEST client",
         currentStage: "Stage 5",
       },
     },
@@ -790,14 +888,14 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
     project: {
       id: "fix-s05-prj",
       reference: "TEST-REFINEMENT-01",
-      title: "TEST Cold-Chain Tracker Pilot Refinement",
+      title: "TEST Cold-Chain Tracker Regression Refinement",
       type: "Project",
       status: "Open",
       area: "rnd",
       priority: "Normal",
       fields: {
         revision: "01",
-        customer: "BioPharma Transport Ltd",
+        customer: "Frostline Cargo Systems · fictional TEST client",
         currentStage: "Stage 5",
       },
     },
@@ -848,14 +946,14 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
     project: {
       id: "fix-s06-prj",
       reference: "TEST-PROD-01",
-      title: "TEST Rugged Fleet Tracker Production",
+      title: "TEST Rugged Fleet Tracker Production Workflow",
       type: "Project",
       status: "Open",
       area: "emf",
       priority: "Normal",
       fields: {
         revision: "01",
-        customer: "National Logistics Fleet",
+        customer: "Willow Ridge Fleet Labs · fictional TEST client",
         plannedUnits: "500",
         currentStage: "Stage 6",
       },
@@ -864,9 +962,9 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
       {
         id: "fix-s06-rec-1",
         reference: "HLPL-RFT-SAL-ORD-01",
-        title: "Customer Commercial Order 500 Trackers",
+        title: "Sample Commercial Order Record · Not Issued",
         type: "Order",
-        status: "Approved",
+        status: "Draft · local TEST",
         area: "sales",
         priority: "Normal",
         fields: { projectId: "TEST-PROD-01", plannedQuantity: "500", revision: "01" },
@@ -874,9 +972,9 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
       {
         id: "fix-s06-rec-2",
         reference: "HLPL-RFT-EHW-BOM-01",
-        title: "Mass Production Released BOM Rev 03",
+        title: "Sample Production BOM · Not Released",
         type: "BOM",
-        status: "Released",
+        status: "Draft · local TEST",
         area: "ehw",
         priority: "Critical",
         fields: { projectId: "TEST-PROD-01", stage: "released", revision: "03" },
@@ -884,7 +982,7 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
       {
         id: "fix-s06-rec-3",
         reference: "HLPL-RFT-EMF-WO-01",
-        title: "Manufacturing Work Order Lot 1 (200 Units)",
+        title: "Sample Manufacturing Work Order · Not Issued",
         type: "Production order",
         status: "Open",
         area: "emf",
@@ -894,12 +992,12 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
       {
         id: "fix-s06-rec-4",
         reference: "HLPL-RFT-QA-ACC-01",
-        title: "Lot 1 EOL Acceptance Batch (150 Units)",
+        title: "Sample Internal QA Pass Placeholders (150 Units)",
         type: "Inspection",
-        status: "Approved",
+        status: "Draft · local TEST",
         area: "qa",
         priority: "Normal",
-        fields: { projectId: "TEST-PROD-01", acceptedQuantity: "150", revision: "01" },
+        fields: { projectId: "TEST-PROD-01", simulatedInternalPassQuantity: "150", customerAcceptance: "not represented", revision: "01" },
       },
       {
         id: "fix-s06-rec-5",
@@ -924,18 +1022,18 @@ export const SCENARIO_FIXTURE_MANIFESTS: ScenarioFixtureManifest[] = [
       {
         id: "fix-s06-rec-7",
         reference: "HLPL-RFT-FIN-INV-01",
-        title: "Commercial Tax Invoice for 150 Accepted Units",
+        title: "Sample Invoice Metadata · Not Issued",
         type: "Invoice",
-        status: "Submitted",
+        status: "Metadata only · local TEST",
         area: "fin",
         priority: "High",
-        fields: { projectId: "TEST-PROD-01", invoicedQuantity: "150", revision: "01" },
+        fields: { projectId: "TEST-PROD-01", invoicedQuantity: "0 · not issued", revision: "01" },
       },
     ],
     documents: [
       {
         id: "doc-s06-1",
-        title: "Lot 1 Certificate of Conformance (150 Units)",
+        title: "Sample Certificate Checklist · Not Issued",
         type: "Certificate",
         linkedRecordRefs: ["TEST-PROD-01", "HLPL-RFT-QA-ACC-01"],
       },

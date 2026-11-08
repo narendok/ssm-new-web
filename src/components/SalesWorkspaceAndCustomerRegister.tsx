@@ -4,6 +4,7 @@ import { SmartSorImporterModal } from "./SmartSorImporterModal";
 import { InlineCustomerModal as CanonicalCustomerModal } from "./InlineCustomerModal";
 import { SharedMasterSelect } from "./SharedMasterSelect";
 import type { ParsedSorResult } from "@/lib/sor-parser";
+import type { CanonicalProjectTrack } from "@/lib/canonical-lifecycle";
 import {
   Users,
   Building2,
@@ -97,7 +98,7 @@ export type EnquiryOpportunity = {
   rfqReference?: string;
   linkedProjectCode?: string;
   modularConfig?: ProjectModularConfiguration | undefined;
-  projectTrack?: "turnkey" | "software" | "firmware" | "ready_made" | undefined;
+  projectTrack?: CanonicalProjectTrack | "turnkey" | "software" | "firmware" | undefined;
   createdAt: string;
   updatedAt: string;
 };
@@ -1280,7 +1281,7 @@ export function UnifiedSalesIntakeModal({
     scopeSummary: string;
     targetVolume: string;
     targetClosureDate: string;
-    track: "turnkey" | "software" | "firmware" | "ready_made";
+    track?: "turnkey" | "software" | "firmware" | "ready_made";
     dispatchFeasibility: boolean;
     feasibilityDepts: string[];
     enquiryIdToConvert?: string | undefined;
@@ -1291,7 +1292,7 @@ export function UnifiedSalesIntakeModal({
   onCreateCustomer?: ((values: {name:string;contact:string;email:string;operationId:string}) => Promise<CustomerRecord>) | undefined;
   reviewDepartments?: {code:string;name:string}[] | undefined;
 }) {
-  const defaultReviewers=(track:string)=>(track==="ready_made"?["SAL","FIN"]:["EHW","FW","SW","MECH","PUR","QA","EMF","MMF"]).filter(code=>!reviewDepartments||reviewDepartments.some(d=>d.code===code));
+  const defaultReviewers=()=>["EHW","FW","SW","MECH","PUR","QA","EMF","MMF"].filter(code=>!reviewDepartments||reviewDepartments.some(d=>d.code===code));
   const [mode, setMode] = useState<"enquiry" | "opportunity" | "convert">(initialMode);
   const [selectedEnquiryId, setSelectedEnquiryId] = useState(initialEnquiryId || "");
   const [sourceVersion,setSourceVersion]=useState("");
@@ -1301,9 +1302,8 @@ export function UnifiedSalesIntakeModal({
   const [scopeSummary, setScopeSummary] = useState("");
   const [targetVolume, setTargetVolume] = useState("");
   const [targetClosureDate, setTargetClosureDate] = useState("");
-  const [track, setTrack] = useState<"turnkey" | "software" | "firmware" | "ready_made">("turnkey");
   const [dispatchFeasibility, setDispatchFeasibility] = useState(true);
-  const [selectedDepts, setSelectedDepts] = useState<string[]>(()=>defaultReviewers("turnkey"));
+  const [selectedDepts, setSelectedDepts] = useState<string[]>(()=>defaultReviewers());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [inlineCustomerOpen, setInlineCustomerOpen] = useState(false);
@@ -1318,8 +1318,7 @@ export function UnifiedSalesIntakeModal({
         setSourceVersion(enq.updatedAt);
         setSelectedCustomerCode(enq.customerCode);
         setTitle(enq.title);
-        setTrack(enq.projectTrack || "turnkey");
-        setSelectedDepts(defaultReviewers(enq.projectTrack || "turnkey"));
+        setSelectedDepts(defaultReviewers());
         setScopeSummary(enq.scopeSummary);
         setTargetVolume(enq.targetVolume || "");
         setTargetClosureDate(enq.targetClosureDate || "");
@@ -1335,8 +1334,7 @@ export function UnifiedSalesIntakeModal({
       setSourceVersion(enq.updatedAt);
       setSelectedCustomerCode(enq.customerCode);
       setTitle(enq.title);
-      setTrack(enq.projectTrack || "turnkey");
-      setSelectedDepts(defaultReviewers(enq.projectTrack || "turnkey"));
+      setSelectedDepts(defaultReviewers());
       setScopeSummary(enq.scopeSummary);
       setTargetVolume(enq.targetVolume || "");
       setTargetClosureDate(enq.targetClosureDate || "");
@@ -1399,7 +1397,6 @@ export function UnifiedSalesIntakeModal({
         scopeSummary: scopeSummary.trim(),
         targetVolume: targetVolume.trim(),
         targetClosureDate: targetClosureDate || "",
-        track,
         dispatchFeasibility: mode !== "enquiry" && dispatchFeasibility,
         feasibilityDepts: selectedDepts,
         enquiryIdToConvert: mode === "convert" ? selectedEnquiryId : undefined,
@@ -1538,8 +1535,8 @@ export function UnifiedSalesIntakeModal({
             />
           </div>
 
-          {/* Target Volume, Target Closure Date, & Project Track */}
-          <div className="grid gap-3 sm:grid-cols-3">
+          {/* Target Volume and Target Closure Date */}
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <label className="block font-semibold text-foreground">
                 Quantity / volume (include period):
@@ -1563,23 +1560,11 @@ export function UnifiedSalesIntakeModal({
                 className="h-9 w-full rounded-md border border-border bg-background px-3 text-xs text-foreground"
               />
             </div>
-            <div className="space-y-1">
-              <label className="block font-semibold text-foreground" title="Select project technical track">
-                Project Technical Track:
-              </label>
-              <select
-                aria-label="Project technical track"
-                value={track}
-                onChange={(e) => {const next=e.target.value as typeof track;setTrack(next);setSelectedDepts(defaultReviewers(next));}}
-                className="h-9 w-full rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground"
-              >
-                <option value="turnkey">Turnkey HW+SW (Full Dev)</option>
-                <option value="software">Pure Software (Cloud & App)</option>
-                <option value="firmware">Firmware / Embedded Device</option>
-                <option value="ready_made">Ready-Made Device (Off-the-shelf)</option>
-              </select>
-            </div>
           </div>
+
+          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+            Engineering track is decided after feasibility review. Capture the customer’s requested scope below; it does not select or authorize a track.
+          </p>
 
           {/* Scope Summary */}
           <div className="space-y-1">
@@ -1594,19 +1579,6 @@ export function UnifiedSalesIntakeModal({
               className="w-full rounded-md border border-border bg-background p-2.5 text-xs text-foreground"
             />
           </div>
-
-          {/* Ready-Made Track Banner */}
-          {track === "ready_made" && (
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-1">
-              <div className="flex items-center gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300">
-                <CheckCircle2 className="size-3.5" />
-                <span>Ready-Made Device / Off-the-Shelf Commercial Track Active</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                Hardware & firmware engineering development stages are waived. The sales team independently prepares the commercial proposal, <strong>Sales Brochure (SAL-BRO-01)</strong>, and <strong>Technical Datasheet (SAL-TDS-01)</strong>.
-              </p>
-            </div>
-          )}
 
           {/* Feasibility Analysis Dispatch (Available on Opportunity and Convert modes) */}
           {mode !== "enquiry" && (
@@ -1734,6 +1706,8 @@ export function SalesEnquiriesAndOpportunities({
   onOpenCustomerRegister,
   onOpenFeasibilityGate,
   onSendForFeasibility,
+  onDecideTrack,
+  onStartProject,
   onOpenNewTask,
   onOpenAssetCatalog,
   onConfigureModularAssets,
@@ -1749,6 +1723,8 @@ export function SalesEnquiriesAndOpportunities({
   onOpenCustomerRegister: () => void;
   onOpenFeasibilityGate: (projectCode: string) => void;
   onSendForFeasibility: (enquiry: EnquiryOpportunity) => void;
+  onDecideTrack?: ((opportunity: EnquiryOpportunity) => void) | undefined;
+  onStartProject?: ((opportunity: EnquiryOpportunity) => void) | undefined;
   onOpenNewTask?: () => void;
   onOpenAssetCatalog?: () => void;
   onConfigureModularAssets?: (projectCode: string) => void;
@@ -1763,7 +1739,7 @@ export function SalesEnquiriesAndOpportunities({
     scopeSummary: string;
     targetVolume: string;
     targetClosureDate: string;
-    track: "turnkey" | "software" | "firmware" | "ready_made";
+    track?: "turnkey" | "software" | "firmware" | "ready_made";
     dispatchFeasibility: boolean;
     feasibilityDepts: string[];
     enquiryIdToConvert?: string | undefined;
@@ -2104,6 +2080,7 @@ export function SalesEnquiriesAndOpportunities({
                       </div>
 
                       <h3 className="text-sm font-bold text-foreground">{item.title}</h3>
+                      {item.projectTrack ? <p className="text-[10px] font-medium text-muted-foreground">Engineering track: {item.projectTrack.replaceAll("_", " ")}</p> : <p className="text-[10px] font-medium text-muted-foreground">Engineering track: pending feasibility decision</p>}
                       <p className="text-xs text-muted-foreground line-clamp-1">{item.scopeSummary}</p>
 
                       <div className="flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground pt-1">
@@ -2186,6 +2163,8 @@ export function SalesEnquiriesAndOpportunities({
                       {/* Primary Action Button */}
                       {item.status === "Declined" ? <span className="text-xs text-muted-foreground">Closed intake · retained for history</span> : isOpportunity ? (
                         <>
+                        {item.status === "Feasibility Complete" && !item.projectTrack && onDecideTrack && <button type="button" onClick={()=>onDecideTrack(item)} className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary">Choose engineering track</button>}
+                        {item.status === "Feasibility Complete" && item.projectTrack && !item.linkedProjectCode && onStartProject && <button type="button" onClick={()=>onStartProject(item)} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground">Start project</button>}
                         {item.totalFeasibilityDepts===0 && <button type="button" onClick={()=>onSendForFeasibility(item)} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold">Send for Feasibility</button>}
                         <button
                           disabled={!onOpenSourceInputs && !item.linkedProjectCode} title={!onOpenSourceInputs && !item.linkedProjectCode ? "Inquiry reviews are available in Approvals. Link a project later for its lifecycle dashboard." : undefined} onClick={() => onOpenSourceInputs ? onOpenSourceInputs(item.id) : item.linkedProjectCode && onOpenFeasibilityGate(item.linkedProjectCode)}
@@ -2262,6 +2241,12 @@ export function SalesEnquiriesAndOpportunities({
           }}
           onImportSor={async (parsedSor) => {
             if (onSubmitIntake) {
+              const scopeClues = {
+                turnkey: "HW, FW and SW may be needed",
+                software: "Software may be needed",
+                firmware: "Firmware / embedded device may be needed",
+                ready_made: "An existing catalog product may fit",
+              } as const;
               await onSubmitIntake({
                 mode: "opportunity",
                 title: parsedSor.projectTitle || "New Opportunity from SOR",
@@ -2269,15 +2254,15 @@ export function SalesEnquiriesAndOpportunities({
                 customerCode: parsedSor.customerCode,
                 spocName: parsedSor.spocName,
                 spocEmail: parsedSor.spocEmail,
-                scopeSummary: parsedSor.scopeSummary || parsedSor.rawSnippet || "",
+                scopeSummary: [
+                  parsedSor.scopeSummary || parsedSor.rawSnippet || "",
+                  `Customer-stated scope clue (unconfirmed): ${scopeClues[parsedSor.projectTrack]}. Formal engineering track is decided after feasibility review.`,
+                ].filter(Boolean).join("\n\n"),
                 targetVolume: parsedSor.targetVolume,
-                track: parsedSor.projectTrack,
                 parameterValues: parsedSor.parameterValues,
                 targetClosureDate: parsedSor.targetClosureDate,
                 dispatchFeasibility: true,
-                feasibilityDepts: parsedSor.feasibilityDepartments && parsedSor.feasibilityDepartments.length > 0
-                  ? parsedSor.feasibilityDepartments
-                  : ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"],
+                feasibilityDepts: parsedSor.feasibilityDepartments,
               });
             }
             setSorImporterOpen(false);

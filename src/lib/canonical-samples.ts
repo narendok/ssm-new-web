@@ -7,9 +7,9 @@
  * - LC2-P01: Internal Equipment Harness Jig (HW only, Internal tooling, HW_31 active bring-up)
  * - LC2-E02: Declined Extended-Temp Enquiry (Pre-project feasibility only, terminal decline, NO project created)
  * - LC2-P03: Fleet OBD Tracker PoC (HW + FW, Client PoC 10 units, INT_03 feedback open)
- * - LC2-P04: Vehicle Gateway Integration Pilot (HW + FW + SW, Client pilot, observation in progress)
- * - LC2-P05: Cold-Chain Tracker Refinement (FW only on existing HW, regression review under FW_11)
- * - LC2-P06: Rugged Fleet Tracker Production (HW + FW, 500 planned, Lot 1 = 200 = 150 accepted + 5 held + 45 inspecting; 300 remaining)
+ * - LC2-P04: Vehicle Gateway Integration Review (HW + FW + SW, fictional internal review)
+ * - LC2-P05: Cold-Chain Tracker Refinement (FW only on existing HW, synthetic regression review)
+ * - LC2-P06: Production Workflow (HW + FW, simulated quantities only; no customer acceptance or dispatch)
  * - LC2-P07: Internal Service Application (SW only, Internal IT tool, SW_08 active service API integration)
  * - LC2-P08: Existing Product Deployment (Ready-made catalog device, RM_03 active field verification)
  * - LC2-P09: Device Connectivity Upgrade (FW + SW on existing HW, INT_02 active cloud payload compatibility)
@@ -78,7 +78,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
       title: "Internal Harness & EOL Test Jig",
       track: "hardware_only" as CanonicalProjectTrack,
       isExternalClient: false,
-      clientName: "Internal Hexense Labs — Plant Tooling Division",
+      clientName: "Northstar Sample Labs · internal fictional TEST",
       businessStory:
         "Shopfloor internal equipment improvement to eliminate manual wire harness continuity test bottlenecks on Line 2. No external client.",
       currentActiveStage: "HW_31",
@@ -98,7 +98,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
           projectTrack: "hardware_only",
           scope: "Internal",
           revision: "01",
-          customer: "Internal Hexense Labs — Plant Tooling Division",
+          customer: "Northstar Sample Labs · internal fictional TEST",
           currentStage: "HW_31",
           system_voltage: "24V DC (Industrial Bench)",
           operating_range: "18V to 30V DC",
@@ -163,7 +163,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
     title: "Declined Extended-Temperature Tracker Enquiry",
     track: "hardware_firmware" as CanonicalProjectTrack,
     isExternalClient: true,
-    clientName: "Nordic Fleet Logistics AB",
+    clientName: "Maple Harbor Fleet Services · fictional TEST client",
     businessStory:
       "Customer requested -40°C extended-temperature automotive tracker with a strict 6-week turnaround. Component sourcing showed 14-week distributor lead time for required military-grade power IC.",
     currentActiveStage: "CM_02",
@@ -181,7 +181,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         area: "sales",
         priority: "Normal",
         fields: {
-          customer: "Nordic Fleet Logistics AB",
+          customer: "Maple Harbor Fleet Services · fictional TEST client",
           requestedWindowWeeks: "6",
           feasibleLeadTimeWeeks: "14",
           terminalReason: "Arrow Electronics 14-week lead-time exceeds client 6-week deadline",
@@ -249,14 +249,14 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
       title: "Fleet OBD Tracker PoC",
       track: "hardware_firmware" as CanonicalProjectTrack,
       isExternalClient: true,
-      clientName: "Tata Motors Limited · EV Fleet Division",
+      clientName: "Northstar Mobility Works · fictional TEST client",
       businessStory:
-        "10-unit proof-of-concept prototype build for electric bus fleet. Prototype units delivered to client depot; client ignition-line debounce trial feedback in progress.",
+        "Illustrative 10-unit proof-of-concept workflow for a fictional fleet gateway. No units were delivered; internal test feedback and debounce assumptions remain under review.",
       currentActiveStage: "INT_03",
       activeSamplePointRemark:
-        "INT_03 waiting: Ten prototype units delivered; client debounce feedback open on 50ms vs 200ms ignition filter.",
+        "INT_03 waiting: local test-bench review of the 50ms vs 200ms debounce assumption; no measurements or external feedback are recorded.",
       testingGuide:
-        "Verify 10 units recorded in Prototype record. Check that INT_03 is in progress awaiting customer feedback. Confirm PoC completion does NOT automatically authorize production release.",
+        "Verify the illustrative 10-unit prototype plan and open internal debounce question. This fictional local TEST fixture records no customer delivery or acceptance and does not authorize production release.",
       projectRecord: {
         id: "prj-lc2-p03",
         reference: projectCode,
@@ -267,9 +267,9 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         priority: "Normal",
         fields: {
           projectTrack: "hardware_firmware",
-          scope: "Client",
+          scope: "Fictional TEST client",
           revision: "01",
-          customer: "Tata Motors Limited · EV Fleet Division",
+          customer: "Northstar Mobility Works · fictional TEST client",
           currentStage: "INT_03",
           system_voltage: "12V DC (Passenger Vehicle / Light Commercial)",
           operating_range: "9V to 16V DC (with 36V load dump clamp)",
@@ -283,7 +283,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
           reference: "HLPL-POC-EHW-PRS-01",
           title: "Product Requirement Specification · OBD Tracker PoC",
           type: "PRS",
-          status: "Approved",
+          status: "Draft · local test",
           area: "ehw",
           priority: "Normal",
           fields: { projectId: projectCode, revision: "01" },
@@ -293,7 +293,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
           reference: "HLPL-POC-EMF-PRT-01",
           title: "10-Unit Prototype Lot Build Record",
           type: "Prototype",
-          status: "Approved",
+          status: "In progress · local test",
           area: "emf",
           priority: "Normal",
           fields: { projectId: projectCode, quantity: "10", serials: "OBD-POC-001 to 010", revision: "01" },
@@ -314,7 +314,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
           id: "doc-p03-rpt",
           title: "PoC Field Trial Dispatch & Verification Note",
           type: "Report",
-          lifecycle: "Approved",
+          lifecycle: "Draft · local test",
           linkedRecordRefs: [projectCode, "HLPL-POC-EMF-PRT-01"],
         },
       ],
@@ -350,17 +350,17 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
     return {
       fixtureKey,
       projectCode,
-      title: "Vehicle Gateway Integration Pilot",
+      title: "TEST Vehicle Gateway Integration Review",
       track: "hardware_firmware_software" as CanonicalProjectTrack,
       isExternalClient: true,
-      clientName: "Apex Telematics Corp",
+      clientName: "Pinecone Fleetworks · fictional TEST client",
       businessStory:
-        "50-vehicle telematics gateway pilot running real-time CAN bus telemetry into cloud ingestion API. Hardware and firmware verified; 30-day customer pilot observation underway.",
+        "Fictional HW+FW+SW workflow with internal interface checks and synthetic evidence rows in progress. No external pilot, verified customer system, or acceptance is represented.",
       currentActiveStage: "HW_33",
       activeSamplePointRemark:
-        "HW_33 & INT_03 In Progress: Integrated system verified in test lab; 50-vehicle customer pilot observation in progress.",
+        "HW_33 & INT_03 In Progress: illustrative integration checklist only; test results and external pilot remain unverified.",
       testingGuide:
-        "Verify full three-track integration: EHW schematic/BOM, FW binary release, and SW API ingestion contract all linked to the same project. Check pilot observation is active without fake early completion.",
+        "Verify the fictional three-track checklist: EHW schematic/BOM, FW binary metadata, and SW API contract metadata link to one project. Do not infer measured results, external deployment, or customer acceptance.",
       projectRecord: {
         id: "prj-lc2-p04",
         reference: projectCode,
@@ -371,9 +371,9 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         priority: "High",
         fields: {
           projectTrack: "hardware_firmware_software",
-          scope: "Client",
+          scope: "Fictional TEST client",
           revision: "02",
-          customer: "Apex Telematics Corp",
+          customer: "Pinecone Fleetworks · fictional TEST client",
           currentStage: "HW_33",
           system_voltage: "24V DC (Heavy Commercial / Bus / Truck / Off-Highway)",
           operating_range: "9V to 36V DC",
@@ -450,12 +450,12 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
     return {
       fixtureKey,
       projectCode,
-      title: "Cold-Chain Tracker Pilot Refinement",
+      title: "TEST Cold-Chain Tracker Regression Refinement",
       track: "firmware_only" as CanonicalProjectTrack,
       isExternalClient: true,
-      clientName: "BioPharma Transport Ltd",
+      clientName: "Frostline Cargo Systems · fictional TEST client",
       businessStory:
-        "Cold-chain temperature monitoring pilot showed duplicate cellular alerts on sudden thermal transition. Firmware patch v1.0.4 developed on existing PCB; regression test suite underway.",
+        "Fictional engineering workflow with a synthetic duplicate-alert issue during simulated LTE handover. Firmware patch v1.0.4 is under internal regression review; no real pilot or client feedback is represented.",
       currentActiveStage: "FW_11",
       activeSamplePointRemark:
         "FW_11 Review: Duplicate temperature alert fix requires regression verification on existing hardware platform before release.",
@@ -471,9 +471,9 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         priority: "Critical",
         fields: {
           projectTrack: "firmware_only",
-          scope: "Client",
+          scope: "Fictional TEST client",
           revision: "02",
-          customer: "BioPharma Transport Ltd",
+          customer: "Frostline Cargo Systems · fictional TEST client",
           currentStage: "FW_11",
           existingBoardRef: "HLPL-CCT-HW-REV-02 (Existing Approved Hardware)",
         },
@@ -538,30 +538,33 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
       inProgressStageCodes,
     });
 
+    const sampleProductionPlan = { total: 500, lot: 200, qaPass: 150, held: 5, pending: 45, remaining: 300 };
     const productionReconciliation = {
-      totalPlannedUnits: 500,
-      lotQuantity: 200,
-      acceptedUnits: 150,
-      heldUnits: 5,
-      pendingInspectionUnits: 45,
-      remainingPlannedUnits: 300,
-      reconciliationCheckPassed: 150 + 5 + 45 === 200 && 500 - 200 === 300,
+      totalPlannedUnits: sampleProductionPlan.total,
+      lotQuantity: sampleProductionPlan.lot,
+      acceptedUnits: sampleProductionPlan.qaPass,
+      heldUnits: sampleProductionPlan.held,
+      pendingInspectionUnits: sampleProductionPlan.pending,
+      remainingPlannedUnits: sampleProductionPlan.remaining,
+      reconciliationCheckPassed:
+        sampleProductionPlan.qaPass + sampleProductionPlan.held + sampleProductionPlan.pending === sampleProductionPlan.lot &&
+        sampleProductionPlan.total - sampleProductionPlan.lot === sampleProductionPlan.remaining,
     };
 
     return {
       fixtureKey,
       projectCode,
-      title: "Rugged Fleet Tracker Series Production",
+      title: "TEST Rugged Fleet Tracker Production Workflow",
       track: "hardware_firmware" as CanonicalProjectTrack,
       isExternalClient: true,
-      clientName: "National Logistics Fleet",
+      clientName: "Willow Ridge Fleet Labs · fictional TEST client",
       businessStory:
-        "Commercial order for 500 rugged GPS/telematics trackers. First manufacturing lot of 200 units built; 150 units QA-accepted and invoiced, 5 units held on MRB review, 45 units pending final visual inspection. 300 units remaining for Lot 2.",
+        "Fictional production-stage workflow with sample quantities for testing reconciliation and department handoffs. No real order, production, customer acceptance, invoicing, shipment, or revenue is represented.",
       currentActiveStage: "CL_02",
       activeSamplePointRemark:
-        "Production Lot 1 reconciliation: 150 accepted + 5 held + 45 pending = 200 units. 300 units remaining. Held units strictly quarantined from commercial delivery.",
+        "Local simulation reconciliation: 150 internal QA-pass placeholders + 5 held placeholders + 45 pending inspection = 200 sample units; 300 remain in the illustrative 500-unit plan. No customer acceptance or dispatch.",
       testingGuide:
-        "Verify mathematical reconciliation: 150 accepted + 5 held + 45 inspecting = 200 lot units; 500 total - 200 lot = 300 remaining. Verify commercial invoice is strictly for 150 accepted units.",
+        "Verify sample arithmetic only: 150 + 5 + 45 = 200; 500 - 200 = 300. The 150 count is an internal simulated QA status, not customer acceptance; no invoice or dispatch should exist.",
       productionReconciliation,
       projectRecord: {
         id: "prj-lc2-p06",
@@ -573,12 +576,12 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         priority: "Normal",
         fields: {
           projectTrack: "hardware_firmware",
-          scope: "Client",
+          scope: "Fictional TEST client",
           revision: "03",
-          customer: "National Logistics Fleet",
+          customer: "Willow Ridge Fleet Labs · fictional TEST client",
           plannedUnits: "500",
           lot1Quantity: "200",
-          lot1Accepted: "150",
+          lot1Accepted: "150 · simulated internal QA only",
           lot1Held: "5",
           lot1Pending: "45",
           remainingPlanned: "300",
@@ -589,9 +592,9 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         {
           id: "rec-p06-ord",
           reference: "HLPL-RFT-SAL-ORD-01",
-          title: "Customer Order: 500 Rugged Fleet Trackers",
+          title: "Sample Commercial Order Metadata · Not Issued",
           type: "Order",
-          status: "Approved",
+          status: "Draft · local TEST",
           area: "sales",
           priority: "Normal",
           fields: { projectId: projectCode, plannedQuantity: "500", revision: "01" },
@@ -599,9 +602,9 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         {
           id: "rec-p06-bom",
           reference: "HLPL-RFT-EHW-BOM-01",
-          title: "Mass Production Released BOM Rev 03",
+          title: "Sample Production BOM · Not Released",
           type: "BOM",
-          status: "Released",
+          status: "Draft · local TEST",
           area: "ehw",
           priority: "Critical",
           fields: { projectId: projectCode, revision: "03" },
@@ -619,12 +622,12 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         {
           id: "rec-p06-acc",
           reference: "HLPL-RFT-QA-ACC-01",
-          title: "Lot 1 EOL Acceptance Batch (150 Units)",
+          title: "Sample Internal QA Pass Placeholders (150 Units)",
           type: "Inspection",
-          status: "Approved",
+          status: "Draft · local TEST",
           area: "qa",
           priority: "Normal",
-          fields: { projectId: projectCode, acceptedQuantity: "150", revision: "01" },
+          fields: { projectId: projectCode, simulatedInternalPassQuantity: "150", customerAcceptance: "not represented", revision: "01" },
         },
         {
           id: "rec-p06-mrb",
@@ -649,20 +652,20 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         {
           id: "rec-p06-inv",
           reference: "HLPL-RFT-FIN-INV-01",
-          title: "Commercial Tax Invoice for 150 Accepted Units",
+          title: "Sample Invoice Metadata · Not Issued",
           type: "Invoice",
-          status: "Submitted",
+          status: "Metadata only · local TEST",
           area: "fin",
           priority: "High",
-          fields: { projectId: projectCode, invoicedQuantity: "150", revision: "01" },
+          fields: { projectId: projectCode, invoicedQuantity: "0 · not issued", revision: "01" },
         },
       ],
       documents: [
         {
           id: "doc-p06-coc",
-          title: "Lot 1 Certificate of Conformance (150 Units)",
+          title: "Sample Certificate Checklist · Not Issued",
           type: "Certificate",
-          lifecycle: "Approved",
+          lifecycle: "Draft · local TEST",
           linkedRecordRefs: [projectCode, "HLPL-RFT-QA-ACC-01"],
         },
       ],
@@ -698,7 +701,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
       title: "Field Operations & Diagnostic Cloud Portal",
       track: "software_only" as CanonicalProjectTrack,
       isExternalClient: false,
-      clientName: "Internal IT & Customer Support Operations",
+      clientName: "Northstar Sample Labs · internal fictional TEST",
       businessStory:
         "Internal cloud web application for service technicians to monitor device health, trigger remote diagnostic sessions, and generate field service tickets. Pure software development.",
       currentActiveStage: "SW_08",
@@ -782,7 +785,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
       title: "Commercial Catalog Telematics Device Deployment",
       track: "ready_made" as CanonicalProjectTrack,
       isExternalClient: true,
-      clientName: "City Transit Authority",
+      clientName: "Cedar Harbor Transit · fictional TEST client",
       businessStory:
         "Direct commercial supply of standard off-the-shelf HLPL-OBD4-01 device. Standard technical data sheet (SAL-TDS-01) and brochure (SAL-BRO-01) utilized; requires zero custom engineering.",
       currentActiveStage: "RM_03",
@@ -801,7 +804,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         fields: {
           projectTrack: "ready_made",
           scope: "Client",
-          customer: "City Transit Authority",
+          customer: "Cedar Harbor Transit · fictional TEST client",
           catalogProduct: "HLPL-OBD4-01",
           currentStage: "RM_03",
         },
@@ -871,7 +874,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
       title: "Fleet Telematics Protocol Upgrade (FW + Cloud)",
       track: "firmware_software_existing_hardware" as CanonicalProjectTrack,
       isExternalClient: true,
-      clientName: "Metro Logistics Fleet",
+      clientName: "Juniper Route Systems · fictional TEST client",
       businessStory:
         "Protocol modernization to upgrade existing fleet devices from legacy HTTP to lightweight binary MQTT. Firmware and Cloud backend coordinated; existing hardware platform unchanged.",
       currentActiveStage: "INT_02",
@@ -890,7 +893,7 @@ export const CANONICAL_SAMPLE_PROJECTS: CanonicalSampleProject[] = [
         fields: {
           projectTrack: "firmware_software_existing_hardware",
           scope: "Client",
-          customer: "Metro Logistics Fleet",
+          customer: "Juniper Route Systems · fictional TEST client",
           currentStage: "INT_02",
           existingBoardRef: "HLPL-OBD4-HW-REV-03 (Existing Pinned Platform)",
         },

@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { ProjectPhaseTimeline } from './ProjectPhaseTimeline';
+import { readLifecycleBaseline } from '@/lib/lifecycle-baseline';
 import { PROJECT_INPUT_PARAMETERS } from "@/lib/project-inputs";
 import { useMemo, useState } from "react";
 import {
@@ -140,14 +142,14 @@ export function ProjectAnalysisOverview({
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-primary uppercase tracking-wide">
-                Six Realistic Automotive Lifecycle Scenarios (§14.14 · Reference &amp; Training)
+                Seven Lifecycle Scenarios (§14.14 · Reference &amp; Training)
               </span>
               <span className="text-[11px] text-muted-foreground">
                 Synthetic connected verification pack · No real production side effects
               </span>
             </div>
             <p className="text-muted-foreground leading-relaxed">
-              Demonstrates five actual sample projects plus one declined pre-project enquiry.
+              Demonstrates six synthetic sample projects plus one declined pre-project enquiry.
               Includes verified clientless boundary (S01), terminal declination with zero project creation (S02),
               client PoC (S03), system pilot (S04), pilot refinement regression (S05), and mathematically reconciled bulk production (S06).
             </p>
@@ -157,7 +159,7 @@ export function ProjectAnalysisOverview({
                 onClick={() => setSelectedScenarioId("all")}
                 className={`rounded-md px-2.5 py-1 text-[11px] font-medium border transition-colors ${selectedScenarioId === "all" ? "bg-primary text-primary-foreground border-primary" : "bg-card text-foreground border-border hover:bg-muted"}`}
               >
-                All Scenarios (6)
+                All Scenarios (7)
               </button>
               {LIFECYCLE_SCENARIOS.map((s) => (
                 <button
@@ -261,7 +263,7 @@ export function ProjectAnalysisOverview({
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
                         <CheckCircle2 className="size-4" />
-                        Production Reconciliation Matrix (Strict §14.14 Invariant)
+                        TEST Quantity Reconciliation · Illustrative Sample Only
                       </span>
                       <span className="rounded bg-emerald-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                         150 + 5 + 45 = 200 | 500 - 200 = 300
@@ -281,7 +283,7 @@ export function ProjectAnalysisOverview({
                         </p>
                       </div>
                       <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-2 text-center">
-                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 uppercase font-semibold">Accepted</span>
+                        <span className="text-[10px] text-emerald-700 dark:text-emerald-300 uppercase font-semibold">Internal QA pass · TEST</span>
                         <p className="text-base font-bold text-emerald-700 dark:text-emerald-300">
                           {scenario.productionReconciliation.acceptedUnits}
                         </p>
@@ -306,7 +308,7 @@ export function ProjectAnalysisOverview({
                       </div>
                     </div>
                     <p className="text-[11px] text-muted-foreground pt-1">
-                      * Only 150 accepted units eligible for dispatch. 5 held units undergo SMT solder rework. Zero inventory simulated without verified inspection.
+                      * Illustrative test counts only. No customer acceptance, real inspection, product release, inventory posting, or dispatch is represented.
                     </p>
                   </div>
                 )}
@@ -492,7 +494,7 @@ export function ProjectAnalysisOverview({
               </div>
             ))}
           </section>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3">
             {analyses.map((a) => (
               <article
                 key={a.project.id}
@@ -505,10 +507,12 @@ export function ProjectAnalysisOverview({
                   </div>
                   <span className="rounded border border-border px-2 py-1">{a.project.status}</span>
                 </div>
+                <ProjectPhaseTimeline fields={a.project.fields}/>
+                <p className="text-xs text-muted-foreground">Project task totals cover all departments. Task details follow your department access.</p>
                 <dl className="grid grid-cols-2 gap-3">
                   {[
                     [
-                      "Current stage",
+                      "Department stage",
                       a.project.fields["currentStage"] ||
                         a.project.fields["lifecycleStage"] ||
                         "Not recorded",
@@ -516,7 +520,7 @@ export function ProjectAnalysisOverview({
                     ["Target", a.project.fields["targetDate"] || "Not recorded"],
                     [
                       "Tasks completed",
-                      `${a.tasks.filter((r) => analysisComplete(r.status)).length} / ${a.tasks.length}`,
+                      `${a.project.fields["projectCompletedTaskCount"] ?? a.tasks.filter((r) => analysisComplete(r.status)).length} / ${a.project.fields["projectTaskCount"] ?? a.tasks.length}`,
                     ],
                     ["Linked documents", a.documents.length],
                   ].map(([label, value]) => (
@@ -528,7 +532,7 @@ export function ProjectAnalysisOverview({
                 </dl>
                 {a.inputs.filter(record => ["totalPlannedUnits","lotQuantity","acceptedUnits","heldUnits","pendingInspectionUnits","remainingPlannedUnits"].every(key => /^\d+$/.test(record.fields[key] || ""))).map(record => <div key={record.id} className="rounded border border-border p-2 space-y-1">
                   <p className="font-medium">Saved production disposition · {record.reference}</p>
-                  <p>{record.fields["acceptedUnits"]} accepted + {record.fields["heldUnits"]} held + {record.fields["pendingInspectionUnits"]} pending inspection = {record.fields["lotQuantity"]} lot units</p>
+                  <p>{record.fields["acceptedUnits"]} internal QA-pass units + {record.fields["heldUnits"]} held + {record.fields["pendingInspectionUnits"]} pending inspection = {record.fields["lotQuantity"]} illustrative lot units</p>
                   <p>{record.fields["totalPlannedUnits"]} planned · {record.fields["remainingPlannedUnits"]} remaining</p>
                   {(Number(record.fields["acceptedUnits"])+Number(record.fields["heldUnits"])+Number(record.fields["pendingInspectionUnits"]) !== Number(record.fields["lotQuantity"]) || Number(record.fields["totalPlannedUnits"])-Number(record.fields["lotQuantity"]) !== Number(record.fields["remainingPlannedUnits"])) && <p role="alert" className="text-destructive">Source quantities do not reconcile.</p>}
                 </div>)}

@@ -304,8 +304,9 @@ test('SECTION 6: 8 Sample Projects + 1 Declined Enquiry (Patch 5)', () => {
   assert.equal(data1.records.length, data2.records.length, 'Repeated call must return identical record counts');
 });
 
-test('SECTION 7: Lifecycle Scenarios S01-S06 Parity', () => {
-  assert.equal(LIFECYCLE_SCENARIOS.length, 6, 'LIFECYCLE_SCENARIOS must have all 6 canonical scenarios S01-S06');
+test('SECTION 7: Lifecycle Scenario Catalogue Parity', () => {
+  assert.equal(LIFECYCLE_SCENARIOS.length, 7, 'LIFECYCLE_SCENARIOS must retain six baseline cases plus LC2-P10');
+  assert.equal(LIFECYCLE_SCENARIOS.at(-1).id, 'S10', 'LC2-P10 must not collide with backend S07');
 
   const fixtures = getAllScenarioFixtures();
   assert.ok(fixtures.records.length > 20, 'Scenario fixtures must contain realistic records');

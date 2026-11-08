@@ -1,3 +1,7 @@
+import { useOrganizationConfiguration } from '@/lib/organization-configuration';
+import { getExpenseCatalogue } from '@/lib/expense-settings.functions';
+import { suggestExpenseCategoryForStage } from '@/lib/expense-suggestions';
+import { ExpenseSettingsPanel } from './ExpenseSettingsPanel';
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -38,6 +42,7 @@ export function SharedBusinessWorkspace({
   view: string;
   membership: TestMembership;
 }) {
+  const departmentConfiguration=useOrganizationConfiguration(membership.membershipId);
   const load = useServerFn(getBusinessWorkspace),
     write = useServerFn(mutateBusinessWorkspace);
   const query = useQuery({
@@ -56,6 +61,9 @@ export function SharedBusinessWorkspace({
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [search, setSearch] = useState("");
+  const loadExpenseCatalogue=useServerFn(getExpenseCatalogue);
+  const expenseDepartment=values['departmentId'] || query.data?.departments.find(d=>d.code===membership.departmentCode)?.id || null;
+  const expenseOptions=useQuery({queryKey:['expense-settings',membership.organizationId,expenseDepartment],queryFn:()=>loadExpenseCatalogue({data:{department:expenseDepartment}}),enabled:view==='budgets'});
   const pending = useRef<{ signature: string; id: string } | null>(null);
 
   const lock = useRef(false);
@@ -119,6 +127,14 @@ export function SharedBusinessWorkspace({
         <Button onClick={() => void query.refetch()}>Retry</Button>
       </section>
     );
+  const expenseProject = data.projects.find(project => project.id === values['projectId']);
+  const expenseService = expenseOptions.data?.services.find(service => service.id === values['serviceCatalogueId']);
+  const expenseCategorySuggestion = suggestExpenseCategoryForStage(
+    expenseProject?.currentStage,
+    values['requestType'] || 'travel',
+    expenseOptions.data?.categories || [],
+    expenseService?.category,
+  );
   if (data.membership.role === "viewer" && view !== "tickets")
     return (
       <section className={card}>
@@ -178,7 +194,10 @@ export function SharedBusinessWorkspace({
           className={input}
           required={required}
           value={values[name] || ""}
-          onChange={(e) => setValues({ ...values, [name]: e.target.value })}
+          onChange={(e) => {
+            const value = e.target.value;
+            setValues(previous => ({ ...previous, [name]: value }));
+          }}
         >
           <option value="">{required ? "Choose…" : "None / department work"}</option>
           {options.map((o) => (
@@ -208,7 +227,16 @@ export function SharedBusinessWorkspace({
         allocatedAmount: Number(values["allocatedAmount"]),
         financeLimit: values["financeLimit"] ? Number(values["financeLimit"]) : null,
       };
-    if (action === "request_expense") payload = { ...payload, amount: Number(values["amount"]) };
+    if (action === "request_expense") {
+      if(!expenseOptions.data){setError('Expense settings are unavailable. Retry before submitting.');return;}
+      payload = { ...payload, category: values['category'], amount: Number(values['amount']), purchaseKind: values['purchaseKind'] || 'goods', purpose: values['requestType']==='purchase' ? values['itemOrService'] : values['requestType']==='reimbursement' ? values['merchant'] : values['destination'], requestType: values['requestType'] || 'travel' };
+    }
+    if (action === 'request_expense' && values['requestType']==='purchase' && values['purchaseKind']==='service') {
+      const units=Number(values['serviceSeats']);
+      if(!Number.isFinite(units)||units<=0){setError('Enter a positive number of seats / units.');return;}
+      const details=[values['itemOrService'], 'Request: '+values['serviceAction'], 'Billing: '+values['billingCycle'], 'Seats / units: '+units, 'Owner: '+values['serviceOwner'], values['existingServiceReference']?'Existing reference: '+values['existingServiceReference']:null].filter(Boolean).join(' · ');
+      payload={...payload,itemOrService:details,purpose:details};
+    }
     if (action === "post_expense")
       payload = { ...payload, actualAmount: Number(values["actualAmount"]) };
     if (action === "publish_template")
@@ -244,12 +272,13 @@ export function SharedBusinessWorkspace({
     <div className="space-y-4">
       {notice&&<p role="status" className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs">{notice}</p>}
       {error&&!action&&<p role="alert" className="text-sm text-destructive">{error}</p>}
-      {view==="budgets"&&<SharedBudgetPresentation data={data} membership={membership} onAction={open}/>}
+      {view==='budgets'&&<><ExpenseSettingsPanel accountKey={membership.organizationId+membership.membershipId} departments={data.departments}/><SharedBudgetPresentation data={data} membership={membership} onAction={open}/></>}
           {view === "tickets" && <ServiceTicketsWorkspace
+        ticketGroups={departmentConfiguration.data?.departments.find(d=>d.code==="SIT")?.ticketGroups ?? []}
         currentUser={{role:admin?"admin":actor.role==="viewer"?"client":actor.role,name:actor.display_name,email:"",department:actor.department_code||undefined}}
         tickets={by("ticket").map(i=>({id:i.id,reference:`TKT-${i.id.slice(0,8)}`,source:str(i.data["source"]),requesterName:str(i.data["requesterName"]),requesterEmail:"",requesterDepartment:str(i.data["requesterDept"]),subject:str(i.data["subject"]),description:str(i.data["description"]),category:str(i.data["category"]),priority:str(i.data["priority"]),status:str(i.data["status"]),projectId:i.projectId||undefined,assetId:str(i.data["assetId"])||undefined,assignedOwner:str(i.data["assignedOwner"])||undefined,slaDueHours:0,createdAt:str(i.data["createdAt"]),updatedAt:str(i.data["updatedAt"]),replies:Array.isArray(i.data["replies"])?i.data["replies"]:[],history:Array.isArray(i.data["history"])?i.data["history"]:[]} as ServiceTicket))}
         onUpdateTickets={()=>{}}
-        sharedActions={{onCreate:()=>open("ticket_create",null,{priority:"Normal",category:"General"}),onStatus:id=>{const ticket=by("ticket").find(i=>i.id===id);if(ticket)open("ticket_status",ticket);},onReply:async(id,text,internal)=>{const ticket=by("ticket").find(i=>i.id===id);return ticket?await save("ticket_reply",ticket,{message:text,isInternalNote:service&&internal}):false;}}}
+        sharedActions={{onCreate:category=>open("ticket_create",null,{priority:"Normal",category:category||"General"}),onStatus:id=>{const ticket=by("ticket").find(i=>i.id===id);if(ticket)open("ticket_status",ticket);},onReply:async(id,text,internal)=>{const ticket=by("ticket").find(i=>i.id===id);return ticket?await save("ticket_reply",ticket,{message:text,isInternalNote:service&&internal}):false;}}}
       />}
       {view === "profile" && <EmployeeSelfServiceWorkspace
         persona={{id:actor.membership_id,label:actor.display_name,person:actor.display_name,kind:admin?"admin":lead?"lead":"member"}}
@@ -403,9 +432,9 @@ export function SharedBusinessWorkspace({
       >
         <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{action?.replaceAll("_", " ")}</DialogTitle>
+            <DialogTitle>{action === 'request_expense' ? 'New expense request' : action?.replaceAll("_", " ")}</DialogTitle>
             <DialogDescription>
-              Changes save to the shared account with your actual identity.
+              Changes save to the shared TEST account with your account identity.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-3">
@@ -434,37 +463,33 @@ export function SharedBusinessWorkspace({
                 {select(
                   "projectId",
                   "Project",
-                  data.projects.map((p) => ({ value: p.id, label: p.reference })),
+                  data.projects.map((p) => ({ value: p.id, label: `${p.reference}${p.currentStage ? ` · ${p.currentStage}` : ""}` })),
                 )}
               </>
             )}
             {action === "request_expense" && (
               <>
-                {field("purpose", "Purpose")}
-                {field("category", "Category")}
+{select("projectId","Project (optional)",data.projects.map((p)=>({value:p.id,label:`${p.reference}${p.currentStage?` · ${p.currentStage}`:""}`})))}
+{expenseProject?.currentStage&&<p className="text-xs text-muted-foreground">Project phase: {expenseProject.currentStage}. Suggestions are optional and never approve spend.</p>}
+<div className="grid grid-cols-3 gap-2" role="group" aria-label="Request type">{([{value:'travel',label:'Travel / advance'},{value:'reimbursement',label:'Reimbursement'},{value:'purchase',label:'Purchase'}] as const).map(option=><Button key={option.value} type="button" size="sm" variant={(values['requestType']||'travel')===option.value?'default':'outline'} aria-pressed={(values['requestType']||'travel')===option.value} onClick={()=>setValues(previous=>({...previous,requestType:option.value,category:''}))}>{option.label}</Button>)}</div>
+{expenseOptions.error&&<p role="alert">Expense choices could not load. {expenseOptions.error.message}</p>}
+{select('category','Finance category',(expenseOptions.data?.categories||[]).map(value=>({value,label:value})),true)}
+{expenseCategorySuggestion&&<div className="flex items-center justify-between gap-2 rounded-md bg-muted p-2 text-xs"><span>Suggested from request/project context: <strong>{expenseCategorySuggestion}</strong></span>{values['category']!==expenseCategorySuggestion&&<Button type="button" size="sm" variant="outline" onClick={()=>setValues(previous=>({...previous,category:expenseCategorySuggestion}))}>Use suggestion</Button>}</div>}
+<p className="text-xs text-muted-foreground">Travel and reimbursement go to Finance; goods and service requests go to Procurement first. Choose one Finance category; no separate business-purpose field is required.</p>
+{values['requestType']==='travel'&&<>{field('destination','Destination / visit location')}<div className="grid grid-cols-2 gap-3">{field('travelStartDate','Travel start','date')}{field('travelEndDate','Travel end','date')}</div></>}
+{values['requestType']==='reimbursement'&&<>{field('merchant','Merchant / payee')}{field('expenseDate','Expense date','date')}{field('receiptReference','Receipt reference','text',false)}</>}
+{values['requestType']==='purchase'&&<><div className="flex gap-2" role="group" aria-label="Purchase type">{(['goods','service'] as const).map(kind=><Button key={kind} type="button" size="sm" variant={(values['purchaseKind']||'goods')===kind?'default':'outline'} aria-pressed={(values['purchaseKind']||'goods')===kind} onClick={()=>setValues(previous=>({...previous,purchaseKind:kind}))}>{kind==='goods'?'Goods / materials':'Service'}</Button>)}</div>{values['purchaseKind']==='service'&&<div className="space-y-3 rounded-lg border p-3"><label className="grid gap-1 text-xs">Find service<input className={input} placeholder="Search subscriptions, testing, e-waste…" value={values['serviceSearch']||''} onChange={e=>setValues(previous=>({...previous,serviceSearch:e.target.value}))}/></label><label className="grid gap-1 text-xs">Service catalogue<select className={input} value={values['serviceCatalogueId']||''} onChange={e=>{const service=expenseOptions.data?.services.find(item=>item.id===e.target.value);setValues(previous=>({...previous,serviceCatalogueId:e.target.value,...(service?{itemOrService:service.name,supplierName:service.provider,billingCycle:service.cycle,serviceOwner:service.owner}:{itemOrService:'',supplierName:'',billingCycle:'',serviceOwner:''})}));}}><option value="">New / custom service</option>{(expenseOptions.data?.services||[]).filter(service=>service.name.toLowerCase().includes((values['serviceSearch']||'').toLowerCase())).map(service=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label>{select('serviceAction','Request',[{value:'new',label:'New service'},{value:'renew',label:'Renew existing service'},{value:'seats',label:'Add seats / capacity'}],true)}<div className="grid grid-cols-2 gap-3">{select('billingCycle','Billing cycle',[{value:'Monthly',label:'Monthly'},{value:'Annual',label:'Annual'},{value:'One-time',label:'One-time'}],true)}{field('serviceSeats','Seats / units','number')}</div>{field('serviceOwner','Responsible owner')}{values['serviceAction']!=='new'&&field('existingServiceReference','Existing subscription / contract reference')}</div>}{field('itemOrService','What is needed')}{(values['purchaseKind']||'goods')==='goods'&&field('quantity','Quantity','number')}{field('supplierName','Preferred supplier (optional)','text',false)}{field('quotationReference','Quote / invoice link or reference (optional)','text',false)}</>}
                 {field("amount", "Estimate", "number")}
                 {field("currency", "Currency")}
                 {field("requiredDate", "Required date", "date")}
-                {!actor.department_code &&
-                  select(
-                    "departmentId",
-                    "Department",
-                    data.departments
-                      .filter((d) => d.code !== "CLIENT")
-                      .map((d) => ({ value: d.id, label: d.name })),
-                    true,
-                  )}
-                {select(
-                  "projectId",
-                  "Project",
-                  data.projects.map((p) => ({ value: p.id, label: p.reference })),
-                )}
               </>
             )}
             {action === "approve_expense" && (
               <>
                 {target?.data["status"] === "Pending_Dept_Review" ? (
                   <p className="text-sm">Forward this request to Finance review.</p>
+                ) : target?.data["status"] === "Pending_Procurement" ? (
+                  <p className="text-sm">Confirm the purchase request has enough sourcing detail, then forward it to Finance for budget review. This does not approve spend.</p>
                 ) : (
                   select(
                     "allocationId",

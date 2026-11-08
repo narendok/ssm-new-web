@@ -189,7 +189,7 @@ export const DEFAULT_CHAT_MESSAGES: SharedChatMessage[] = [
     senderId: "usr-admin-exec",
     senderName: "Executive Admin",
     senderDept: "ADMIN",
-    text: "Tata Motors PO (PO-TATA-SLCT-2026-9041) for 50,000 units (₹20.33 Cr) confirmed! Cross-Department Sync Hub is now active. All HODs ensure Stage 4 deliverables are on schedule.",
+    text: "TEST planning update for PO-TATA-SLCT-2026-9041: review linked order assumptions and the configured engineering-stage deliverables. This sample message does not authorize purchasing or production.",
     timestamp: "Today, 09:15 AM",
     isUrgent: true,
     mentions: ["@AllHODs", "@PriyaSharma"],
@@ -233,7 +233,7 @@ export const DEFAULT_CHAT_MESSAGES: SharedChatMessage[] = [
     replies: [],
     poll: {
       id: "POLL-001",
-      question: "Which dual-footprint layout strategy should we adopt for Stage 4 Gerber release?",
+      question: "Which dual-footprint layout strategy should we review during Phase 3 detailed engineering?",
       options: [
         { id: "OPT-1", text: "Dual LGA footprint (Quectel EG915N + SimCom A7672)", votes: 5 },
         { id: "OPT-2", text: "Single LGA footprint with 20-week long-lead buffer order", votes: 2 },

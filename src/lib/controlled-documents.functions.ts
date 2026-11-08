@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { verifyControlledFileBytes } from "./controlled-file-integrity";
+import { requireVerifiedOriginal } from './verified-original.server';
 
 const bucket = "controlled-documents";
 const fileInput = z.object({
@@ -110,6 +111,7 @@ export const completeControlledDocumentUpload = createServerFn({ method: "POST" 
     const actual=await context.supabase.storage.from(bucket).download(file.storage_path);
     if(actual.error||!actual.data)throw actual.error??new Error("Stored file content is unavailable for verification.");
     await verifyControlledFileBytes(await actual.data.arrayBuffer(),file);
+    await requireVerifiedOriginal(context.supabase,data.fileId);
     return { ok: true };
   });
 
@@ -122,6 +124,7 @@ export const getControlledDocumentDownload = createServerFn({ method: "POST" })
     });
     if (accessErr || !accessRows?.[0]) throw new Error(accessErr?.message || "This file is unavailable in your department access.");
     const file = accessRows[0];
+    await requireVerifiedOriginal(context.supabase,data.fileId);
     const { data: signed, error: signedError } = await context.supabase.storage
       .from(bucket)
       .createSignedUrl(file.storage_path, 60, { download: file.original_name });
@@ -135,9 +138,14 @@ export const listControlledDocumentFiles = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { data: files, error } = await context.supabase
       .from("controlled_document_files")
-      .select("id, revision, original_name, content_type, size_bytes, uploaded_at, superseded_at, audit_note")
+      .select("id, revision, original_name, content_type, size_bytes, uploaded_at, superseded_at, audit_note, storage_path")
       .eq("document_id", data.documentId)
       .order("uploaded_at", { ascending: false });
     if (error) throw error;
-    return files;
+    return await Promise.all(files.map(async file=>{
+      const directory=file.storage_path.split('/').slice(0,-1).join('/'),filename=file.storage_path.split('/').at(-1)||'';
+      const stored=await context.supabase.storage.from(bucket).list(directory,{search:filename});
+      const {storage_path:_,...visible}=file;
+      return {...visible,originalAvailable:!stored.error&&Boolean(stored.data?.some(object=>object.name===filename))};
+    }));
   });

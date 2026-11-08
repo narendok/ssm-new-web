@@ -1,12 +1,20 @@
 import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
+import { taskProjectId } from "@/lib/department-scope";
+import { stageUploadAllowed } from '@/lib/stage-upload-access';
 import { SharedSupplierSelect } from "./SharedSupplierSelect";
-import { recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
-import type { StageGateInput } from "@/lib/operational-gate.schema";
+import { hardwareAttachmentForRecordType, hardwareStageForRecordType, recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
+import { CANONICAL_STAGE_TEMPLATES, getRecordedProjectTrack, computeProgressiveStageAndTaskState, recordedCompletedStageCodes } from "@/lib/canonical-lifecycle";
+import { COMPANY_PHASES, readLifecycleBaseline, projectLifecycleStages, recordedStageOmissions } from "@/lib/lifecycle-baseline";
+import { projectLifecycleContext } from '@/lib/lifecycle-record-presentation';
 import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getSharedTestWorkspace, mutateSharedTestWorkspace } from "@/lib/shared-test.functions";
-import { advanceOperationalStageGate } from "@/lib/operational-gate.functions";
+import {
+  getSharedTestWorkspace,
+  mutateSharedTestWorkspace,
+  resetSharedTestSamplePack,
+} from "@/lib/shared-test.functions";
+import { registerSharedDocument } from "@/lib/shared-vault.functions";
 import {
   beginControlledDocumentUpload,
   completeControlledDocumentUpload,
@@ -15,6 +23,7 @@ import {
 } from "@/lib/controlled-documents.functions";
 import type { SharedJson, SharedTestAction, SharedTestSnapshot } from "@/lib/shared-test.schema";
 import type { TestMembership } from "@/lib/test-auth.functions";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type Tab = "Projects" | "Records" | "Tasks" | "Approvals" | "Documents" | "Activity";
 const tabs: Tab[] = ["Projects", "Records", "Tasks", "Approvals", "Documents", "Activity"];
@@ -42,11 +51,12 @@ export function SharedTestWorkspace({
 }) {
   const load = useServerFn(getSharedTestWorkspace),
     write = useServerFn(mutateSharedTestWorkspace),
-    advance = useServerFn(advanceOperationalStageGate);
+    resetSamplePack = useServerFn(resetSharedTestSamplePack);
   const beginUpload = useServerFn(beginControlledDocumentUpload),
     completeUpload = useServerFn(completeControlledDocumentUpload),
     download = useServerFn(getControlledDocumentDownload),
     listFiles = useServerFn(listControlledDocumentFiles);
+  const registerDocument = useServerFn(registerSharedDocument);
   const query = useQuery({
     queryKey: ["shared-test-workspace", membership.organizationId, membership.membershipId],
     queryFn: () => load(),
@@ -69,10 +79,15 @@ export function SharedTestWorkspace({
   const [files, setFiles] = useState<Awaited<ReturnType<typeof listFiles>>>([]),
     [file, setFile] = useState<File | null>(null),
     [revision, setRevision] = useState("01");
+  const [recordFile,setRecordFile]=useState<File|null>(null),
+    [persistedRecord,setPersistedRecord]=useState<{id:string;reference:string;revision:string}|null>(null),
+    [recordAttachmentDocumentId,setRecordAttachmentDocumentId]=useState<string|null>(null);
   const [stageTarget, setStageTarget] = useState<Record<string, string>>({});
   const [documentSearch, setDocumentSearch] = useState("");
   const [documentProjectFilter, setDocumentProjectFilter] = useState("all");
   const pendingRequest = useRef<{ signature: string; id: string } | null>(null);
+  const createRecordRequestId=useRef<string|null>(null),
+    createRecordDocumentRequestId=useRef<string|null>(null);
   async function run(action: SharedTestAction, payload: Record<string, SharedJson>) {
     setBusy(true);
     setError("");
@@ -88,6 +103,34 @@ export function SharedTestWorkspace({
       setForm(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed.");
+      await query.refetch();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function resetCanonicalSamplePack() {
+    if (
+      !window.confirm(
+        "Reset the shared TEST sample pack for every web and app tester? This restores the fictional canonical projects and clears only their sample tasks, reviews, and linked draft records. Other TEST projects, accounts, and uploaded binary files are kept.",
+      )
+    )
+      return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await resetSamplePack({
+        data: { runId: "LC2-2026-10-28", requestId: crypto.randomUUID() },
+      });
+      await query.refetch();
+      setNotice("Shared TEST sample pack restored for web and app testers.");
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "TEST sample reset failed.";
+      setError(
+        /reset_shared_test_sample_pack|schema cache/i.test(message)
+          ? "Shared TEST reset is not installed on this backend yet. No sample data was reset."
+          : message,
+      );
       await query.refetch();
     } finally {
       setBusy(false);
@@ -132,7 +175,6 @@ export function SharedTestWorkspace({
   const resolvedAdminDept = adminDepartment ? data.departments.find(d => d.id === adminDepartment || d.code.toUpperCase() === targetDeptCode || d.code.toLowerCase() === adminDepartment.toLowerCase()) : null;
   const ownDepartment = admin ? (resolvedAdminDept?.id || data.departments.find(d => d.code === "EHW")?.id || data.departments[0]?.id) : data.departments.find((d) => d.code === actor.department_code)?.id;
   const selectedDepartment = values["department_id"] || ownDepartment || "";
-  const spec = recordFormSpec(data.departments.find(d => d.id === selectedDepartment)?.code || "");
   const supplierOptions = sharedSupplierOptions(data.records);
   const originalRecord = data.records.find(record => record.id === values["record_id"]);
   const generatedReferenceBase = automaticRecordReference(data.records.find(r => r.id === values["project_id"] && r.record_type === "Project")?.reference || "", data.departments.find(d => d.id === selectedDepartment)?.code || "", values["record_type"] || "");
@@ -140,6 +182,38 @@ export function SharedTestWorkspace({
   const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
   const generatedReference = generatedReferenceBase ? referenceAtRevision(generatedReferenceBase, selectedRevision) : "";
   const projects = data.records.filter((r) => r.record_type === "Project");
+  const recordProject=projects.find(project=>project.id===(values["project_id"]||""));
+  const recordBaseline=readLifecycleBaseline(String(recordProject?.fields['lifecycleBaseline']||''));
+  const configuredRecordStages=recordBaseline?.stages ?? CANONICAL_STAGE_TEMPLATES.map(stage=>({code:stage.stageCode,name:stage.name,phase:stage.phaseCode,department:stage.defaultOwner}));
+  const recordDepartmentCode=data.departments.find(d=>d.id===selectedDepartment)?.code||'';
+  const spec=recordFormSpec(recordDepartmentCode,recordBaseline?.stages.filter(stage=>stage.department===recordDepartmentCode).flatMap(stage=>stage.exitTypes));
+  const recordProjectStageCandidates=[recordProject?.fields["currentStage"],recordProject?.fields["lifecycleStage"],recordProject?.stage].map(value=>typeof value==="string"?value:"").filter(Boolean);
+  const recordProjectStageCode=recordProjectStageCandidates.find(code=>configuredRecordStages.some(stage=>stage.code===code))||"";
+  const recordProjectStoredStageLabel=recordProjectStageCandidates[0]||"";
+  const configuredRecordProjectStage=configuredRecordStages.find(stage=>stage.code===recordProjectStageCode);
+  const recordProjectStage=configuredRecordProjectStage ? {...configuredRecordProjectStage,stageCode:configuredRecordProjectStage.code,phaseTitle:configuredRecordProjectStage.phase} : undefined;
+  const recordProjectPhaseCode=String(recordProject?.fields["companyPhase"]||"");
+  const recordProjectPhase=COMPANY_PHASES.find(([code])=>code===recordProjectPhaseCode);
+  const mappedRecordAttachment=form==="create_record"?hardwareAttachmentForRecordType(values["record_type"]||""):undefined;
+  const recordAttachmentSpec=form==="create_record"&&(mappedRecordAttachment||recordProjectStage)?mappedRecordAttachment||{
+    documentType:"Technical document",
+    label:`${values["record_type"]||"Record"} supporting original file`,
+    accept:".pdf,.doc,.docx,.xlsx,.csv,.zip,.png,.jpg,.jpeg",
+    stageCode:recordProjectStageCode,
+  }:undefined;
+  const recordAttachmentStageCode=recordAttachmentSpec?.stageCode||"";
+  const recordAttachmentAllowed=stageUploadAllowed(configuredRecordStages,recordProjectStageCode,recordAttachmentStageCode,data.tasks.filter(task=>task.record_id===recordProject?.id&&task.stage_code&&task.status!=='Cancelled').map(task=>task.stage_code!));
+  const activeProjectId = projectId === "all" || projects.some((project) => project.id === projectId)
+    ? projectId
+    : "all";
+  const projectLinkedRecords = data.records.map((record) => ({
+    id: record.id,
+    reference: record.reference,
+    type: record.record_type,
+    fields: record.fields,
+  }));
+  const taskProject = (recordId: string | null) =>
+    taskProjectId({ recordId }, projectLinkedRecords);
   const projectName = (id: string | null) => projects.find((p) => p.id === id)?.reference || "—";
   const documentProject = (document: SharedTestSnapshot["documents"][number]) => {
     const record = data.records.find((item) => item.id === document.record_id);
@@ -160,7 +234,9 @@ export function SharedTestWorkspace({
   const deptName = (id: string | null) => data.departments.find((d) => d.id === id)?.code || "—";
   const memberName = (id: string | null) =>
     data.members.find((m) => m.id === id)?.display_name || "Unassigned";
-  const filteredTasks = data.tasks.filter((t) => projectId === "all" || t.record_id === projectId);
+  const filteredTasks = data.tasks.filter((task) =>
+    activeProjectId === "all" || taskProject(task.record_id) === activeProjectId,
+  );
   const filteredRecords = data.records.filter((r) => r.record_type !== "Project");
   const pending = data.approvals.filter((a) => a.outcome === "pending");
   const myTasks = data.tasks.filter(
@@ -168,9 +244,13 @@ export function SharedTestWorkspace({
   );
   function open(action: SharedTestAction, initial: Record<string, string> = {}) {
     setError("");
+    if(action==="create_record"){
+      setRecordFile(null);setPersistedRecord(null);setRecordAttachmentDocumentId(null);
+      createRecordRequestId.current=null;createRecordDocumentRequestId.current=null;
+    }
     setForm(action);
     setValues({
-      project_id: projectId === "all" ? projects[0]?.id || "" : projectId,
+      project_id: activeProjectId === "all" ? projects[0]?.id || "" : activeProjectId,
       department_id: ownDepartment || data.departments[0]?.id || "",
       fields: '{"revision":"01"}',
       revision: "01",
@@ -194,7 +274,7 @@ export function SharedTestWorkspace({
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    let payload: Record<string, SharedJson> = { ...values };
+    const payload: Record<string, SharedJson> = { ...values };
     try {
       if (form === "create_record" || form === "update_record")
         payload["fields"] = {
@@ -206,7 +286,13 @@ export function SharedTestWorkspace({
         };
       if (form === "create_record") {
         if (!spec) throw new Error("No record types configured for this department.");
-        payload["fields"] = {...payload["fields"] as Record<string, SharedJson>, ...recordFieldValues(spec, values["record_type"] || "", {...values,revision:selectedRevision,...(procurementTrack(values["record_type"] || "") ? {procurementTrack:procurementTrack(values["record_type"] || "")!} : {})})};
+        payload["fields"] = {...payload["fields"] as Record<string, SharedJson>, ...recordFieldValues(spec, values["record_type"] || "", {...values,projectId:values['project_id']||'',revision:selectedRevision,...(procurementTrack(values["record_type"] || "") ? {procurementTrack:procurementTrack(values["record_type"] || "")!} : {})})};
+        const mappedStage=hardwareStageForRecordType(values["record_type"]||"")?.code||recordAttachmentStageCode;
+        if(mappedStage){
+          payload["currentStage"]=mappedStage;
+          payload["lifecycleStage"]=mappedStage;
+          payload["companyPhase"]=configuredRecordStages.find(stage=>stage.code===mappedStage)?.phase||"";
+        }
       }
     } catch (error) {
       setError(error instanceof Error ? error.message : "The saved record fields could not be read.");
@@ -214,6 +300,7 @@ export function SharedTestWorkspace({
     }
     if (form === "create_record") payload["reference"] = generatedReference;
     if (values["due_at"]) payload["due_at"] = values["due_at"] + "T12:00:00+05:30";
+    if(form==="create_record"&&recordFile){void saveRecordWithOriginal(payload);return;}
     if (form) await run(form, payload);
   }
   async function openFiles(doc: SharedTestSnapshot["documents"][number]) {
@@ -267,45 +354,69 @@ export function SharedTestWorkspace({
       setBusy(false);
     }
   }
-  async function advanceProject(project: SharedTestSnapshot["records"][number]) {
-    setBusy(true);
-    setError("");
-    try {
-      const deliverables = data.approvals
-        .filter((a) => a.outcome === "approved" && a.evidence_revision)
-        .flatMap<StageGateInput["evidenceManifest"]["deliverables"][number]>((a) =>
-          a.evidence_record_id
-            ? [
-                {
-                  record_id: a.evidence_record_id,
-                  revision: a.evidence_revision!,
-                  approval_id: a.id,
-                },
-              ]
-            : a.evidence_document_id
-              ? [
-                  {
-                    document_id: a.evidence_document_id,
-                    revision: a.evidence_revision!,
-                    approval_id: a.id,
-                  },
-                ]
-              : [],
-        );
-      await advance({
-        data: {
-          recordId: project.id,
-          targetStage: stageTarget[project.id] || "Stage 2",
-          evidenceManifest: { deliverables, naRationale: {} },
-        },
-      });
+  async function saveRecordWithOriginal(payload: Record<string,SharedJson>) {
+    const selectedFile=recordFile;
+    const attachment=recordAttachmentSpec;
+    if(!selectedFile||!attachment)return;
+    if(!recordAttachmentAllowed){setError("Original upload is available only for the mapped current project stage or its immediately previous stage.");return;}
+    if(selectedFile.size<=0||selectedFile.size>25*1024*1024){setError("Choose a non-empty file up to 25 MB.");return;}
+    setBusy(true);setError("");setNotice("");
+    let saved=persistedRecord;
+    try{
+      let linked=saved;
+      if(!linked){
+        createRecordRequestId.current ||= crypto.randomUUID();
+        const result=await write({data:{action:"create_record",payload,requestId:createRecordRequestId.current}}) as {id?:string}|null;
+        if(!result?.id)throw new Error("Record save did not return its shared reference.");
+        linked={id:result.id,reference:generatedReference,revision:selectedRevision};
+        saved=linked;setPersistedRecord(linked);
+      }
+      let documentId=recordAttachmentDocumentId;
+      if(!documentId){
+        createRecordDocumentRequestId.current ||= crypto.randomUUID();
+        const registered=await registerDocument({data:{requestId:createRecordDocumentRequestId.current,payload:{
+          title:String(payload["title"]||values["title"]||""),
+          documentType:attachment.documentType,
+          scope:"internal",
+          departmentId:selectedDepartment,
+          projectId:String(payload["project_id"]||values["project_id"]||""),
+          recordId:linked.id,
+        }}});
+        documentId=registered.id;setRecordAttachmentDocumentId(documentId);
+      }
+      const checksum=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await selectedFile.arrayBuffer()))).map(value=>value.toString(16).padStart(2,"0")).join("");
+      const uploadResult=await beginUpload({data:{documentId,revision:linked.revision,name:selectedFile.name,contentType:selectedFile.type||"application/octet-stream",sizeBytes:selectedFile.size,checksum}});
+      if(!uploadResult.duplicate){
+        if(!uploadResult.signedUploadUrl)throw new Error("Private upload link is unavailable. Keep the file selected and retry.");
+        const response=await fetch(uploadResult.signedUploadUrl,{method:"PUT",headers:{"Content-Type":selectedFile.type||"application/octet-stream"},body:selectedFile});
+        if(!response.ok)throw new Error("Private upload did not finish. Keep the file selected and retry.");
+      }
+      await completeUpload({data:{fileId:uploadResult.file.id}});
       await query.refetch();
-      setNotice("Stage updated by the verified server gate.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Gate check failed.");
-    } finally {
-      setBusy(false);
-    }
+      setNotice(`${linked.reference} saved with its original as an internal Draft. It is not approved or released.`);
+      setForm(null);setRecordFile(null);setPersistedRecord(null);setRecordAttachmentDocumentId(null);
+      createRecordRequestId.current=null;createRecordDocumentRequestId.current=null;
+    }catch(e){
+      setError(saved?`Record ${saved.reference} is saved as a Draft. The file is not complete yet; keep it selected and retry. ${e instanceof Error?e.message:"Upload failed."}`:e instanceof Error?e.message:"Record save failed. Your input is preserved.");
+      await query.refetch();
+    }finally{setBusy(false);}
+  }
+  async function advanceProject(project: SharedTestSnapshot["records"][number]) {
+    const target=stageTarget[project.id];
+    if(!target || !projectStageOptions(project).some(stage=>stage.stageCode===target)){setError('Choose an eligible stage from the saved project settings.');return;}
+    await run('advance_stage',{project_id:project.id,target_stage:target,expected_updated_at:project.updated_at});
+  }
+  function projectStageOptions(project:SharedTestSnapshot['records'][number]) {
+    const fields=project.fields as Record<string,string>;
+    const baseline=readLifecycleBaseline(fields['lifecycleBaseline']),track=getRecordedProjectTrack(fields);
+    if(!baseline||!track)return [];
+    return computeProgressiveStageAndTaskState({projectId:project.id,track,
+      stageDefinitions:projectLifecycleStages(baseline,track,fields['certificationRequired']==='true'),
+      completedStageCodes:recordedCompletedStageCodes(fields['completedStages']),
+      inProgressStageCodes:[fields['currentStage']||project.stage||''],
+      omittedStageCodes:Object.keys(recordedStageOmissions(fields['omittedStages'])),
+      enableCertification:fields['certificationRequired']==='true',
+    }).stages.filter(stage=>stage.status==='ready');
   }
   return (
     <main className={`${darkMode ? "dark" : ""} min-h-screen bg-background text-foreground`}>
@@ -378,19 +489,32 @@ export function SharedTestWorkspace({
           <>
             {tab === "Projects" && (
               <section className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Canonical sample pack entries are synthetic TEST data, not real customer work.
+                  Loading or repairing the pack does not approve a lifecycle gate or authorize production.
+                </p>
                 <div className="flex justify-between items-center gap-2">
                   <h2 className="font-semibold">Shared projects</h2>
                   <div className="flex items-center gap-2">
                     {admin && (
-                      <button
-                        className={button}
-                        disabled={busy}
-                        onClick={async () => {
-                          await run("sync_canonical_sample_pack", { p_run_id: "LC2-2026-10-28" });
-                        }}
-                      >
-                        Load Canonical Samples (LC2-2026-10-28)
-                      </button>
+                      <>
+                        <button
+                          className={button}
+                          disabled={busy}
+                          onClick={async () => {
+                            await run("sync_canonical_sample_pack", { p_run_id: "LC2-2026-10-28" });
+                          }}
+                        >
+                          Sync TEST sample pack (LC2-2026-10-28)
+                        </button>
+                        <button
+                          className={button}
+                          disabled={busy}
+                          onClick={() => void resetCanonicalSamplePack()}
+                        >
+                          Reset shared TEST sample data
+                        </button>
+                      </>
                     )}
                     {(admin || (lead && actor.department_code === "SAL")) && (
                       <button className={button} onClick={() => open("create_project")}>
@@ -405,8 +529,8 @@ export function SharedTestWorkspace({
                       <tr>
                         <th className="p-2">Project</th>
                         <th>Title</th>
-                        <th>Stage</th>
-                        <th>Stage gate</th>
+                        <th>Phase / department stage</th>
+                        <th>Next stage</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -414,27 +538,24 @@ export function SharedTestWorkspace({
                         <tr className="border-t" key={p.id}>
                           <td className="p-2 font-mono">{p.reference}</td>
                           <td>{p.title}</td>
-                          <td>{p.stage || "Stage 1"}</td>
+                          <td>{Object.values(projectLifecycleContext(p.fields as Record<string,string>)).filter(Boolean).join(' · ') || 'Lifecycle configuration required'}</td>
                           <td>
                             {(admin || (lead && p.department_id === ownDepartment)) && (
                               <div className="flex gap-2">
                                 <select
                                   aria-label={`Target stage ${p.reference}`}
                                   className={input}
-                                  value={stageTarget[p.id] || "Stage 2"}
+                                  value={stageTarget[p.id] || ""}
                                   onChange={(e) =>
                                     setStageTarget((v) => ({ ...v, [p.id]: e.target.value }))
                                   }
                                 >
-                                  {Array.from({ length: 9 }, (_, i) => `Stage ${i + 1}`).map(
-                                    (s) => (
-                                      <option key={s}>{s}</option>
-                                    ),
-                                  )}
+                                  <option value="">Choose an eligible stage…</option>
+                                  {projectStageOptions(p).map(stage=><option key={stage.stageCode} value={stage.stageCode}>{stage.stageCode} · {stage.name}</option>)}
                                 </select>
                                 <button
                                   className={button}
-                                  disabled={busy}
+                                  disabled={busy || !stageTarget[p.id] || !projectStageOptions(p).length}
                                   onClick={() => void advanceProject(p)}
                                 >
                                   Verify & advance
@@ -576,7 +697,7 @@ export function SharedTestWorkspace({
                     <select
                       aria-label="Task project"
                       className={input}
-                      value={projectId}
+                      value={activeProjectId}
                       onChange={(e) => setProjectId(e.target.value)}
                     >
                       <option value="all">All projects</option>
@@ -869,25 +990,31 @@ export function SharedTestWorkspace({
             )}
           </>
         )}
-        {form && (
-          <section
-            role="dialog"
-            aria-label="Shared TEST editor"
-            className="rounded-lg border bg-card p-5"
-          >
-            <form onSubmit={(e) => void submit(e)} className="grid gap-3 md:grid-cols-2">
-              <h2 className="font-semibold md:col-span-2">{form.replaceAll("_", " ")}</h2>
+        <Dialog open={Boolean(form)} onOpenChange={(open) => { if (!open && !busy) setForm(null); }}>
+          {form && (
+          <DialogContent className="w-[calc(100vw-2rem)] max-h-[85vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="capitalize">{form.replaceAll("_", " ")}</DialogTitle>
+              <DialogDescription>
+                {form === "create_record"
+                  ? "Create a project-linked draft record. Stage and reference details are filled from the selected project and record type where available."
+                  : form === "create_document"
+                    ? "Register a controlled document, then add its original file from Files & revisions. Approval and release remain separate."
+                    : "Enter the required details and save to the shared TEST workspace."}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={(e) => void submit(e)} className="grid min-w-0 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
               {form !== "update_record" && field("title", "Title")}
               {(form === "create_project" || form === "create_record") &&
                 field("reference", "Controlled reference (HLPL-…)")}
-              {form === "create_record" && <>
-                <label className="grid gap-1 text-xs">Record type
-                  <select className={input} required value={values["record_type"] || ""} onChange={e => setValues(v => ({...v, record_type:e.target.value,procurementTrack:procurementTrack(e.target.value) || ""}))}>
+                {form === "create_record" && <>
+                <label className="grid gap-1 text-xs sm:col-span-1">Record type
+                  <select className={input} required disabled={Boolean(persistedRecord)} value={values["record_type"] || ""} onChange={e => {setRecordFile(null);setValues(v => ({...v, record_type:e.target.value,procurementTrack:procurementTrack(e.target.value) || ""}));}}>
                     <option value="">Choose record type…</option>{(spec?.types || []).map(type => <option key={type} value={type}>{type}</option>)}
                   </select>
                 </label>
                 {spec && recordFields(spec,values["record_type"] || "").filter(item => item.key !== "procurementTrack" || !procurementTrack(values["record_type"] || "")).map(item => <label key={item.key} className="grid gap-1 text-xs">{item.label}
-                  {item.master === "suppliers" ? <SharedSupplierSelect options={supplierOptions} value={values[item.key] || ""} onChange={value => setValues(v => ({...v,[item.key]:value}))} /> : item.options ? <select className={input} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))}><option value="">Choose…</option>{item.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input className={input} type={item.kind === "date" ? "date" : "text"} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))} />}
+                  {item.readOnly ? <input className={input} value={item.automaticLabel || item.automaticValue || ""} readOnly aria-readonly="true" /> : item.master === "suppliers" ? <SharedSupplierSelect options={supplierOptions} value={values[item.key] || ""} onChange={value => setValues(v => ({...v,[item.key]:value}))} /> : item.options ? <select className={input} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))}><option value="">Choose…</option>{item.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input className={input} type={item.kind === "date" ? "date" : "text"} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))} />}
                 </label>)}
               </>}
               {(form === "create_record" || form === "create_task") && (
@@ -896,6 +1023,7 @@ export function SharedTestWorkspace({
                   <select
                     required
                     className={input}
+                    disabled={Boolean(persistedRecord)}
                     value={values["project_id"] || ""}
                     onChange={(e) => setValues((v) => ({ ...v, project_id: e.target.value }))}
                   >
@@ -908,6 +1036,8 @@ export function SharedTestWorkspace({
                   </select>
                 </label>
               )}
+              {form==="create_record"&&recordProject&&<section aria-label="Automatic project phase and stage" className="rounded-md border bg-muted/20 p-2 text-xs sm:col-span-2"><p className="font-medium">Project phase and record stage · automatic</p><p>{recordProjectPhase?`${recordProjectPhase[0]} · ${recordProjectPhase[1]}`:recordProjectStage?.phaseTitle||"Canonical phase not recorded"}</p><p>{recordProjectStage?`${recordProjectStage.stageCode} · ${recordProjectStage.name}`:recordProjectStoredStageLabel?`Legacy stage label: ${recordProjectStoredStageLabel} · canonical stage code not recorded`:"No current lifecycle stage is recorded for this project."}</p>{!recordProjectStage&&recordProjectStoredStageLabel&&<p className="text-muted-foreground">Stage-bound upload stays locked until this legacy label is reconciled to a canonical stage; no phase is guessed.</p>}{mappedRecordAttachment&&recordProjectStage&&<p className="text-muted-foreground">This record’s original maps to {mappedRecordAttachment.stageCode}; upload is available at that stage or the immediately previous stage.</p>}</section>}
+              {form==="create_record"&&recordAttachmentSpec&&<div className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3 text-xs sm:col-span-2"><label className="grid gap-1">{recordAttachmentSpec.label} · optional, attached to this record<input className={input} aria-label={recordAttachmentSpec.label} type="file" accept={recordAttachmentSpec.accept} disabled={busy||Boolean(persistedRecord)||!values["project_id"]||!recordAttachmentAllowed} onChange={event=>setRecordFile(event.target.files?.[0]||null)}/>{recordFile&&<span className="text-muted-foreground">Selected: {recordFile.name} · {(recordFile.size/1024).toFixed(1)} KB</span>}<span className="text-muted-foreground">{recordAttachmentAllowed?`One Save creates the Draft record and privately links its original. Upload does not advance the project or count as approval or release.`:!recordProjectStageCode?"Upload is locked because this project has no canonical current-stage code. The Draft record can still be saved now.":`Upload is locked until ${recordAttachmentSpec.stageCode} or its immediately preceding stage. Current project stage: ${recordProjectStageCode}.`}</span></label></div>}
               {admin && (form === "create_record" || form === "create_task") && (
                 <label className="grid gap-1 text-xs">
                   Department
@@ -985,21 +1115,30 @@ export function SharedTestWorkspace({
                 form === "create_record" ||
                 form === "update_record") &&
                 field("notes", "Notes")}
+                {form === "create_record" && !recordAttachmentSpec && (
+                <div className="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-muted/30 p-2 text-xs sm:col-span-2">
+                  <span>Need to draft or upload a project document?</span>
+                  <button className={button} type="button" onClick={() => { setForm(null); setTab("Documents"); }}>
+                    Open Documents
+                  </button>
+                </div>
+              )}
               <div className="flex gap-2 md:col-span-2">
                 <button
                   className={`${button} bg-primary text-primary-foreground`}
-                  disabled={busy}
+                  disabled={busy || (Boolean(persistedRecord)&&!recordFile)}
                   type="submit"
                 >
-                  Save to shared TEST
+                  {busy&&recordFile?"Saving record & private file…":persistedRecord?"Retry original file":recordFile?"Save record & upload original":form==="create_record"?"Save record to shared TEST":"Save to shared TEST"}
                 </button>
                 <button className={button} type="button" onClick={() => setForm(null)}>
                   Cancel
                 </button>
               </div>
             </form>
-          </section>
-        )}
+          </DialogContent>
+          )}
+        </Dialog>
         {fileDocument && (
           <section
             role="dialog"

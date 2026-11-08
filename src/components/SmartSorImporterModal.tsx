@@ -110,12 +110,16 @@ export function SmartSorImporterModal({
   const handleDeselectAllDepts = () => {
     setParsed((prev) => ({
       ...prev,
-      feasibilityDepartments: ["SAL", "FIN"],
+      feasibilityDepartments: [],
     }));
   };
 
   const handleApply = async () => {
     if (isSubmitting || needsParsing) return;
+    if (purpose === "opportunity" && parsed.feasibilityDepartments.length === 0) {
+      setError("Select at least one department for feasibility review before creating the opportunity.");
+      return;
+    }
     setIsSubmitting(true);
     setError("");
     try {
@@ -339,7 +343,7 @@ export function SmartSorImporterModal({
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[11px] font-bold text-muted-foreground">Project Track</label>
+                  <label className="text-[11px] font-bold text-muted-foreground">Customer-stated scope clue · unconfirmed</label>
                   <select
                     value={parsed.projectTrack}
                     onChange={(e) => {
@@ -347,18 +351,15 @@ export function SmartSorImporterModal({
                       setParsed({
                         ...parsed,
                         projectTrack: nextTrack,
-                        feasibilityDepartments:
-                          nextTrack === "ready_made"
-                            ? ["SAL", "FIN"]
-                            : ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"],
+                        feasibilityDepartments: ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"],
                       });
                     }}
                     className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-medium text-foreground"
                   >
-                    <option value="turnkey">Turnkey (HW, FW, SW, MECH, EMF)</option>
-                    <option value="software">Software (Cloud &amp; Web Platform)</option>
-                    <option value="firmware">Firmware / IoT Device</option>
-                    <option value="ready_made">Ready-Made Track (Catalog Direct)</option>
+                    <option value="turnkey">HW, FW and SW may be needed</option>
+                    <option value="software">Software may be needed</option>
+                    <option value="firmware">Firmware / embedded device may be needed</option>
+                    <option value="ready_made">Existing catalog product may fit</option>
                   </select>
                 </div>
                 <div>

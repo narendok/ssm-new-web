@@ -50,7 +50,8 @@ export function parseSorText(text: string): ParsedSorResult {
     scopeSummary: field("scope|scope summary|objective"), projectTrack,
     targetVolume: parameterValues["quantity"] || "",
     targetClosureDate: field("target closure date|target date").match(/^\d{4}-\d{2}-\d{2}$/)?.[0] || "",
-    feasibilityDepartments: projectTrack === "ready_made" ? ["SAL", "FIN"] : ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"],
+    // Customer scope is only a feasibility input. Do not waive departments before review decides the applicable track.
+    feasibilityDepartments: ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"],
     parameterValues, rawSnippet: text,
   };
 }

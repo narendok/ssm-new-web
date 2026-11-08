@@ -5,6 +5,7 @@ type IntakeRecord = {
   reference: string;
   type: string;
   title: string;
+  notes?: string;
   fields: Record<string, string>;
   createdAt: string;
   updatedAt: string;
@@ -69,7 +70,7 @@ export function salesEnquiryFromRecord(
     spocName: customer?.spocName ?? "",
     spocEmail: customer?.spocEmail ?? "",
     scopeSummary: record.fields["scope"] ?? "",
-    targetVolume: record.fields["quantity"] ?? "Not recorded",
+    targetVolume: record.fields["targetVolume"] ?? record.fields["quantity"] ?? "Not recorded",
     targetClosureDate: record.fields["targetDate"] ?? "",
     salesOwner: record.fields["owner"] ?? "Not assigned",
     status: "Pending Enquiry",
@@ -79,6 +80,29 @@ export function salesEnquiryFromRecord(
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
+}
+
+/** Repair the derived Sales projection from its source intake record without replacing explicit Sales edits. */
+export function reconcileSalesEnquiries(
+  enquiries: EnquiryOpportunity[],
+  records: IntakeRecord[],
+): EnquiryOpportunity[] {
+  return enquiries.flatMap((enquiry) => {
+    const source = records.find((record) => record.id === enquiry.id);
+    if (source?.archived) return [];
+    const fields = source?.fields ?? {};
+    return [{
+      ...enquiry,
+      targetVolume:
+        enquiry.targetVolume && enquiry.targetVolume !== "Not recorded"
+          ? enquiry.targetVolume
+          : fields["targetVolume"] || fields["quantity"] || enquiry.targetVolume || "Not recorded",
+      targetClosureDate:
+        enquiry.targetClosureDate || fields["targetDate"] || "",
+      scopeSummary:
+        enquiry.scopeSummary || source?.notes || fields["scope"] || "",
+    }];
+  });
 }
 
 type LinkedIntakeRecord = {

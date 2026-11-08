@@ -1,7 +1,9 @@
 // Browser-local pilot only. This model never grants cloud access or approval.
+import { projectLifecycleContext } from "./lifecycle-record-presentation";
 export const UPLOAD_TYPES = [
   { id: "SCH", label: "Schematic", extensions: ["pdf", "zip", "schdoc", "kicad_sch"] },
   { id: "PCB", label: "PCB layout", extensions: ["pdf", "zip", "pcbdoc", "kicad_pcb"] },
+  { id: "BOM", label: "BOM / parts list", extensions: ["csv", "xlsx", "xls", "pdf"] },
   { id: "GER", label: "Gerber ZIP", extensions: ["zip"] },
   { id: "PANEL", label: "Panel Gerber ZIP", extensions: ["zip"] },
   {
@@ -42,6 +44,7 @@ export type UploadProject = {
   reference: string;
   title: string;
   archived?: boolean | undefined;
+  fields?: Record<string, string> | undefined;
 };
 export type UploadDepartment = { id: string; code: string; name: string; active: boolean };
 export type SourcePackage = {
@@ -183,6 +186,7 @@ export function prepareUploadDraft(input: {
     department: "DEPT",
   };
   const projectCode = project?.reference ?? scopeCodes[m.scope];
+  const lifecycleContext = project ? projectLifecycleContext(project.fields ?? {}) : {};
   const prefix = projectCode.startsWith("HLPL-") ? projectCode : `HLPL-${projectCode}`;
   const group = {
     common: "01 Common documents",
@@ -204,6 +208,8 @@ export function prepareUploadDraft(input: {
     part: `${prefix}-${department.code}-${type.id}-${m.revision}`,
     linkedRecordRefs: project ? [project.reference] : [],
     projectId: project?.id,
+    ...(lifecycleContext.phase ? { phase: lifecycleContext.phase } : {}),
+    ...(lifecycleContext.stage ? { lifecycleStage: lifecycleContext.stage } : {}),
     uploadType: type.id,
     uploadScope: m.scope,
     sourcePackage: source ? { ...source } : undefined,

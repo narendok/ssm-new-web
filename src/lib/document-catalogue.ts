@@ -1,10 +1,13 @@
 /**
  * SSM One Document Catalogue - 38 Family Registry & Coverage Matrix
  * 
- * Direct machine-readable mapping of docs/SSM One Document Catalogue - Auto-Drafting Audit and Native Upload Rules.json
+ * Implements the canonical document-family mapping owned by the SSM-Planning catalogue; see the shared master-plan document map.
  * Reconciles 38 logical families, 89 unique source blocks, and 90 source-family links.
  * D02 and D04 remain clarification-only.
  */
+
+import { companyPhaseLabel } from './company-phases';
+import { STAGE_DELIVERABLE_BINDINGS } from './lifecycle-stage-extensions';
 
 export type DocumentSubtype = {
   id: string;
@@ -28,7 +31,19 @@ export type CatalogueFamily = {
   clarificationOnly?: boolean;
 };
 
-export const DOCUMENT_CATALOGUE_VERSION = "2026-10-19.2";
+export const DOCUMENT_CATALOGUE_VERSION = "2026-11-07.phases";
+// Additive crosswalk: family IDs/source coverage stay intact; operational records retain their existing type names.
+export const LIFECYCLE_DOCUMENT_EXITS = [
+  {stage:'HW_02',family:'D08',recordType:'PRS',original:false},
+  {stage:'HW_15',family:'D10',recordType:'Schematic',original:true},
+  {stage:'HW_19',family:'D11',recordType:'BOM',original:false},
+  {stage:'HW_24',family:'D10',recordType:'Gerber release',original:true},
+  {stage:'HW_17',family:'D10',recordType:'STEP clearance',original:true},
+  {stage:'FW_12',family:'D10',recordType:'Firmware release',original:true},
+  {stage:'C14',family:'D23',recordType:'Certificate',original:true},
+  ...STAGE_DELIVERABLE_BINDINGS,
+] as const;
+export const REUSABLE_CATALOGUE_FAMILIES = ['D08','D10','D11','D13','D14','D23','D31'] as const;
 
 export const CATALOGUE_FAMILIES: CatalogueFamily[] = [
   {
@@ -87,7 +102,7 @@ export const CATALOGUE_FAMILIES: CatalogueFamily[] = [
     format: "Assigned review records + DOCX",
     createOrRecordWhen: "Contract Review Record (HLPL/F/MKT/01) across Sales, Hardware, Firmware, Software, Mechanical, Purchase, QA, Manufacturing and Finance.",
     sourceBlocks: ["B0442", "B0448", "B0506"],
-    deliveryScope: "Stage 2 Gate",
+    deliveryScope: `${companyPhaseLabel('TG_0')} review`,
     status: "Core milestone deliverable",
     subtypes: [
       { id: "REVIEW", name: "Contract & Multi-Department Feasibility Review (HLPL/F/MKT/01)", departmentCode: "SAL", format: "DOCX", requiresReview: true },
@@ -100,7 +115,7 @@ export const CATALOGUE_FAMILIES: CatalogueFamily[] = [
     format: "DOCX / commercial records",
     createOrRecordWhen: "Commercial offer with line items, quantity tiers, NRE tooling, payment terms and validity.",
     sourceBlocks: ["B0449", "B0507"],
-    deliveryScope: "Stage 3 Gate",
+    deliveryScope: `${companyPhaseLabel('TG_1')} review`,
     status: "Core milestone deliverable",
     subtypes: [
       { id: "QUO", name: "Commercial Quotation & Costing", departmentCode: "SAL", format: "DOCX", isClientDeliverable: true },
@@ -126,7 +141,7 @@ export const CATALOGUE_FAMILIES: CatalogueFamily[] = [
     format: "Versioned baseline + DOCX",
     createOrRecordWhen: "Domain-specific Product Requirements Specifications across all engineering departments (Process 01).",
     sourceBlocks: ["B0443", "B0444", "B0445", "B0446", "B0447"],
-    deliveryScope: "Stage 2 / 3 Gate",
+    deliveryScope: `${companyPhaseLabel('TG_0')} / ${companyPhaseLabel('TG_1')} review`,
     status: "Core milestone deliverable",
     subtypes: [
       { id: "EHW-PRS", name: "Hardware Product Requirements Specification", departmentCode: "EHW", format: "DOCX", requiresReview: true },

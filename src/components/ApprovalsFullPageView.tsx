@@ -112,7 +112,7 @@ export function ApprovalsFullPageView({
         iatfClause: appr.iatfClause ?? "IATF 16949 §8.5.1 (Production Release Gate)",
         description:
           appr.description ??
-          "Authorization for serial production release following successful completion of ARAI Stage 8 Type Approval TAC #842 and 18-point DVP&R environmental verification matrix.",
+          "Synthetic production-release review. Check the linked evidence and independent decisions; no certification or product release is implied by this sample.",
       };
     }
     if (appr.id === "demo-approval-ecn-002") {
@@ -690,7 +690,7 @@ export function ApprovalsFullPageView({
                   aria-label="Approval title"
                   value={reqTitle}
                   onChange={(e) => setReqTitle(e.target.value)}
-                  placeholder="e.g. Stage 5 PCBA Acceptance & Box-Build Review"
+                  placeholder="e.g. Phase 4 · PCBA receipt and pilot box-build review"
                   className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground/60 outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>

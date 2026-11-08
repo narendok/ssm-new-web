@@ -9,7 +9,7 @@ const compiled = ts.transpileModule(source, {
 }).outputText;
 const mod = { exports: {} };
 new Function("module", "exports", "require", compiled)(mod, mod.exports, require);
-const { validateIntakeProject, salesEnquiryFromRecord, suggestIntakeReference } = mod.exports;
+const { validateIntakeProject, salesEnquiryFromRecord, reconcileSalesEnquiries, suggestIntakeReference } = mod.exports;
 const project = { id: "project-1", reference: "HLPL-OBDTEST-01", type: "Project" };
 test("new sales intake can precede a project while explicit links reject unknown and archived projects", () => {
   for (const type of ["Enquiry", "Opportunity", "Enquiry & Opportunity", "Lead intake"])
@@ -66,7 +66,7 @@ test("saved sales record maps to the same enquiry identity, scope and customer w
     reference: "HLPL-OBDTEST-SAL-ENQ-01",
     type: "Enquiry",
     title: "Synthetic OEM enquiry",
-    fields: { projectId: project.reference, customer: "Synthetic OEM", scope: "New OBD tracker" },
+    fields: { projectId: project.reference, customer: "Synthetic OEM", scope: "New OBD tracker", targetVolume: "12 evaluation units", targetDate: "2027-02-15" },
     createdAt: "2026-10-20",
     updatedAt: "2026-10-20",
   };
@@ -75,10 +75,32 @@ test("saved sales record maps to the same enquiry identity, scope and customer w
   assert.equal(enquiry.reference, record.reference);
   assert.equal(enquiry.linkedProjectCode, project.reference);
   assert.equal(enquiry.scopeSummary, record.fields.scope);
+  assert.equal(enquiry.targetVolume, "12 evaluation units");
+  assert.equal(enquiry.targetClosureDate, "2027-02-15");
   assert.equal(enquiry.customerName, "Synthetic OEM");
   assert.equal(enquiry.spocEmail, "");
   assert.deepEqual(enquiry.feasibilitySignedDepts, []);
   assert.equal(enquiry.status, "Pending Enquiry");
+});
+
+test("Sales projection recovers missing volume/date from its intake record and hides archived local drafts", () => {
+  const enquiry = {
+    id: "enquiry-1", reference: "HLPL-TEST-ENQ-01", kind: "enquiry", title: "Synthetic",
+    customerCode: "", customerName: "Synthetic OEM", spocName: "", spocEmail: "", scopeSummary: "",
+    targetVolume: "Not recorded", targetClosureDate: "", salesOwner: "Not assigned",
+    status: "Pending Enquiry", feasibilitySignedDepts: [], totalFeasibilityDepts: 0,
+    createdAt: "2026-11-06", updatedAt: "2026-11-06",
+  };
+  const source = {
+    id: enquiry.id, reference: enquiry.reference, type: "Enquiry", title: "Synthetic",
+    notes: "Synthetic scope", fields: { targetVolume: "12 evaluation units", targetDate: "2027-02-15" },
+    createdAt: "2026-11-06", updatedAt: "2026-11-06",
+  };
+  const repaired = reconcileSalesEnquiries([enquiry], [source]);
+  assert.equal(repaired[0].targetVolume, "12 evaluation units");
+  assert.equal(repaired[0].targetClosureDate, "2027-02-15");
+  assert.equal(repaired[0].scopeSummary, "Synthetic scope");
+  assert.deepEqual(reconcileSalesEnquiries([enquiry], [{ ...source, archived: true }]), []);
 });
 
 test("feasibility can run before project creation, with its own unique inquiry reference", () => {
