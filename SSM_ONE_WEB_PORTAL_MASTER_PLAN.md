@@ -1066,3 +1066,15 @@ Authorization remains independent from RACI: an assignment does not create acces
 ## Local reconciliation — 19 October 2026
 
 See [local implementation and acceptance evidence](docs/evidence/LOCAL_MASTER_PLAN_RECONCILIATION_2026-10-19.md). Active FW/SW naming is implemented, TST retirement and historical preservation have local coverage, and further authenticated operational acceptance remains open. This working-tree increment is not pushed or deployed.
+
+## Live TEST Sales intake correction and verification — 31 October 2026
+
+The active TEST backend's `public.mutate_shared_test_workspace` `create_record` branch was missing project-free Enquiry/Opportunity creation, even though the dedicated `mutate_sales_intake` RPC supported it. The function-only forward correction is now active in TEST. A post-change read-only inspection confirmed:
+
+- Enquiry and Opportunity are project-optional; when a project is supplied it is validated.
+- Only authenticated, non-client Sales department leads or admins may create these pre-project records. Clients, non-leads, and other departments fail with `PREPROJECT_SALES_AUTHORITY_REQUIRED`.
+- All other record types retain the active-project requirement. The inspection used SELECT-only checks and wrote no records; the reported operational-record count was 36.
+
+**Migration provenance is not fully reconciled.** Lovable reports that it recorded the applied function correction in `drizzle.__drizzle_migrations` row 16 (hash `6113b1cdba8f3702b5d8a2c0df0463f1b15ffd03775303975c943b91bf1d6d17`). The corresponding version `20261029120000` is absent from `supabase_migrations.schema_migrations`. The connected Supabase migration APIs denied access, and the Lovable migration path could not safely record the same version in the Supabase ledger. Do not manually insert a ledger row. The local web checkout contains the matching SQL at `supabase/migrations/20261029120000_restore_preproject_sales_intake.sql`, currently untracked; reconcile source ownership and the authoritative migration workflow before treating deployment history as clean.
+
+**Verification:** the focused inline-master PGlite suite passed 3/3; full `npm run test:department` passed 211/211; `npm run build` succeeded with existing validator deprecation, plugin timing, and large-chunk warnings. No portal publish occurred. This check does not establish Android authenticated round-trip acceptance or production deployment.
