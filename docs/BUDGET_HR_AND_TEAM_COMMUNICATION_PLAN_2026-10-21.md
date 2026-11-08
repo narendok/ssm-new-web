@@ -1,6 +1,6 @@
-# Department budgets, employee services and team communication
+# Supporting source — budgets, people services and team communication
 
-Date: 21 October 2026. Status: implementation proposal and recorded requirements; these modules are not yet implemented or enabled. Preserve the existing colored web/app layouts and current operational features. Deliver each module as a complete authenticated shared workflow rather than connecting partial local mutations to shared data.
+Date: 21 October 2026. **Historical feature requirements, not a seventh active plan.** The current shared decisions are in the [SSM One Master Plan](https://github.com/narendok/SSM-new/blob/main/SSM_ONE_MASTER_PLAN.md); platform delivery belongs in the web and Android subplans. Keep this source for the detailed acceptance cases still referenced by code comments. Where it conflicts with the newer master plan, the master plan wins.
 
 The existing UI/inquiry checkpoint is a separate release. These new modules must not be silently bundled into that release or mistaken for completed functionality.
 
@@ -170,3 +170,7 @@ Reuse existing Finance, HR, document, asset and Android screen structures where 
 10. Channel membership revocation also removes message, realtime and private attachment access.
 11. Web-created requests/forms and app submissions use the same IDs/outcomes; offline retries cannot duplicate records or votes.
 12. Existing project/task/document, TEST identity and colored-layout regression checks still pass after each module release.
+
+## Expense settings delivery — 4 November 2026
+
+Shared TEST Budgets & Expenses now has company and department category/purpose settings (22 categories, 25 purposes), editable by Admin/Finance leads; Operations (OPS/HROPS leads) requires Admin enablement. The actual shared expense popup reads these options and supports Other purpose details. One fictional INR 1,250 request saved and survived reload as Pending Finance. TypeScript/build/whitespace checks passed; unauthorized SW settings write was rejected. Evidence: `docs/evidence/expense-2026-11-04/VERIFICATION.md`. Android/hosted parity remains unverified. Earlier claims that the shared submission path was blocked were based on a separate legacy local modal and are superseded.

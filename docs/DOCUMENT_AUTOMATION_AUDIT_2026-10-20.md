@@ -136,6 +136,6 @@ Detailed inventory and agenda mapping: [Document automation register](DOCUMENT_A
 ## Sources inspected
 
 - Supplied workbook: `C:\Users\Test\Downloads\Smart Company document management system audit checklist .xlsx`. SHA-256: `c69eb31c1d17e94e7d3794c025201ad7822951e7bbce5191275da94ff820092c`.
-- Existing catalogue reference: `docs/SSM One Document Catalogue - Auto-Drafting Audit and Native Upload Rules.md` and matching JSON (38 logical families, target/reference only).
-- Recent discussion plan: `docs/PORTAL_UI_AND_PERMISSION_DISCUSSION_PLAN_2026-10-20.md`.
+- Canonical catalogue: [SSM One Document Catalogue](https://github.com/narendok/SSM-new/blob/main/SSM%20One%20Document%20Catalogue%20-%20Auto-Drafting%20Audit%20and%20Native%20Upload%20Rules.md) and its source mapping JSON in the planning repository (38 logical families, target/reference only).
+- Current requirements: the [cross-platform master plan](https://github.com/narendok/SSM-new/blob/main/SSM_ONE_MASTER_PLAN.md), the [web implementation plan](../SSM_ONE_WEB_IMPLEMENTATION_PLAN.md), and the single [document catalogue](https://github.com/narendok/SSM-new/blob/main/SSM%20One%20Document%20Catalogue%20-%20Auto-Drafting%20Audit%20and%20Native%20Upload%20Rules.md). This audit remains historical evidence.
 - Inspected code: `src/lib/document-catalogue.ts`, `src/lib/document-draft.ts`, `src/lib/controlled-documents.functions.ts`, `src/components/ClientOEMPortal.tsx`, relevant document UI sections in `src/routes/index.tsx`.
