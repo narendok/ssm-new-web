@@ -41,6 +41,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261028120000_lifecycle_and_sample_pack_sync',
     '20261028120001_canonical_stage_completion_reviews',
     '20261028120002_preserve_legacy_lifecycle_boundary',
+    '20261029120000_restore_preproject_sales_intake',
     '20261103120000_decide_shared_test_track_after_feasibility',
     '20261106001444_admin_reset_shared_test_sample_pack',
     '20261106005734_retire_legacy_test_fixture_on_admin_reset',

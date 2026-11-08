@@ -96,6 +96,12 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
     const file = path.join(root, "supabase/migrations", `${name}.sql`);
     await db.exec(fs.readFileSync(file, "utf8"));
   }
+  await db.exec(
+    fs.readFileSync(
+      path.join(root, "supabase/migrations/20261106012000_allow_test_member_document_drafts.sql"),
+      "utf8",
+    ),
+  );
 
   const admin = uuid(1),
     purLead = uuid(2),
@@ -849,7 +855,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
       assert.equal((await db.query("SELECT notes FROM operational_records WHERE id=$1",[created.id])).rows[0].notes,"Verified edit roundtrip",label);
     }
   }
-  assert.equal(coverage,89,"All current catalogue entries, including the QA Certificate record, exercised");
+  assert.equal(coverage,91,"All current catalogue entries, including the QA Certificate record, exercised");
 
   async function sheetCall(user,action,payload){return asUser(user,async()=> (await db.query("SELECT mutate_project_input_sheet($1,$2::jsonb) result",[action,JSON.stringify(payload)])).rows[0].result);}
   let sheet=await sheetCall(salLead,"create",{sourceId:project,scope:"Client"});
@@ -1146,7 +1152,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
 
   // Dispatch and its generated work use the same saved responsibility/task definition.
   await db.exec('CREATE TABLE IF NOT EXISTS storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint)');
-  for(const migration of ['20261028120000_lifecycle_and_sample_pack_sync','20261028120001_canonical_stage_completion_reviews','20261104010000_versioned_lifecycle_and_asset_reuse','20261104030000_shared_test_original_storage','20261104040000_reviewed_project_lifecycle_configuration','20261106125525_stage_raci_execution_contract','20261106224031_settings_driven_feasibility_dispatch'])
+  for(const migration of ['20261028120000_lifecycle_and_sample_pack_sync','20261028120001_canonical_stage_completion_reviews','20261028120002_preserve_legacy_lifecycle_boundary','20261029120000_restore_preproject_sales_intake','20261104010000_versioned_lifecycle_and_asset_reuse','20261104030000_shared_test_original_storage','20261104040000_reviewed_project_lifecycle_configuration','20261106125525_stage_raci_execution_contract','20261106224031_settings_driven_feasibility_dispatch'])
     await db.exec(fs.readFileSync(path.join(root,'supabase/migrations',migration+'.sql'),'utf8'));
   const settingsV1={id:'TEST-FEASIBILITY-RACI-v1',createdAt:'2026-11-07T00:00:00Z',stages:[{code:'CM_02',name:'Configured feasibility',phase:'TG_0',gate:'Intake review',department:'EHW',prerequisites:[],exitTypes:[],optional:false,raci:{R:['EHW'],A:['SAL'],C:['QA'],I:['PUR']},tasks:[{id:'F01',title:'Configured technical assessment',description:'Synthetic test scope',department:'EHW'},{id:'F02',title:'Configured dependency review',description:'Synthetic test dependencies',department:'EHW'}]}]};
   const publishSettings=async(definition,expectedRevision)=>(await asUser(admin,()=>db.query("SELECT public.mutate_lifecycle_workspace('save_revision',$1::jsonb,$2) result",[JSON.stringify({definition,expectedRevision}),crypto.randomUUID()]))).rows[0].result;

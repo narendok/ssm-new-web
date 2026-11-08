@@ -42,6 +42,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
     "20261028120000_lifecycle_and_sample_pack_sync",
     "20261028120001_canonical_stage_completion_reviews",
     "20261028120002_preserve_legacy_lifecycle_boundary",
+    "20261029120000_restore_preproject_sales_intake",
     "20261103120000_decide_shared_test_track_after_feasibility",
     "20261104010000_versioned_lifecycle_and_asset_reuse",
     "20261106001444_admin_reset_shared_test_sample_pack",
