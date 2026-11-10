@@ -55,6 +55,8 @@ The latest master-plan checkpoint records a shared TEST configuration of 110 sta
 
 Browser-local dispatch now reads CM_02 RACI, active departments, configured leads and default task templates from the current Settings revision. It generates coordinator and selected reviewer tasks with stable template links, retains dispatch instructions and pins the review baseline. Missing configuration blocks dispatch; dispatch does not select an engineering track or overwrite an existing project's stage. Twenty focused checks and TypeScript passed, including variable task counts and one lead owning multiple departments. Live visual dispatch/reload and authenticated shared routing remain pending; this increment does not establish complete lifecycle acceptance.
 
+Live browser-local follow-up: dispatched fictional `HLPL-ROLE-DEMO-ENQ-06` with the saved Settings revision. The Sales projection became an Opportunity with 0/11 sign-offs and no engineering track decision. After reload, the EHW workspace showed the generated default review task assigned to Avery Vale, completion disabled pending approval. Task details retained CM_02, the lifecycle revision, stable template key, enquiry/contract/approval links and entered dispatch remarks. This proves local dispatch and persistence; shared TEST deployment and complete tollgate progression remain unverified. The full web regression completed with 283 passing tests and no failures.
+
 ## Delivery order
 
 1. Reconcile this subplan to the cross-platform master and remove duplicate/stale plan copies; preserve code and unrelated local work.
