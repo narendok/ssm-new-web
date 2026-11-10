@@ -2,6 +2,7 @@ import { configuredTicketGroups } from '@/lib/department-ticket-groups';
 import { ProjectMasterSpecSheet } from '@/components/ProjectMasterSpecSheet';
 import { CANONICAL_STAGE_TEMPLATES, computeProgressiveStageAndTaskState, getRecordedProjectTrack } from '@/lib/canonical-lifecycle';
 import { SharedLifecycleWorkspace } from '@/components/SharedLifecycleWorkspace';
+import { buildRoleLifecyclePack, ROLE_LIFECYCLE_PACK, type RoleLifecyclePackManifest } from '@/lib/role-lifecycle-samples';
 import { ReusableAssetsWorkspace } from '@/components/ReusableAssetsWorkspace';
 import { linkReusableAsset, type ReusableAssetRevision, type ProjectAssetUse } from '@/lib/reusable-assets';
 import { LifecycleSettingsEditor } from '@/components/LifecycleSettingsEditor';
@@ -671,6 +672,7 @@ export function defaultProjectAnalysis(projectId: string): Record<string, Depart
 type PortalState = {
   schemaVersion?: number | undefined;
   sampleDataVersion?: number | undefined;
+  roleLifecyclePack?: RoleLifecyclePackManifest;
   demoLoaded: boolean;
   demoSnapshot?: PortalState | undefined;
   setup: SetupState;
@@ -2466,6 +2468,8 @@ function Portal() {
   const [ai4tSimulation, setAi4tSimulation] = useState<Ai4tSimulation>({ stage: 0, history: [] });
   const [projectScopes, setProjectScopes] = useState<Partial<Record<AreaId, ProjectScope>>>({});
   const [selectedProjectId, setSelectedProjectId] = useState("HLPL-SLCT-01");
+  const [roleSamplesOpen, setRoleSamplesOpen] = useState(false);
+  const [roleSampleNotice, setRoleSampleNotice] = useState('');
   const [darkMode, setDarkMode] = useState(true);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [customerRegisterOpen, setCustomerRegisterOpen] = useState(false);
@@ -2566,8 +2570,14 @@ function Portal() {
       }
     }
     if ((persona.kind === "lead" || persona.kind === "member") && persona.departmentId) {
-      if (area !== persona.departmentId) {
-        announce(`Access restricted: As ${persona.label}, you are confined to your assigned department workspace (${persona.departmentId.toUpperCase()}).`);
+      const additionalLeadAreas = persona.kind === "lead" && testMembership
+        ? (organizationConfiguration.data?.departments ?? [])
+            .filter((d) => d.leadMemberId === testMembership.membershipId)
+            .map((d) => normalizePersonaId(d.code))
+        : [];
+      const allowedAreas = new Set([persona.departmentId, ...additionalLeadAreas]);
+      if (!allowedAreas.has(area)) {
+        announce(`Access restricted: ${areaById(area).name} is not assigned to your lead role.`);
         setActiveArea(persona.departmentId);
         setView(targetView);
         setSelectedId(null);
@@ -2729,6 +2739,25 @@ function Portal() {
     setDepartmentContext(null);
     setModal(null);
     announce("Demo removed; the saved setup has been restored.");
+  };
+  const loadRoleSamples = async () => {
+    setRoleSampleNotice('');
+    try {
+      if(testMembership || persona.kind!=='admin')throw new Error('Open the browser-local TEST administrator workspace to load this pack.');
+      const saved=await update(state=>{
+        if(!state.demoLoaded)throw new Error('Load the fictional browser-local TEST workspace first.');
+        if(state.roleLifecyclePack?.version===ROLE_LIFECYCLE_PACK){
+          const missing=state.roleLifecyclePack.records.filter(id=>!state.records.some(r=>r.id===id));
+          if(missing.length)throw new Error(`${missing.length} pack records are missing. Review the partial pack before restoring it.`);
+          return state;
+        }
+        const pack=buildRoleLifecyclePack(state.lifecycleRevisions?.at(-1)??defaultLifecycleRevision(),state.departments,now());
+        if(pack.records.some(r=>state.records.some(existing=>existing.id===r.id||existing.reference===r.reference)))throw new Error('Sample IDs already exist without a matching manifest. Review the partial pack before loading.');
+        return {...state,roleLifecyclePack:pack.manifest,records:[...state.records,...pack.records],enquiriesOpportunities:[...(state.enquiriesOpportunities??[]),...pack.enquiries],audit:[{id:createId(),at:now(),action:'Role lifecycle demo pack loaded',detail:`${ROLE_LIFECYCLE_PACK}; ${pack.records.length} new fictional rows; existing records and settings preserved.`},...state.audit]};
+      });
+      if(saved===false)throw new Error('Sample pack was not saved. Please retry.');
+      setRoleSampleNotice('Pack is saved in this browser. Repeated loading preserves the same records.');
+    } catch(error){setRoleSampleNotice(error instanceof Error?error.message:'Sample load failed.');}
   };
   const handleCustomerCreated = (customer: CustomerRecord) => {
     update((state) => {
@@ -3595,6 +3624,7 @@ function Portal() {
               <>
                 <span className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-warning" title="Fictional sample records stored only in this browser; no shared or production records are represented.">TEST DATA</span>
                 {persona.kind === "admin" && <Action label="Reset sample" onClick={() => { if (window.confirm("Reset the fictional sample data in this browser and restore the saved setup?")) resetDemo(); }} />}
+                {persona.kind === "admin" && <Action label="Lifecycle demos" onClick={()=>setRoleSamplesOpen(true)} />}
               </>
             )}
             <PersonaSwitcher
@@ -3697,6 +3727,7 @@ function Portal() {
                 onOpenNewEnquiry: () => handleOpenCreate("Enquiry"),
                 onOpenCustomerRegister: () => setCustomerRegisterOpen(true),
                 onOpenFeasibilityGate: projectCode => { setSelectedProjectId(projectCode); setView('analysis'); },
+                onOpenSourceInputs: sourceId => { setAnalysisSourceId(sourceId); setView('analysis'); },
                 onSendForFeasibility: enquiry => setFeasibilityDispatchEnquiry(enquiry),
                 onSubmitIntake: handleSalesIntake,
                 onAddCustomer: handleCustomerCreated,
@@ -3764,15 +3795,15 @@ function Portal() {
             />
           ) : view === "analysis" ? (
             testMembership ? <SharedProjectAnalysis membership={testMembership} initialSourceId={analysisSourceId} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} /> : <ProjectAnalysisOverview
-                key={persona.id}
+                key={`${persona.id}:${analysisSourceId??''}`}
                 projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")}
                 records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords}
                 documents={scopedDocuments}
                 renderProjectInputs={projectId => (
                   <ProjectInputsWorkspace
-                    key={projectId}
+                    key={projectId==='all' ? analysisSourceId??projectId : projectId}
                     sources={((persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords) as any}
-                    initialSourceId={projectId}
+                    initialSourceId={projectId==='all' ? analysisSourceId??projectId : projectId}
                   />
                 )}
                 onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}}
@@ -4821,6 +4852,21 @@ function Portal() {
       {legalHubOpen && persona.kind === "admin" && (
         <OperationsLegalAndLetterheadModal onClose={() => setLegalHubOpen(false)} />
       )}
+      {roleSamplesOpen && !testMembership && persona.kind==='admin' && <Modal title="Lifecycle demo pack" onClose={()=>setRoleSamplesOpen(false)}>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Browser-local fictional TEST data. Adds seven fresh requests, seven track checkpoints and configured department review tasks using your saved lifecycle Settings.</p>
+          <Action label={portal.roleLifecyclePack?'Verify loaded pack':'Load updated lifecycle pack'} primary onClick={()=>void loadRoleSamples()}/>
+          {roleSampleNotice&&<p role="status" className="text-sm">{roleSampleNotice}</p>}
+          {portal.roleLifecyclePack&&<>
+            <p className="text-xs text-muted-foreground">{portal.roleLifecyclePack.version} · {portal.roleLifecyclePack.records.length} pack records · {portal.roleLifecyclePack.configuration.phaseCount} fixed phases · {portal.roleLifecyclePack.configuration.departments.length} configured departments</p>
+            <p className="text-xs">Pinned lifecycle: {portal.roleLifecyclePack.lifecycleRevision}. Current settings changes do not overwrite this loaded pack.</p>
+            <div className="overflow-auto rounded border border-border"><table className="w-full text-left text-xs"><thead><tr><th className="p-2">Track checkpoint</th><th>Stages / planned tasks</th><th>Actions</th></tr></thead><tbody>{portal.roleLifecyclePack.checkpoints.map(sample=><tr key={sample.projectId} className="border-t border-border"><td className="p-2">{sample.title}<small className="block text-muted-foreground">{sample.track.replaceAll('_',' ')}</small></td><td>{sample.applicableStages} / {sample.plannedTasks}</td><td className="p-2"><button className="text-primary underline" onClick={()=>{setRoleSamplesOpen(false);handleAdminDepartmentChange('sales','project');setSelectedProjectId(sample.projectReference);setSelectedId(sample.projectId);setProjectScopes(current=>({...current,sales:sample.projectReference}));}}>Open project</button></td></tr>)}</tbody></table></div>
+            <button className="text-sm text-primary underline" onClick={()=>{setRoleSamplesOpen(false);handleAdminDepartmentChange('sales','project');setProjectScopes(current=>({...current,sales:'all'}));}}>Open fresh requests in Sales</button>
+            <p className="text-xs text-muted-foreground">Walkthrough enquiries have no Project or selected track. Checkpoint projects have explicitly simulated prior feasibility, no completed gate and only their entry-stage tasks active. Later tasks remain planned from the pinned revision.</p>
+            <details className="text-xs"><summary className="cursor-pointer">Pending verification and source gaps</summary><ul className="mt-2 list-disc space-y-1 pl-4">{portal.roleLifecyclePack.gaps.map(gap=><li key={gap}>{gap}</li>)}</ul></details>
+          </>}
+        </div>
+      </Modal>}
       {assetCatalogOpen && testMembership && !testMembership.isClient && <SharedLifecycleWorkspace scopeKey={testMembership.membershipId} mode="assets" onClose={()=>setAssetCatalogOpen(false)}/>}
       {assetCatalogOpen && !testMembership && (persona.kind === "admin" || persona.kind === "lead" || persona.kind === "member") && (
         <ReusableAssetsWorkspace
@@ -8580,7 +8626,7 @@ function AdminCommandCenter({
         </span>
       </div>
       {tab === "lifecycle" && sharedMembership ? (<SharedLifecycleWorkspace scopeKey={sharedMembership.membershipId} mode="settings" onClose={onClose}/>) : tab === "lifecycle" ? (
-        <LifecycleSettingsEditor departments={portal.departments} revision={portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()} onActivate={async revision => {
+        <LifecycleSettingsEditor departments={portal.departments.map(d=>({...d,code:departmentCode(d.code.replace(/^DEMO-/,''))}))} revision={portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()} onActivate={async revision => {
           const saved = await onUpdate(state => {
             const previous = state.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision();
             return { ...state, lifecycleRevisions: [...(state.lifecycleRevisions ?? [previous]), revision], records: state.records.map(record => record.type === "Project" && !record.fields["lifecycleBaseline"] && previous.stages.some(stage => stage.code === (record.fields["currentStage"] || record.fields["stage"])) ? { ...record, fields: { ...record.fields, lifecycleBaseline: pinLifecycleRevision(previous) } } : record) };

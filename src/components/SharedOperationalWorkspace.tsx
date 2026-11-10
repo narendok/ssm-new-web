@@ -150,9 +150,10 @@ export function SharedOperationalWorkspace({
   const actorDeptId = data.departments.find((d) => d.code === actor.department_code)?.id || "";
   const purDeptId = data.departments.find((d) => d.code === "PUR")?.id || actorDeptId || "";
 
-  const canAddCustomer = actor.role === "admin" || actor.department_code === "SAL";
-  const canAddSupplier = actor.role === "admin" || actor.department_code === "PUR";
-  const canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "");
+  const leadsDepartment = (code: string) => data.departments.some((item) => item.code === code && item.lead_member_id === actor.membership_id);
+  const canAddCustomer = actor.role === "admin" || actor.department_code === "SAL" || (actor.role === "department_lead" && leadsDepartment("SAL"));
+  const canAddSupplier = actor.role === "admin" || actor.department_code === "PUR" || (actor.role === "department_lead" && leadsDepartment("PUR"));
+  const canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "") || (actor.role === "department_lead" && data.departments.some((item) => ["EHW", "FW", "SW", "MECH", "PUR"].includes(item.code) && item.lead_member_id === actor.membership_id));
 
   async function handleSharedSupplierCreated(supplier: SupplierRecordItem) {
     const requestId = supplier.operationId || crypto.randomUUID();
@@ -251,7 +252,9 @@ export function SharedOperationalWorkspace({
   const selectedDepartment =
     actor.role === "admin"
       ? (resolvedAdminDept?.id || department || data.departments.find((d) => d.code === "EHW")?.id || data.departments[0]?.id || "")
-      : (department || data.departments.find((d) => d.code === actor.department_code)?.id || "");
+      : actor.role === "department_lead" && resolvedAdminDept?.lead_member_id === actor.membership_id
+        ? resolvedAdminDept.id
+        : (department || data.departments.find((d) => d.code === actor.department_code)?.id || "");
   const dept = data.departments.find((d) => d.id === selectedDepartment);
   const supplierOptions = sharedSupplierOptions(data.records);
   const originalRecord = data.records.find(r => r.id === recordId);
@@ -481,7 +484,7 @@ export function SharedOperationalWorkspace({
       type: r.record_type,
       status: status(r.status),
       priority: "Normal",
-      area: actor.department_code?.toLowerCase() || "home",
+      area: (data.departments.find((d)=>d.id===r.department_id)?.code || actor.department_code || "home").toLowerCase(),
       createdAt: r.updated_at,
       updatedAt: r.updated_at,
       notes: r.notes,
@@ -507,7 +510,7 @@ export function SharedOperationalWorkspace({
         type: r.record_type,
         status: status(r.status),
         priority: "Normal" as const,
-        area: actor.department_code?.toLowerCase() || "home",
+        area: (data.departments.find((d)=>d.id===r.department_id)?.code || actor.department_code || "home").toLowerCase(),
         createdAt: r.updated_at,
         updatedAt: r.updated_at,
         notes: r.notes,
@@ -535,7 +538,7 @@ export function SharedOperationalWorkspace({
         priority: (["Critical", "High", "Normal", "Low"].includes(t.priority)
           ? t.priority
           : "Normal") as TaskRecord["priority"],
-        area: actor.department_code?.toLowerCase() || "home",
+        area: (data.departments.find((d)=>d.id===t.department_id)?.code || actor.department_code || "home").toLowerCase(),
         createdAt: t.updated_at,
         updatedAt: t.updated_at,
         notes: t.description || "",
@@ -552,7 +555,7 @@ export function SharedOperationalWorkspace({
     .filter((m) => !selectedDepartment || m.department_id === selectedDepartment)
     .map((m) => ({
       name: m.display_name || m.id,
-      area: actor.department_code?.toLowerCase() || "home",
+      area: (data.departments.find((d)=>d.id===m.department_id)?.code || actor.department_code || "home").toLowerCase(),
       role: m.role,
       score: "Not recorded",
       level: "Not recorded",

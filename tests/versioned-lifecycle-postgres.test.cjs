@@ -1037,6 +1037,14 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   await assert.rejects(()=>saveDepartment(admin,groupPatch(grouped.departments.find(d=>d.id===dSal),{workspaceDepartmentId:dEhw})),/CHOOSE_ACTIVE_MAIN_WORKSPACE/);
   await assert.rejects(()=>saveDepartment(admin,groupPatch(grouped.departments.find(d=>d.id===dEhw),{ticketGroups:['unknown']})),/INVALID_WORKSPACE_RESPONSIBILITIES/);
   await saveDepartment(admin,groupPatch(grouped.departments.find(d=>d.id===dEhw),{workspaceDepartmentId:null}));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261110090000_multi_department_lead_access.sql'),'utf8'));
+  const noLeadConfig=(await configuration(admin)).departments.find(d=>d.id===dNoLead);
+  const multiRoleConfig=await saveDepartment(admin,{...groupPatch(noLeadConfig),leadMemberId:mids[ehwLead]});
+  assert.equal(multiRoleConfig.departments.find(d=>d.id===dNoLead).leadMemberId,mids[ehwLead]);
+  assert.equal((await asUser(ehwLead,()=>db.query('SELECT private.shared_test_scope($1,$2) allowed',[org,dNoLead]))).rows[0].allowed,true);
+  assert.equal((await asUser(purLead,()=>db.query('SELECT private.shared_test_scope($1,$2) allowed',[org,dNoLead]))).rows[0].allowed,false);
+  assert.equal((await asUser(ehwLead,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dNoLead,'approvals:decide']))).rows[0].allowed,true);
+  assert.equal((await asUser(purLead,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dNoLead,'approvals:decide']))).rows[0].allowed,false);
   await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261107043504_complete_phase_stage_registry.sql'),'utf8'));
   assert.equal((await db.query("SELECT count(*)::int n FROM canonical_stage_templates WHERE stage_code ~ '^G[0-9]_'")).rows[0].n,21);
   assert.equal((await db.query('SELECT count(*)::int n FROM private.stage_deliverable_bindings')).rows[0].n,82);
