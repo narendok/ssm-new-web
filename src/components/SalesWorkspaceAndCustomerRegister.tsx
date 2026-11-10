@@ -5,6 +5,8 @@ import { InlineCustomerModal as CanonicalCustomerModal } from "./InlineCustomerM
 import { SharedMasterSelect } from "./SharedMasterSelect";
 import type { ParsedSorResult } from "@/lib/sor-parser";
 import type { CanonicalProjectTrack } from "@/lib/canonical-lifecycle";
+import { feasibilityRouting, type FeasibilityDepartment } from '@/lib/feasibility-routing';
+import type { LifecycleRevision } from '@/lib/lifecycle-baseline';
 import {
   Users,
   Building2,
@@ -599,33 +601,30 @@ export function InlineCustomerModal({
 // Send for Feasibility Dispatch Modal
 export function SendForFeasibilityModal({
   enquiry,
+  revision,
+  departments,
   onClose,
   onDispatch,
 }: {
   enquiry: EnquiryOpportunity;
+  revision: LifecycleRevision;
+  departments: FeasibilityDepartment[];
   onClose: () => void;
   onDispatch: (
     enquiryId: string,
     departments: string[],
     targetDate: string,
     modularConfig?: ProjectModularConfiguration,
+    instructions?: string,
   ) => Promise<boolean>;
 }) {
   const [dispatching,setDispatching]=useState(false);
   const [dispatchError,setDispatchError]=useState("");
-  const [selectedDepts, setSelectedDepts] = useState<string[]>([
-    "EHW",
-    "FW",
-    "SW",
-    "MECH",
-    "PUR",
-    "QA",
-    "EMF",
-    "MMF",
-    "FIN",
-    "SIT",
-    "HR",
-  ]);
+  let routing: ReturnType<typeof feasibilityRouting> | undefined;
+  let configurationError='';
+  try { routing=feasibilityRouting(revision,departments); }
+  catch(error){ configurationError=error instanceof Error?error.message:'Feasibility settings are unavailable.'; }
+  const [selectedDepts, setSelectedDepts] = useState<string[]>(()=>routing?.reviewers.map(d=>d.code)??[]);
   const [dueDate, setDueDate] = useState(enquiry.targetClosureDate || businessDate());
   const [notes, setNotes] = useState(
     "Please conduct comprehensive technical & commercial feasibility per IATF 16949 §8.2.3 and Master Plan §4 & §5.",
@@ -641,19 +640,7 @@ export function SendForFeasibilityModal({
   const [selectedFirmwareId, setSelectedFirmwareId] = useState<string>(enquiry.modularConfig?.selectedFirmwareId || "none");
   const [selectedEnclosureId, setSelectedEnclosureId] = useState<string>(enquiry.modularConfig?.selectedEnclosureId || "none");
 
-  const availableDepts = [
-    { code: "EHW", name: "Embedded Hardware (Avery Vale)", desc: "Hardware PRS (EHW-PRS-01), MCU, schematic, RF, TVS & 4-layer PCB" },
-    { code: "FW", name: "Firmware Engineering (Devon Lane)", desc: "Firmware FRS (FW-FRS-01), RTOS kernel, HAL drivers, CAN J1939 & FOTA" },
-    { code: "SW", name: "Cloud & App Software (Siddharth Roy)", desc: "Software SRS (SW-SRS-01), AIS-140 MQTT parser, BLE 5.2 mobile & PC tools" },
-    { code: "MECH", name: "Mechanical Eng. (Samira Holt)", desc: "Mechanical MRS (MECH-MRS-01), IP67 enclosure, thermal CAD & connectors" },
-    { code: "PUR", name: "Purchasing & SCM (Morgan Reed)", desc: "Sourcing SRS (PUR-BOM-01), BOM costing, AEC-Q parts & supplier lead times" },
-    { code: "QA", name: "Quality Assurance (Jordan Blake)", desc: "Quality QRS (QA-QRS-01), DVP&R matrix, iCAT AIS-140 & NABL battery tests" },
-    { code: "EMF", name: "Electronics Mfg (Casey Rowan)", desc: "Manufacturing DFM (EMF-DFM-01), box-build traveler, harness fitment & in-line test" },
-    { code: "MMF", name: "Mechanical Mfg (Lead)", desc: "Mechanical DFM (MMF-DFM-01), enclosure fabrication, fit checks & tooling" },
-    { code: "FIN", name: "Accounts & Finance (Priya Voss)", desc: "Financial CFS (FIN-CFS-01), gross margin, NRE tooling & cost target" },
-    { code: "SIT", name: "Service & IT (Kai Morgan)", desc: "Infrastructure IFS (SIT-IFS-01), cloud telemetry servers, VPN & field diagnostics" },
-    { code: "HR", name: "HR & Operations (Taylor Quinn)", desc: "Competency HRS (HR-OPS-01), IPC-A-610 workmanship, ESD certification & staffing" },
-  ];
+  const availableDepts = (routing?.reviewers??[]).map(d=>({code:d.code,name:d.name+' ('+(d.lead||'Unassigned')+')',desc:d.tasks.map(t=>t.title).join(' · ')||'No default review task configured'}));
 
   const selectedPcbIds =
     selectedPcbId === "none"
@@ -686,7 +673,7 @@ export function SendForFeasibilityModal({
 
   const handleConfirm = async () => {
     if(dispatching)return;setDispatching(true);setDispatchError("");
-    try {if(await onDispatch(enquiry.id,selectedDepts,dueDate,currentConfig))onClose();else setDispatchError("Feasibility was not dispatched; your selections remain open.");}
+    try {if(await onDispatch(enquiry.id,selectedDepts,dueDate,currentConfig,notes))onClose();else setDispatchError("Feasibility was not dispatched; your selections remain open.");}
     catch(e){setDispatchError(e instanceof Error?e.message:"Dispatch failed.");}finally{setDispatching(false);}
   };
 
@@ -924,6 +911,8 @@ export function SendForFeasibilityModal({
             <label className="mb-1.5 block font-medium text-foreground">
               Participating Feasibility Departments (Select applicable)
             </label>
+            <p className="mb-2 text-xs text-muted-foreground">Settings revision {revision.id} · Coordinator: {routing?.coordinator.name??'Unavailable'} · Accountable: {routing?.accountable.name??'Unavailable'}. Selected department tasks use their configured lead.</p>
+            {configurationError&&<p role="alert" className="mb-2 text-xs text-destructive">{configurationError}</p>}
             <div className="grid gap-2 sm:grid-cols-2">
               {availableDepts.map((dept) => {
                 const checked = selectedDepts.includes(dept.code);
@@ -1000,7 +989,7 @@ export function SendForFeasibilityModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={dispatching || selectedDepts.length === 0}
+            disabled={dispatching || !!configurationError || selectedDepts.length === 0}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs transition hover:opacity-90 disabled:opacity-50"
           >
             <Send className="size-3.5" />

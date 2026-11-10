@@ -1,6 +1,6 @@
 # SSM One Web Implementation Plan
 
-**Updated:** 8 November 2026
+**Updated:** 10 November 2026
 **Status:** Active web subplan. The cross-platform master plan is the authority for shared product, lifecycle and governance decisions. This document contains only the web delivery approach and acceptance checks.
 
 ## Read these sources
@@ -50,6 +50,10 @@ The latest master-plan checkpoint records a shared TEST configuration of 110 sta
 - Preserve the current theme, sidebar behavior, responsive layout, approval guards and existing working interactions while compacting repeated headings and descriptions.
 - Service and IT may share one configured workspace while retaining distinct ticket types and registers. A ticket can request scoped help from another department; the response is linked to the ticket without exposing protected details or changing its status. Highlight recurring issue candidates from distinct matching tickets for human technical review; frequency alone never diagnoses a cause or creates a release/change.
 - Keep the expense request choices clear: Travel, Reimbursement, or Purchase. Travel and reimbursement route to Finance; goods/services requests route to Procurement. Finance category is selected by the requester where required; do not duplicate it with a second business-purpose field. Project/stage may suggest a purpose or category, but the requester can correct suggestions. The shared service catalogue is settings-managed by authorized leads.
+
+### TG-0 Settings-driven feasibility routing — 10 November 2026
+
+Browser-local dispatch now reads CM_02 RACI, active departments, configured leads and default task templates from the current Settings revision. It generates coordinator and selected reviewer tasks with stable template links, retains dispatch instructions and pins the review baseline. Missing configuration blocks dispatch; dispatch does not select an engineering track or overwrite an existing project's stage. Twenty focused checks and TypeScript passed, including variable task counts and one lead owning multiple departments. Live visual dispatch/reload and authenticated shared routing remain pending; this increment does not establish complete lifecycle acceptance.
 
 ## Delivery order
 

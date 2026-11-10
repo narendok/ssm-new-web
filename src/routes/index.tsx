@@ -3,6 +3,7 @@ import { ProjectMasterSpecSheet } from '@/components/ProjectMasterSpecSheet';
 import { CANONICAL_STAGE_TEMPLATES, computeProgressiveStageAndTaskState, getRecordedProjectTrack } from '@/lib/canonical-lifecycle';
 import { SharedLifecycleWorkspace } from '@/components/SharedLifecycleWorkspace';
 import { buildRoleLifecyclePack, ROLE_LIFECYCLE_PACK, type RoleLifecyclePackManifest } from '@/lib/role-lifecycle-samples';
+import { planFeasibilityDispatch } from '@/lib/feasibility-routing';
 import { ReusableAssetsWorkspace } from '@/components/ReusableAssetsWorkspace';
 import { linkReusableAsset, type ReusableAssetRevision, type ProjectAssetUse } from '@/lib/reusable-assets';
 import { LifecycleSettingsEditor } from '@/components/LifecycleSettingsEditor';
@@ -2894,6 +2895,7 @@ function Portal() {
     departments: string[],
     targetDate: string,
     modularConfig?: ProjectModularConfiguration,
+    instructions?: string,
   ) => {
     const committed = await update((state) => {
       const existingEnqs = state.enquiriesOpportunities ?? defaultEnquiriesOpportunities;
@@ -2903,6 +2905,7 @@ function Portal() {
       const intakeContext=feasibilityIntakeContext(state.records,target);
       if (!["Pending Enquiry", "Internal Review"].includes(target.status)) throw new Error("This enquiry has already been dispatched.");
       if (!departments.length || new Set(departments).size !== departments.length) throw new Error("Choose at least one distinct review department.");
+      const routing=planFeasibilityDispatch(state.lifecycleRevisions?.at(-1)??defaultLifecycleRevision(),state.departments,departments);
       const contractRef = intakeContext.contractReference;
       if (state.records.some(record => record.reference === contractRef)) throw new Error("A contract review already exists for this inquiry.");
       const at = now();
@@ -2910,7 +2913,7 @@ function Portal() {
         id: createId(), reference: contractRef, area: "sales", departmentId: findAreaDepartment(state.departments,"sales")?.id, type: "Contract review",
         title: "Contract Review · " + target.title, status: "In review", priority: "High", createdAt: at, updatedAt: at,
         notes: "Participating department sign-offs are required; no engineering results are presumed.",
-        fields: { projectId: intakeContext.projectCode, enquiryId: target.id, revision: "01", formCode: "HLPL/F/MKT/01", requiredDepartments: departments.join(",") },
+        fields: { projectId: intakeContext.projectCode, enquiryId: target.id, revision: "01", formCode: "HLPL/F/MKT/01", requiredDepartments: departments.join(","), lifecycleBaseline:routing.baseline, recordStage:routing.stage.code, accountableDepartment:routing.accountable.code, dispatchInstructions:instructions??'' },
       };
       const requests: ApprovalRecord[] = [];
       const tasks: RecordItem[] = [];
@@ -2923,12 +2926,11 @@ function Portal() {
           project: target.linkedProjectCode, requester: persona.label, riskLevel: "High", iatfClause: "Contract Review HLPL/F/MKT/01",
           description: target.scopeSummary,
         });
-        tasks.push({ id: createId(), reference: contractRef + "-" + code, area: area.id, departmentId: findAreaDepartment(state.departments,area.id)?.id,
-          type: "Task", title: code + " feasibility review · " + target.title, status: "In review", priority: "High",
-          createdAt: at, updatedAt: at, notes: target.scopeSummary,
-          fields: { projectId: intakeContext.projectCode, linkedRecords: contractRef, dueDate: targetDate,
-            feasibilityApprovalId: requestId, assignee: personas.find(person => person.departmentId === area.id)?.person.split(" · ")[0] ?? "Unassigned" },
-        });
+      }
+      for(const [index,task] of routing.tasks.entries()){
+        const department=state.departments.find(d=>d.id===task.departmentId)!;
+        const review=requests.find(r=>r.approverAuthority===task.reviewDepartment);
+        tasks.push({id:`${contract.id}:${task.id}`,reference:`${contractRef}-T${index+1}`,area:areaForDepartment(department),departmentId:department.id,type:'Task',title:`${task.title} · ${target.title}`,status:review?'In review':'Open',priority:'High',createdAt:at,updatedAt:at,notes:[task.description,instructions??''].filter(Boolean).join('\n'),fields:{projectId:intakeContext.projectCode,enquiryId:target.id,linkedRecords:contractRef,dueDate:targetDate,stageCode:routing.stage.code,lifecycleStage:routing.stage.code,lifecycleRevision:(state.lifecycleRevisions?.at(-1)??defaultLifecycleRevision()).id,templateTaskKey:`${contract.id}:${routing.stage.code}:${task.id}`,assignee:task.assignee,...(review?{feasibilityApprovalId:review.id}:{})}});
       }
 
       const oppRef = target.reference.replace(/ENQ/g, "OPP").replace(/HLPL-\d+-/, "OPP-");
@@ -2939,6 +2941,7 @@ function Portal() {
         status: "Sent for Feasibility",
         totalFeasibilityDepts: departments.length,
         feasibilitySignedDepts: [],
+        feasibilityDepartments: departments,
         targetClosureDate: targetDate,
         modularConfig: modularConfig,
         updatedAt: businessDate(),
@@ -2954,8 +2957,7 @@ function Portal() {
           : (state.modularConfigs ?? defaultProjectModularConfigs);
 
       const newAlerts: DemoAlert[] = departments.map((deptCode) => {
-        const deptArea = deptCode.toLowerCase() as AreaId;
-        const deptId = `demo-dept-${deptArea}`;
+        const deptId = routing.reviewers.find(d=>d.code===deptCode)!.id;
         return {
           id: `ALERT_FEAS_${deptCode}_${Date.now()}`,
           severity: "Warning",
@@ -2970,9 +2972,7 @@ function Portal() {
         ...state,
         enquiriesOpportunities: nextEnqs,
         approvals: [...requests, ...state.approvals],
-        records: [contract, ...tasks, ...state.records.map(record => record.type === "Project" && record.reference === target.linkedProjectCode
-          ? { ...record, fields: { ...record.fields, lifecycleStage: "Stage 2 · Feasibility", currentStage: "Stage 2 · Feasibility" }, updatedAt: at }
-          : record)],
+        records: [contract, ...tasks, ...state.records],
         modularConfigs: nextConfigs,
         alerts: [...newAlerts, ...state.alerts],
         audit: [
@@ -4472,6 +4472,8 @@ function Portal() {
       {feasibilityDispatchEnquiry && (
         <SendForFeasibilityModal
           enquiry={feasibilityDispatchEnquiry}
+          revision={portal.lifecycleRevisions?.at(-1)??defaultLifecycleRevision()}
+          departments={portal.departments}
           onClose={() => setFeasibilityDispatchEnquiry(null)}
           onDispatch={handleDispatchFeasibility}
         />
