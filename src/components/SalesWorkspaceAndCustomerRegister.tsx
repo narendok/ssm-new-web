@@ -2169,9 +2169,7 @@ export function SalesEnquiriesAndOpportunities({
                         <button
                           type="button"
                           onClick={() => {
-                            setIntakeModalMode("convert");
-                            setIntakeEnquiryId(item.id);
-                            setIntakeModalOpen(true);
+                            onSendForFeasibility(item);
                           }}
                           className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20"
                           title="Convert this enquiry to an Opportunity and dispatch for Feasibility"

@@ -3105,8 +3105,9 @@ function Portal() {
   };
   const handleSalesIntake: NonNullable<React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onSubmitIntake"]> = async data => {
     if (data.mode === "convert" && data.enquiryIdToConvert) {
-      const dispatched = await handleDispatchFeasibility(data.enquiryIdToConvert, data.dispatchFeasibility ? data.feasibilityDepts : ["SAL", "FIN"], data.targetClosureDate);
-      if (!dispatched) throw new Error("Feasibility dispatch was not saved.");
+      const enquiry = portal.enquiriesOpportunities?.find(item => item.id === data.enquiryIdToConvert);
+      if (!enquiry) throw new Error("The selected enquiry is no longer available.");
+      setFeasibilityDispatchEnquiry(enquiry);
       return;
     }
     await addRecord({
