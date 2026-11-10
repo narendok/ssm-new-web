@@ -30,6 +30,7 @@ export function planFeasibilityDispatch(revision:LifecycleRevision, departments:
     return department;
   });
   if(!routing.coordinator.lead.trim())throw new Error('Assign the feasibility coordinator lead in Settings.');
+  if(!routing.coordinator.tasks.length)throw new Error('Configure at least one CM_02 default task for the feasibility coordinator before dispatch.');
   const scopes=[routing.coordinator,...reviewers];
   return {...routing,reviewers,baseline:pinLifecycleRevision(revision),tasks:scopes.flatMap(d=>d.tasks.map(task=>({...task,departmentId:d.id,assignee:d.lead,reviewDepartment:d.code===routing.coordinator.code?'':d.code})))};
 }

@@ -72,4 +72,6 @@ test('feasibility routes variable defaults and multiple department ownership fro
   assert.throws(()=>planFeasibilityDispatch(revision,configured.map(d=>d.code==='FW'?{...d,lead:''}:d),['FW']),/Assign the FW lead/);
   stage.tasks=stage.tasks.filter(t=>t.department!=='FW');
   assert.throws(()=>planFeasibilityDispatch(revision,configured,['FW']),/at least one CM_02 default/);
+  stage.tasks=stage.tasks.filter(t=>t.department!=='SAL');
+  assert.throws(()=>planFeasibilityDispatch(revision,configured,['QA']),/default task for the feasibility coordinator/);
 });
