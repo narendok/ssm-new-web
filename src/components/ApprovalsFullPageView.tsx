@@ -79,6 +79,7 @@ export function ApprovalsFullPageView({
   const [actionType, setActionType] = useState<"approve" | "reject" | "return" | null>(null);
   const [actionNotes, setActionNotes] = useState<string>("");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSaving, setActionSaving] = useState(false);
 
   // Request new approval modal state
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
@@ -107,7 +108,7 @@ export function ApprovalsFullPageView({
         requester: appr.requester ?? "Jordan Blake (Quality Assurance Head)",
         department: appr.department ?? "QA",
         approverAuthority: appr.approverAuthority ?? "Admin",
-        project: appr.project ?? "HLPL-AI4T-01 (Tata Ace EV 4G)",
+        project: appr.project || "No project linked",
         riskLevel: appr.riskLevel ?? "Critical",
         iatfClause: appr.iatfClause ?? "IATF 16949 §8.5.1 (Production Release Gate)",
         description:
@@ -121,7 +122,7 @@ export function ApprovalsFullPageView({
         requester: appr.requester ?? "Avery Vale (Embedded Hardware Lead)",
         department: appr.department ?? "EHW",
         approverAuthority: appr.approverAuthority ?? "QA",
-        project: appr.project ?? "HLPL-SLCT-01 (AIS-140 Gateway)",
+        project: appr.project || "No project linked",
         riskLevel: appr.riskLevel ?? "High",
         iatfClause: appr.iatfClause ?? "IATF 16949 §8.3.4 (Engineering Change Control)",
         description:
@@ -135,7 +136,7 @@ export function ApprovalsFullPageView({
         requester: appr.requester ?? "Priya Voss (Finance Controller)",
         department: appr.department ?? "FIN",
         approverAuthority: appr.approverAuthority ?? "Admin",
-        project: appr.project ?? "HLPL-AI4T-01 (Tata Ace EV 4G)",
+        project: appr.project || "No project linked",
         riskLevel: appr.riskLevel ?? "Medium",
         iatfClause: appr.iatfClause ?? "ISO 9001 §8.4 (Purchasing & Advance Authorizations)",
         description:
@@ -148,7 +149,7 @@ export function ApprovalsFullPageView({
       requester: appr.requester ?? "Department Lead",
       department: appr.department,
       approverAuthority: appr.approverAuthority,
-      project: appr.project ?? "HLPL-AI4T-01",
+      project: appr.project || "No project linked",
       riskLevel: appr.riskLevel ?? "Medium",
       iatfClause: appr.iatfClause ?? "IATF 16949 / ISO 9001",
       description: appr.description ?? "Controlled gateway review requiring designated human sign-off.",
@@ -216,8 +217,12 @@ export function ApprovalsFullPageView({
   };
 
   const handleConfirmAction = async () => {
+    if (actionSaving) return;
     if (!selectedApproval || !actionType || !canUserActOnApproval(selectedApproval)) return;
     if (actionType !== "approve" && !actionNotes.trim()) { setActionError("Enter the reason for rejection or rework."); return; }
+    try {
+    setActionSaving(true);
+    setActionError(null);
     let accepted: boolean | void;
     if (actionType === "approve") accepted = await onApprove(selectedApproval.id, actionNotes.trim() || "Approved by designated reviewer.");
     else if (actionType === "reject") accepted = await onReject(selectedApproval.id, actionNotes.trim());
@@ -227,6 +232,11 @@ export function ApprovalsFullPageView({
     setActionType(null);
     setActionNotes("");
     setActionError(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'The decision could not be saved. Your notes are retained.');
+    } finally {
+      setActionSaving(false);
+    }
   };
 
   return (
@@ -637,6 +647,7 @@ export function ApprovalsFullPageView({
               <Button
                 size="sm"
                 onClick={handleConfirmAction}
+                disabled={actionSaving}
                 className={`text-xs font-semibold text-white ${
                   actionType === "approve"
                     ? "bg-emerald-600 hover:bg-emerald-700"

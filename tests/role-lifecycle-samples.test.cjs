@@ -13,6 +13,18 @@ function load(name) {
   return mod.exports;
 }
 const {buildRoleLifecyclePack}=load('role-lifecycle-samples');
+test('start readiness requires every linked department review, never an unrelated approval',()=>{
+  const {assertFeasibilityReviewsReady}=load('feasibility-routing');
+  const contract={id:'c1',reference:'TEST-C1',fields:{enquiryId:'e1',requiredDepartments:'FW,QA'}};
+  const approvals=[{id:'a1',recordId:'c1',approverAuthority:'FW',outcome:'Approved'},{id:'a2',recordId:'TEST-C1',approverAuthority:'QA',outcome:'Approved'}];
+  assert.deepEqual(assertFeasibilityReviewsReady(contract,approvals,'e1').reviewIds,['a1','a2']);
+  for(const outcome of ['Pending','Rejected','Returned'])assert.throws(()=>assertFeasibilityReviewsReady(contract,[approvals[0],{...approvals[1],outcome}],'e1'),/QA/);
+  assert.throws(()=>assertFeasibilityReviewsReady(contract,[approvals[0],{...approvals[1],recordId:'other'}],'e1'),/QA/);
+  assert.throws(()=>assertFeasibilityReviewsReady(contract,[...approvals,{...approvals[1],id:'duplicate'}],'e1'),/QA/);
+  assert.throws(()=>assertFeasibilityReviewsReady({...contract,archived:true},approvals,'e1'),/current/);
+  assert.throws(()=>assertFeasibilityReviewsReady(contract,approvals,'other-enquiry'),/current/);
+  assert.throws(()=>assertFeasibilityReviewsReady({...contract,fields:{...contract.fields,requiredDepartments:''}},approvals,'e1'),/missing/);
+});
 const {defaultLifecycleRevision}=load('lifecycle-baseline');
 const departments=Object.keys(load('department-modules').DEPARTMENT_MODULES).map(code=>({id:`test-${code}`,code:code==='HR'?'HROPS':code,name:code,active:true,lead:`Fictional ${code} lead`}));
 test('updated pack uses seven pinned track checkpoints and genuinely pre-project requests',()=>{

@@ -3,6 +3,23 @@ import { pinLifecycleRevision, type LifecycleRevision } from './lifecycle-baseli
 
 export type FeasibilityDepartment = {id:string;code:string;name:string;lead:string;active:boolean};
 
+/** Readiness for a human start decision; this never grants the decision itself. */
+export function assertFeasibilityReviewsReady(
+  contract:{id:string;reference:string;archived?:boolean;fields:Record<string,string>},
+  approvals:{id:string;recordId:string;approverAuthority?:string|undefined;outcome:string}[],
+  enquiryId:string,
+) {
+  if(contract.archived||contract.fields['enquiryId']!==enquiryId)throw new Error('Choose the current feasibility review for this enquiry.');
+  const required=(contract.fields['requiredDepartments']??'').split(',').map(code=>code.trim()).filter(Boolean);
+  if(!required.length||new Set(required).size!==required.length)throw new Error('Feasibility review departments are missing or duplicated.');
+  const linked=approvals.filter(a=>[contract.id,contract.reference].includes(a.recordId));
+  for(const code of required){
+    const reviews=linked.filter(a=>a.approverAuthority===code);
+    if(reviews.length!==1||reviews[0]?.outcome!=='Approved')throw new Error(`The ${code} feasibility review must be independently approved before a start decision.`);
+  }
+  return {contractId:contract.id,reviewIds:linked.filter(a=>required.includes(a.approverAuthority??'')).map(a=>a.id)};
+}
+
 /** Resolve the pre-project review from current Settings, without selecting a project track. */
 export function feasibilityRouting(revision:LifecycleRevision, departments:FeasibilityDepartment[]) {
   const stage=revision.stages.find(s=>s.code==='CM_02');

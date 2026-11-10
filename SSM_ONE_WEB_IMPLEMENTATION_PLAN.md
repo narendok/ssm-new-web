@@ -59,6 +59,10 @@ Live browser-local follow-up: dispatched fictional `HLPL-ROLE-DEMO-ENQ-06` with 
 
 ## Delivery order
 
+Browser-local project-start increment: the Project form requires a client/internal source enquiry, engineering track and decision reason. The save transaction checks the linked review approvals, pinned Accountable department and Admin/lead authority, rejects duplicate starts and preserves enquiry/review/approval links. It records the decision actor/time and generates configured CM_01 entry tasks from the pinned lifecycle. The department approval register now opens the existing review screen; missing project context no longer falls back to a sample project. Approval failures retain notes and show an error.
+
+Live local TEST: pending ENQ-06 reviews blocked project creation. All 11 fictional reviews were then signed through the normal UI with explicit TEST comments. Admin created `HLPL-PRJ-0001` on the HW/FW/SW track with CM_01/TG_0 and recorded decision metadata. Reload retained Project Started and the department task count rose by two. Exact generated-task provenance, non-Admin authority, duplicate retry, stale review revisions, other tracks and deployed shared TEST still require live acceptance. Later display changes summarize the saved snapshot and propagate the selected track to the Sales projection; their live readback remains pending. This is not complete lifecycle or shared-client verification.
+
 1. Reconcile this subplan to the cross-platform master and remove duplicate/stale plan copies; preserve code and unrelated local work.
 2. Verify current web routes, data contracts, settings editor, RACI matrix, migration state and access boundaries before changing implementation.
 3. Complete settings-driven lifecycle configuration and project-specific version pinning without altering existing projects silently.

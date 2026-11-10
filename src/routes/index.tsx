@@ -1,9 +1,10 @@
 import { configuredTicketGroups } from '@/lib/department-ticket-groups';
 import { ProjectMasterSpecSheet } from '@/components/ProjectMasterSpecSheet';
-import { CANONICAL_STAGE_TEMPLATES, computeProgressiveStageAndTaskState, getRecordedProjectTrack } from '@/lib/canonical-lifecycle';
+import { CANONICAL_STAGE_TEMPLATES, CANONICAL_TRACK_METADATA, computeProgressiveStageAndTaskState, getRecordedProjectTrack } from '@/lib/canonical-lifecycle';
 import { SharedLifecycleWorkspace } from '@/components/SharedLifecycleWorkspace';
 import { buildRoleLifecyclePack, ROLE_LIFECYCLE_PACK, type RoleLifecyclePackManifest } from '@/lib/role-lifecycle-samples';
-import { planFeasibilityDispatch } from '@/lib/feasibility-routing';
+import { assertFeasibilityReviewsReady, planFeasibilityDispatch } from '@/lib/feasibility-routing';
+import { departmentCode as canonicalDepartmentCode } from '@/lib/department-scope';
 import { ReusableAssetsWorkspace } from '@/components/ReusableAssetsWorkspace';
 import { linkReusableAsset, type ReusableAssetRevision, type ProjectAssetUse } from '@/lib/reusable-assets';
 import { LifecycleSettingsEditor } from '@/components/LifecycleSettingsEditor';
@@ -3040,7 +3041,26 @@ function Portal() {
     try {
       saved = await update((state) => {
         if (state.records.some(existing => existing.reference.toUpperCase() === record.reference.toUpperCase())) throw new Error("This controlled number already exists.");
-        if (input.type === "Project") validateIntakeProject(state.records, "Project", record.reference);
+        if (input.type === "Project") {
+          validateIntakeProject(state.records, "Project", record.reference);
+          const sourceEnquiry = input.fields['enquiryId'];
+          if (!sourceEnquiry) throw new Error('Select the source enquiry, including an internal enquiry, before starting a project.');
+          if (sourceEnquiry) {
+            const contracts = state.records.filter(item => !item.archived && item.type === 'Contract review' && item.fields['enquiryId'] === sourceEnquiry);
+            const contract = contracts[0];
+            if (contracts.length !== 1 || !contract) throw new Error('Select one current feasibility review for the source enquiry before starting its project.');
+            assertFeasibilityReviewsReady(contract, state.approvals, sourceEnquiry);
+            const baseline = readLifecycleBaseline(contract.fields['lifecycleBaseline']);
+            const accountableCode = baseline?.stages.find(stage=>stage.code==='CM_02')?.raci?.A;
+            const accountable = state.departments.find(item=>item.active && accountableCode?.length===1 && canonicalDepartmentCode(item.code.replace(/^DEMO-/,''))===accountableCode[0]);
+            if (!baseline || !accountable) throw new Error('The feasibility review needs a valid pinned Accountable department before project start.');
+            if (persona.kind !== 'admin' && !(persona.kind === 'lead' && persona.departmentId === areaForDepartment(accountable))) throw new Error('Only the configured Accountable lead or Admin can record the project-start decision.');
+            if (!Object.hasOwn(CANONICAL_TRACK_METADATA,input.fields['projectTrack']??'')) throw new Error('Select the engineering track after reviewing feasibility.');
+            if (!input.fields['startDecisionReason']?.trim()) throw new Error('Record the project-start decision reason.');
+            record.fields = {...record.fields,lifecycleBaseline:pinLifecycleRevision(baseline),startDecisionBy:persona.label,startDecisionAt:now(),feasibilityReviewId:contract.id};
+            if (state.records.some(item => item.type === 'Project' && item.fields['enquiryId'] === sourceEnquiry)) throw new Error('A project already exists for this enquiry.');
+          }
+        }
         if (input.area === "sales" && isPreProjectIntake(input.type)) validateIntakeProject(state.records,input.type,input.fields["projectId"] ?? "");
         const enquiry = input.area === "sales" && ["Enquiry", "Opportunity", "Enquiry & Opportunity"].includes(input.type);
         const projectRef = input.type === "Project" ? record.reference : input.fields["projectId"] || "";
@@ -3074,7 +3094,9 @@ function Portal() {
             releaseNotes: `Original supplied with record creation. Draft basis: selected project ${project.reference}; current project context ${projectContext.phase ?? "phase not recorded"} · ${projectContext.stage ?? "stage not recorded"}; record type ${input.type} maps to ${recordStage}. Missing source parameters remain TBD. Draft only; approval and release require their separate workflows.`,
           };
         }
-        return { ...state, records: [record, ...state.records, ...(input.type === "Project" ? localDefaultLifecycleTasks(state, record, "CM_01") : [])],
+        const projectLinks = input.type === 'Project' ? linkIntakeProject([record,...state.records],state.enquiriesOpportunities??[],state.approvals,input.fields['enquiryId']??'',record.reference) : undefined;
+        return { ...state, records: [...(projectLinks?.records??[record,...state.records]), ...(input.type === "Project" ? localDefaultLifecycleTasks(state, record, "CM_01") : [])],
+          ...(projectLinks ? {approvals:projectLinks.approvals,enquiriesOpportunities:projectLinks.enquiries.map(item=>item.id===input.fields['enquiryId']?{...item,status:'Project Started' as const,projectTrack:input.fields['projectTrack'] as import('@/lib/canonical-lifecycle').CanonicalProjectTrack}:item)} : {}),
           ...(linkedDocument ? { documents: [linkedDocument, ...state.documents] } : {}),
           ...(attachment ? { audit: [{ id: createId(), at: nowStamp, action: "Original attached to draft record", detail: `${record.reference} · ${attachment.name} · Browser-local · not approved/released` }, ...state.audit].slice(0, 100) } : {}),
           ...(input.type === "Project" ? { masters: { ...state.masters, products: Array.from(new Set([...state.masters.products, record.reference])) } } : {}),
@@ -3737,6 +3759,7 @@ function Portal() {
               recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
               onOpenInputs={sourceId=>{setAnalysisSourceId(sourceId);setView("analysis");}}
               onOpenAssetCatalog={()=>setAssetCatalogOpen(true)}
+              onOpenApprovals={()=>setView('approvals')}
               departmentCode={active.short} departmentName={active.name} lead={leadName}
               records={leadRecords} projects={leadProjects} documents={scopedDocuments} sharedTestMembership={testMembership ?? undefined}
               approvals={portal.approvals.map(approvalScope).filter(approval => approvalInDepartment(approval, activeDepartmentScope))}
@@ -7963,7 +7986,7 @@ function RecordDetail({
                       <dt className="font-mono text-[10px] uppercase text-muted-foreground">
                         {key.replace(/([A-Z])/g, " $1")}
                       </dt>
-                      <dd className="mt-1 text-sm">{["recordStage", "hwStage", "qualityStage", "lifecycleStage"].includes(key) && record.type !== "Project" ? recordStageLabel({ ...record.fields, recordStage: String(value) }, record.type) : value}</dd>
+                      <dd className="mt-1 break-words text-sm">{key === 'lifecycleBaseline' ? (readLifecycleBaseline(String(value))?.id ?? 'Saved lifecycle snapshot needs review') : ["recordStage", "hwStage", "qualityStage", "lifecycleStage"].includes(key) && record.type !== "Project" ? recordStageLabel({ ...record.fields, recordStage: String(value) }, record.type) : value}</dd>
                     </div>
                   ))}
               </dl>
@@ -8118,6 +8141,9 @@ function RecordForm({
   ];
   const projectOptions = portal.records.filter(record => record.type === "Project" && !record.archived).map(record => record.reference);
   const projectFields = [
+    { key: "enquiryId", label: "Source enquiry", required: true },
+    { key: "projectTrack", label: "Approved engineering track", required: true, kind: "select" as const, options: Object.keys(CANONICAL_TRACK_METADATA) },
+    { key: "startDecisionReason", label: "Project-start decision reason", required: true },
     { key: "projectId", label: "Project code", required: true },
     { key: "title", label: "Project title", required: true },
     { key: "customer", label: "Customer", master: "customers" as const },
@@ -8267,6 +8293,8 @@ function RecordForm({
                 canAddSupplier={canAddSupplier}
                 canAddPart={canAddPart}
               />
+            ) : item.key === "enquiryId" && type === "Project" ? (
+              <div key={item.key} className="space-y-1"><p className="text-sm font-medium">Source enquiry *</p><CompactFilterSelect label="Project source enquiry" shortLabel="Enquiry" icon={Layers} value={field('enquiryId')} onChange={value=>setValues(previous=>({...previous,enquiryId:value}))} options={[{value:'',label:'Choose a reviewed client or internal enquiry'},...(portal.enquiriesOpportunities??[]).map(enquiry=>({value:enquiry.id,label:`${enquiry.reference} · ${enquiry.title}`}))]}/><p className="text-xs text-muted-foreground">Required department reviews are checked again when saving.</p></div>
             ) : item.key === "projectId" && isPreProjectIntake(type) ? (
               <div key={item.key} className="space-y-1"><p className="text-sm font-medium">Existing project (optional)</p><CompactFilterSelect label="Inquiry project link" shortLabel="Project" icon={Layers} value={selectedProject} onChange={value=>setValues(previous=>({...previous,projectId:value,controlledNumber:""}))} options={[{value:"",label:"New requirement — no project yet"},...portal.records.filter(record=>record.type === "Project" && !record.archived).map(record=>({value:record.reference,label:`${record.reference} · ${record.title}`}))]}/><p className="text-xs text-muted-foreground">Link an existing project only for a change, extension or repeat requirement. No project is created by saving this inquiry.</p></div>
             ) : item.readOnly ? (
@@ -11524,8 +11552,8 @@ function localDefaultLifecycleTasks(state: PortalState, project: RecordItem, sta
   return definition.tasks.flatMap((task,index)=>{
     const identity=`${project.id}:${stage}:${task.id}`;
     if(state.records.some(r=>r.id===identity || r.fields['templateTaskKey']===identity))return [];
-    const department=state.departments.find(d=>d.code.replace(/^DEMO-/,'')===task.department);
-    if(!department)throw new Error(`Task owner department ${task.department} is unavailable.`);
+    const department=state.departments.find(d=>d.active && canonicalDepartmentCode(d.code.replace(/^DEMO-/,''))===task.department);
+    if(!department || !department.lead.trim())throw new Error(`Configure an active ${task.department} department and lead before generating its default tasks.`);
     return [{id:identity,reference:`${project.reference}-${stage}-${index+1}`,area:areaForDepartment(department),departmentId:department.id,type:'Task',title:task.title,notes:task.description,status:'Open' as RecordStatus,priority:'Normal' as RecordItem['priority'],createdAt:now(),updatedAt:now(),fields:{projectId:project.reference,projectCode:project.reference,lifecycleStage:stage,stageCode:stage,templateTaskKey:identity,lifecycleRevision:baseline.id,assignee:department.lead,workStatus:'To do'}}];
   });
 }
