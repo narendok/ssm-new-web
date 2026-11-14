@@ -42,6 +42,10 @@ test("authenticated inventory keeps the full demo workspace and adds a canonical
   assert.match(liveComponent, /Shared Part Masters/);
   assert.match(liveComponent, /Filter shared parts by category/);
   assert.match(liveComponent, /Filter shared parts by department/);
+  assert.match(liveComponent, /sharedInventoryCategoryOptions/);
+  assert.match(liveComponent, /sharedInventoryDepartmentOptions/);
+  assert.match(liveComponent, /filterSharedInventoryParts/);
+  assert.match(liveComponent, /No department mapping/);
   assert.match(liveComponent, /Not recorded/);
   assert.match(liveComponent, /part\.id/);
 });

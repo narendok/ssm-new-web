@@ -56,6 +56,11 @@ import type {
   SharedInventoryMovement,
   SharedInventoryPartMaster,
 } from "@/lib/shared-inventory.schema";
+import {
+  filterSharedInventoryParts,
+  sharedInventoryCategoryOptions,
+  sharedInventoryDepartmentOptions,
+} from "@/lib/shared-inventory-filters";
 
 
 // =============================================================================
@@ -2897,11 +2902,11 @@ export function LiveInventoryWorkspace({
               <input aria-label="Search shared parts" className="h-8 min-w-56 rounded-md border border-input bg-background px-2 text-xs" placeholder="Search part, MPN or reference…" value={sharedPartSearch} onChange={event => setSharedPartSearch(event.target.value)} />
               <select aria-label="Filter shared parts by category" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={sharedPartCategory} onChange={event => setSharedPartCategory(event.target.value)}>
                 <option value="All">All categories</option>
-                {Array.from(new Set((sharedPartMasters ?? []).map(part => part.category).filter((value): value is string => !!value))).sort().map(category => <option key={category} value={category}>{category}</option>)}
+                {sharedInventoryCategoryOptions(sharedPartMasters ?? []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <select aria-label="Filter shared parts by department" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={sharedPartDepartment} onChange={event => setSharedPartDepartment(event.target.value)}>
                 <option value="All">All departments</option>
-                {Array.from(new Set((sharedPartMasters ?? []).flatMap(part => part.departmentViews))).sort().map(department => <option key={department} value={department}>{department}</option>)}
+                {sharedInventoryDepartmentOptions(sharedPartMasters ?? []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </div>
           </div>
@@ -2910,11 +2915,8 @@ export function LiveInventoryWorkspace({
           ) : sharedPartCatalogState === "error" ? (
             <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive">Shared TEST inventory could not be loaded. The browser-local stock demo remains separate.</p>
           ) : (() => {
-            const query = sharedPartSearch.trim().toLocaleLowerCase();
-            const visibleParts = (sharedPartMasters ?? []).filter(part =>
-              (sharedPartCategory === "All" || part.category === sharedPartCategory) &&
-              (sharedPartDepartment === "All" || part.departmentViews.includes(sharedPartDepartment) || part.primaryDepartment === sharedPartDepartment) &&
-              (!query || [part.reference, part.title, part.mpn ?? "", part.category ?? ""].some(value => value.toLocaleLowerCase().includes(query)))
+            const visibleParts = filterSharedInventoryParts(
+              sharedPartMasters ?? [], sharedPartCategory, sharedPartDepartment, sharedPartSearch,
             );
             return visibleParts.length ? (
               <div className="overflow-x-auto rounded-lg border border-border">
@@ -2926,7 +2928,7 @@ export function LiveInventoryWorkspace({
                         <td className="px-3 py-2.5"><div className="font-semibold text-foreground">{part.title}</div><div className="font-mono text-[10px] text-muted-foreground">{part.reference}</div>{part.isDemo && <span className="mt-1 inline-flex rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800 dark:text-amber-200">Fictional TEST balance</span>}</td>
                         <td className="px-3 py-2.5 font-mono">{part.mpn || "Not recorded"}</td>
                         <td className="px-3 py-2.5">{part.category || "Not categorized"}{part.subcategory && <div className="text-[10px] text-muted-foreground">{part.subcategory}</div>}</td>
-                        <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1">{Array.from(new Set([...(part.departmentViews ?? []), ...(part.primaryDepartment ? [part.primaryDepartment] : [])])).map(department => <span key={department} className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">{department}</span>)}</div></td>
+                        <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1">{Array.from(new Set([...(part.departmentViews ?? []), ...(part.primaryDepartment ? [part.primaryDepartment] : [])])).map(department => <span key={department} className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">{department}</span>)}{!(part.departmentViews?.some(department => department.trim()) || part.primaryDepartment?.trim()) && <span className="text-muted-foreground">No department mapping</span>}</div></td>
                         <td className="px-3 py-2.5">{part.status}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{part.onHand.toLocaleString()} <span className="text-muted-foreground">{part.unit}</span></td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{part.held.toLocaleString()}</td>
