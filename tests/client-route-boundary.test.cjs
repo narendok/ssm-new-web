@@ -162,7 +162,7 @@ test("local register storage remains separate from authenticated document and up
 });
 
 test("project documents keep project and related-record links distinct", () => {
-  assert.match(sharedDocumentVault, /onChange=\{id=>\{setProjectId\(id\);setRecordId\(""\);\}\}/);
+  assert.match(sharedDocumentVault, /onChange=\{id=>\{setProjectId\(id\);setRecordId\(""\);setSourceFileId\(""\);setSourceFiles\(\[\]\);\}\}/);
   assert.match(sharedDocumentVault, /\{projectId&&\(scope==="internal"\|\|scope==="client"\)&&<SharedMasterSelect label="Related record \(optional\)"/);
   assert.match(sharedDocumentVault, /vaultRelatedRecords\(records,projectId\)\.filter\(r=>isSelectableMasterStatus\(r\.status\)\)/);
   assert.match(sharedDocumentVault, /\.{3}\(recordId\?\{recordId\}:\{\}\)/);
