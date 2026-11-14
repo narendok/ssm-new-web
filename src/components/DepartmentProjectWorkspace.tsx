@@ -2,7 +2,7 @@ import { ProjectMasterSpecSheet } from './ProjectMasterSpecSheet';
 import { readLifecycleBaseline, projectLifecycleStages, recordedStageOmissions } from '@/lib/lifecycle-baseline';
 import { ProjectLifecycleConfiguration } from './ProjectLifecycleConfiguration';
 import { getProjectInputs, type InputSnapshot } from '@/lib/project-inputs.functions';
-import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/ResponsiveFilterBar";
+import { SharedMasterSelect } from "@/components/SharedMasterSelect";
 import { SalesEnquiriesAndOpportunities, defaultCustomers, defaultEnquiriesOpportunities } from "./SalesWorkspaceAndCustomerRegister";
 import { Sparkles } from "lucide-react";
 import { matchesWorkspaceDocument } from "@/lib/sidebar-selection";
@@ -22,7 +22,6 @@ import {
   computeProgressiveStageAndTaskState,
 } from "@/lib/canonical-lifecycle";
 import {
-  FolderKanban,
   Plus,
   FileText,
   CheckCircle2,
@@ -34,8 +33,6 @@ import {
   ExternalLink,
   ChevronRight,
   AlertCircle,
-  LayoutDashboard,
-  CheckSquare,
   Search,
 } from "lucide-react";
 
@@ -66,12 +63,16 @@ type Props = {
   initialTab?: "overview" | "tasks" | "deliverables" | "approvals" | "records" | "team" | undefined;
   onProjectChange: (value: string) => void;
   onCreateRecord: () => void;
+  canCreateRecord?: boolean | undefined;
+  canCreateTask?: boolean | undefined;
   onOpenAssetCatalog?: (()=>void) | undefined;
   onOpenInputs?: ((sourceId?:string) => void) | undefined;
   onCreateDeliverable?: (() => void) | undefined;
   onCreateProject?: (() => void) | undefined;
   onOpenRecord: (id: string) => void;
+  onOpenTask?: ((task: TaskRecord) => void) | undefined;
   onOpenApprovals?: (()=>void) | undefined;
+  onOpenRecords?: (()=>void) | undefined;
   onOpenDocument: (id: string) => void;
   onUpdateTask: (id: string, patch: Partial<TaskRecord>, action: string) => void;
   onCreateTask: (task: {
@@ -110,13 +111,16 @@ export function DepartmentProjectWorkspace(props: Props) {
     ...sharedDocs.filter((sd) => !props.documents.some((d) => d.id === sd.id || d.title === sd.title)),
   ];
   const isSalesDept = departmentCode.toUpperCase() === "SAL";
-  const [activeTab, setActiveTab] = useState<"overview" | "tasks" | "deliverables" | "approvals" | "records" | "team" | "sales-pipeline">(
-    props.initialTab === "deliverables" ? "records" : props.initialTab ?? (isSalesDept ? "sales-pipeline" : "overview")
-  );
+  const initialWorkspaceTab = props.initialTab === "team"
+    ? "overview"
+    : props.initialTab === "deliverables"
+      ? "records"
+      : props.initialTab ?? (isSalesDept ? "sales-pipeline" : "overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "tasks" | "deliverables" | "approvals" | "records" | "sales-pipeline">(initialWorkspaceTab);
 
   useEffect(() => {
     if (props.initialTab) {
-      setActiveTab(props.initialTab === "deliverables" ? "records" : props.initialTab);
+      setActiveTab(props.initialTab === "team" ? "overview" : props.initialTab === "deliverables" ? "records" : props.initialTab);
     }
   }, [props.initialTab]);
   const [recordSearch, setRecordSearch] = useState(props.recordTypeFilter ?? "");
@@ -131,6 +135,7 @@ export function DepartmentProjectWorkspace(props: Props) {
   const [advanceNotice, setAdvanceNotice] = useState("");
 
   const project = projects.find((item) => item.reference === projectScope || item.id === projectScope);
+  const workspaceProjectSelection = project?.id || (projectScope === "all" ? "all" : projectScope);
   const openProjectInputs=()=>props.onOpenInputs?.(project?.fields['sourceOpportunityId'] || project?.id);
   let inputSnapshot:InputSnapshot|undefined=inputSheets.data;
   if(!props.sharedTestMembership && typeof window!=='undefined'){
@@ -240,7 +245,7 @@ export function DepartmentProjectWorkspace(props: Props) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-0 max-w-72"><CompactFilterSelect label="Workspace project" shortLabel="Project" icon={FolderKanban} value={projectScope} onChange={props.onProjectChange} options={[{value:"all",label:"All projects"},...(!all && !project ? [{value:projectScope,label:"Selected project unavailable"}] : []),...projects.map(item=>({value:item.reference,label:`${item.reference} · ${item.title}`}))]}/></div>
+            <div className="min-w-0 max-w-72"><SharedMasterSelect label="Workspace project" value={workspaceProjectSelection} onChange={props.onProjectChange} options={[{value:"all",label:"All projects"},...(!all && !project ? [{value:projectScope,label:`Selected project unavailable · ${projectScope}`}]:[]),...projects.map(item=>({value:item.id,label:`${item.reference} · ${item.title}`}))]}/></div>
 
             {props.onCreateProject && <button type="button" onClick={props.onCreateProject} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold">New Project</button>}
             <button
@@ -256,6 +261,8 @@ export function DepartmentProjectWorkspace(props: Props) {
             <button
               type="button"
               onClick={props.onCreateRecord}
+              disabled={props.canCreateRecord === false}
+              title={props.canCreateRecord === false ? "This role does not have Create records permission in this department." : undefined}
               className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-xs hover:bg-primary/90 transition-colors cursor-pointer"
             >
               <Plus className="size-3.5" />
@@ -272,10 +279,10 @@ export function DepartmentProjectWorkspace(props: Props) {
         )}
       </header>
 
-      {project && <ProjectMasterSpecSheet project={project} records={records} documents={documents} inputSheet={inputSheet} inputEvents={inputSnapshot?.events.filter(e=>e.sheet_id===inputSheet?.id)} onOpenStageRecords={code=>{setActiveTab("records");setRecordSearch(code);}} onOpenInputs={openProjectInputs} onOpenRecord={props.onOpenRecord} onOpenDocument={props.onOpenDocument} canViewCommercial={["FIN","PUR"].includes(departmentCode.toUpperCase())}/>}
-      {project && props.sharedTestMembership && <ProjectLifecycleConfiguration key={project.id} projectId={project.id} scopeKey={props.sharedTestMembership.membershipId} isAdmin={props.sharedTestMembership.role==='admin'} canManageCertification={props.sharedTestMembership.role==='admin'||(props.sharedTestMembership.role==='department_lead'&&props.sharedTestMembership.departmentCode==='QA')}/>}
+      {activeTab === "overview" && project && <ProjectMasterSpecSheet project={project} records={records} documents={documents} inputSheet={inputSheet} inputEvents={inputSnapshot?.events.filter(e=>e.sheet_id===inputSheet?.id)} onOpenStageRecords={code=>{setActiveTab("records");setRecordSearch(code);}} onOpenInputs={openProjectInputs} onOpenRecord={props.onOpenRecord} onOpenDocument={props.onOpenDocument} canViewCommercial={["FIN","PUR"].includes(departmentCode.toUpperCase())}/>}
+      {activeTab === "overview" && project && props.sharedTestMembership && <ProjectLifecycleConfiguration key={project.id} projectId={project.id} scopeKey={props.sharedTestMembership.membershipId} isAdmin={props.sharedTestMembership.role==='admin'} canManageCertification={props.sharedTestMembership.role==='admin'||(props.sharedTestMembership.role==='department_lead'&&props.sharedTestMembership.departmentCode==='QA')}/>}
       {/* 2. Compact Project Overview Banner (if a specific project is selected) */}
-      {project && (
+      {activeTab === "overview" && project && (
         <section aria-label="Selected project overview" className="rounded-xl border border-border/80 bg-card p-3.5 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/50 pb-2.5">
             <div>
@@ -337,7 +344,7 @@ export function DepartmentProjectWorkspace(props: Props) {
       )}
 
       {/* 3. Compact 4-Metric Workspace Summary */}
-      <section aria-label="Workspace summary" className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+      {activeTab === "overview" && <section aria-label="Workspace summary" className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         {[
           ["Department progress", `${progress}%`, `${completed} of ${work.length} records complete`],
           ["Tasks", String(taskRecords.length), "Checklist, Kanban & Table"],
@@ -350,38 +357,9 @@ export function DepartmentProjectWorkspace(props: Props) {
             <p className="mt-0.5 text-[11px] text-muted-foreground truncate">{detail}</p>
           </div>
         ))}
-      </section>
+      </section>}
 
-      {/* 4. Sub-Navigation Tabs */}
-      <nav aria-label="Workspace subviews" className="flex items-center gap-1.5 overflow-x-auto rounded-xl border border-border bg-muted/40 p-1">
-        {[
-          ...(isSalesDept ? [{ key: "sales-pipeline", label: "Opportunities & Enquiries", icon: Sparkles }] : []),
-          { key: "overview", label: "Overview", icon: LayoutDashboard },
-          { key: "tasks", label: `Tasks (${taskRecords.length})`, icon: CheckSquare },
-          { key: "records", label: `Records & Deliverables (${registerRowCount})`, icon: FileSpreadsheet },
-          { key: "approvals", label: `Approvals (${approvals.length})`, icon: ShieldCheck },
-          { key: "team", label: `Team & Capacity (${team.length})`, icon: Users },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveTab(tab.key as typeof activeTab)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                isActive
-                  ? "bg-background text-foreground shadow-xs font-bold"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Icon className="size-3.5" />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </nav>
-
+      {/* Sidebar destinations set the active workspace view; keep this page focused without a second tab bar. */}
       {/* SUBVIEW 0: SALES PIPELINE (FOR SALES DEPT) */}
       {isSalesDept && activeTab === "sales-pipeline" && (
         <div className="space-y-4">
@@ -430,13 +408,15 @@ export function DepartmentProjectWorkspace(props: Props) {
               hideProjectSelector
               hideProjectsAndTeam
               recordsAreScoped
+              canCreateTask={props.canCreateTask}
               departmentCode={departmentCode}
               departmentName={departmentName}
               departmentLead={lead}
               records={records}
               teamMembers={props.team}
               projects={shownProjects.map((item) => ({
-                id: item.reference,
+                id: item.id,
+                reference: item.reference,
                 name: item.title,
                 customer: item.fields["customer"] || "Not recorded",
                 currentStage: item.fields["lifecycleStage"] || "Not recorded",
@@ -459,7 +439,7 @@ export function DepartmentProjectWorkspace(props: Props) {
               onStartTask={(id) =>
                 props.onUpdateTask(id, { status: "Open", fields: { workStatus: "In progress" } }, "Task started")
               }
-              onOpenTask={(task) => props.onOpenRecord(task.id)}
+              onOpenTask={props.onOpenTask}
             />
           </section>
 
@@ -471,7 +451,7 @@ export function DepartmentProjectWorkspace(props: Props) {
                   Project Deliverables ({documents.length})
                 </h3>
                 <button
-                  onClick={() => setActiveTab("records")}
+                  onClick={() => props.onOpenRecords ? props.onOpenRecords() : setActiveTab("records")}
                   className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   View all in Board <ArrowRight className="size-3" />
@@ -502,7 +482,7 @@ export function DepartmentProjectWorkspace(props: Props) {
                   Approvals & Reviews ({approvals.length})
                 </h3>
                 <button
-                  onClick={() => setActiveTab("approvals")}
+                  onClick={() => props.onOpenApprovals ? props.onOpenApprovals() : setActiveTab("approvals")}
                   className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   View all approvals <ArrowRight className="size-3" />
@@ -524,6 +504,21 @@ export function DepartmentProjectWorkspace(props: Props) {
               </div>
             </section>
           </div>
+          <details className="rounded-xl border border-border bg-card px-3 py-2.5">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold">
+              <span className="flex items-center gap-2"><Users className="size-3.5 text-primary" />Team & capacity</span>
+              <span className="text-muted-foreground">{team.length} members · open roster</span>
+            </summary>
+            <div className="mt-2 grid gap-1.5 border-t border-border/60 pt-2 sm:grid-cols-2 lg:grid-cols-3">
+              {team.map((member) => (
+                <div key={member.name} className="flex min-w-0 items-center justify-between gap-2 rounded border border-border/60 px-2 py-1.5 text-[11px]">
+                  <span className="min-w-0 truncate"><strong className="text-foreground">{member.name}</strong><span className="ml-1 text-muted-foreground">{member.role}</span></span>
+                  <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-primary">{member.level}</span>
+                </div>
+              ))}
+              {!team.length && <p className="text-[11px] text-muted-foreground">No team members recorded in this scope.</p>}
+            </div>
+          </details>
         </div>
       )}
 
@@ -536,13 +531,15 @@ export function DepartmentProjectWorkspace(props: Props) {
             hideProjectSelector
             hideProjectsAndTeam
             recordsAreScoped
+              canCreateTask={props.canCreateTask}
             departmentCode={departmentCode}
             departmentName={departmentName}
             departmentLead={lead}
             records={records}
             teamMembers={props.team}
             projects={shownProjects.map((item) => ({
-              id: item.reference,
+              id: item.id,
+              reference: item.reference,
               name: item.title,
               customer: item.fields["customer"] || "Not recorded",
               currentStage: item.fields["lifecycleStage"] || "Not recorded",
@@ -565,7 +562,7 @@ export function DepartmentProjectWorkspace(props: Props) {
             onStartTask={(id) =>
               props.onUpdateTask(id, { status: "Open", fields: { workStatus: "In progress" } }, "Task started")
             }
-            onOpenTask={(task) => props.onOpenRecord(task.id)}
+            onOpenTask={props.onOpenTask}
           />
         </section>
       )}
@@ -711,46 +708,6 @@ export function DepartmentProjectWorkspace(props: Props) {
         </section>
       )}
 
-      {/* SUBVIEW 6: TEAM & CAPACITY */}
-      {activeTab === "team" && (
-        <section aria-label="Department team roster" className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
-          <div className="border-b border-border/60 pb-3">
-            <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-              <Users className="size-4 text-primary" />
-              {all ? "Department Team & Competency" : "Assigned Task Owners"} ({team.length})
-            </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Active engineering personnel assigned to department commitments.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {team.map((member) => (
-              <div key={member.name} className="rounded-xl border border-border bg-muted/20 p-3.5 space-y-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <strong className="text-xs font-bold text-foreground block">{member.name}</strong>
-                    <span className="text-[11px] text-muted-foreground">{member.role}</span>
-                  </div>
-                  <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-primary">
-                    {member.level}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1 pt-1 border-t border-border/40">
-                  {member.skills?.slice(0, 3).map((skill) => (
-                    <span key={skill} className="rounded bg-secondary/80 px-1.5 py-0.2 font-mono text-[9px] text-secondary-foreground">
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-            {!team.length && (
-              <p className="text-xs text-muted-foreground py-4 col-span-3">No team members recorded in this project scope.</p>
-            )}
-          </div>
-        </section>
-      )}
       {advanceModalOpen && project && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-xl space-y-4">

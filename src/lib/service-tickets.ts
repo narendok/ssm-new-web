@@ -35,6 +35,7 @@ export type TicketReply = {
 
 export type DepartmentHelpRequest = {
   id: string;
+  ticketId?: string | undefined;
   departmentCode: string;
   departmentName: string;
   summary: string;

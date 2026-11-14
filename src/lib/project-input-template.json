@@ -96,7 +96,7 @@
     "hint": "Count, Classic / FD, speed and purpose such as UDS / IVN.",
     "lead": "EHW",
     "reviewers": ["FW", "SW"],
-    "consumers": ["QA", "TST"],
+    "consumers": ["QA", "EMF"],
     "required": true
   },
   {
@@ -106,7 +106,7 @@
     "hint": "Whether / where 120-ohm termination is required; topology.",
     "lead": "EHW",
     "reviewers": ["FW", "QA"],
-    "consumers": ["EMF", "TST"],
+    "consumers": ["EMF"],
     "required": true
   },
   {
@@ -126,7 +126,7 @@
     "hint": "Count, signal levels, ignition / switches, thresholds and protection.",
     "lead": "EHW",
     "reviewers": ["FW"],
-    "consumers": ["QA", "TST"],
+    "consumers": ["QA", "EMF"],
     "required": true
   },
   {
@@ -136,7 +136,7 @@
     "hint": "Count, voltage, current, load type and safe state.",
     "lead": "EHW",
     "reviewers": ["FW", "QA"],
-    "consumers": ["PUR", "TST"],
+    "consumers": ["PUR", "EMF"],
     "required": true
   },
   {
@@ -146,7 +146,7 @@
     "hint": "Separate high-side and low-side counts, current and protection.",
     "lead": "EHW",
     "reviewers": ["FW", "QA"],
-    "consumers": ["PUR", "TST"],
+    "consumers": ["PUR", "EMF"],
     "required": true
   },
   {
@@ -156,7 +156,7 @@
     "hint": "Count, sensor voltage / current ranges, accuracy and sampling.",
     "lead": "EHW",
     "reviewers": ["FW", "QA"],
-    "consumers": ["TST"],
+    "consumers": ["EMF"],
     "required": true
   },
   {
@@ -216,7 +216,7 @@
     "hint": "Explicit minimum / maximum °C, duty cycle and any required grade.",
     "lead": "EHW",
     "reviewers": ["MECH", "QA"],
-    "consumers": ["PUR", "TST"],
+    "consumers": ["PUR", "EMF"],
     "required": true
   },
   {
@@ -276,7 +276,7 @@
     "hint": "Protocols, API / HSI, update method, cybersecurity and ownership.",
     "lead": "FW",
     "reviewers": ["SW", "EHW", "SIT"],
-    "consumers": ["QA", "TST"],
+    "consumers": ["QA", "EMF"],
     "required": true
   },
   {
@@ -286,7 +286,7 @@
     "hint": "Assembly process, capacity, tooling, traceability and process controls.",
     "lead": "EMF",
     "reviewers": ["MECH", "EHW", "QA"],
-    "consumers": ["PUR", "TST"],
+    "consumers": ["PUR", "EMF"],
     "required": true
   },
   {
@@ -295,7 +295,7 @@
     "label": "Validation & production testing",
     "hint": "Acceptance limits, methods, sample size, jig / EOL needs and evidence references.",
     "lead": "QA",
-    "reviewers": ["EHW", "FW", "TST"],
+    "reviewers": ["EHW", "FW", "EMF"],
     "consumers": ["EMF", "PUR"],
     "required": true
   },

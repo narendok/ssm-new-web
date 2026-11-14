@@ -1,8 +1,9 @@
 import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
 import { taskProjectId } from "@/lib/department-scope";
 import { stageUploadAllowed } from '@/lib/stage-upload-access';
-import { SharedSupplierSelect } from "./SharedSupplierSelect";
-import { hardwareAttachmentForRecordType, hardwareStageForRecordType, recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
+import { SharedMasterSelect } from "./SharedMasterSelect";
+import { isSelectableMasterStatus } from "@/lib/shared-master-options";
+import { hardwareAttachmentForRecordType, hardwareStageForRecordType, recordFormSpec, recordFields, recordFieldValues, type RecordField } from "@/lib/record-form-catalogue";
 import { CANONICAL_STAGE_TEMPLATES, getRecordedProjectTrack, computeProgressiveStageAndTaskState, recordedCompletedStageCodes } from "@/lib/canonical-lifecycle";
 import { COMPANY_PHASES, readLifecycleBaseline, projectLifecycleStages, recordedStageOmissions } from "@/lib/lifecycle-baseline";
 import { projectLifecycleContext } from '@/lib/lifecycle-record-presentation';
@@ -15,6 +16,8 @@ import {
   resetSharedTestSamplePack,
 } from "@/lib/shared-test.functions";
 import { registerSharedDocument } from "@/lib/shared-vault.functions";
+import { getSharedDepartmentRoleConfiguration } from "@/lib/department-roles.functions";
+import { sharedTaskAssigneeOptions } from "@/lib/shared-task-assignees";
 import {
   beginControlledDocumentUpload,
   completeControlledDocumentUpload,
@@ -57,10 +60,17 @@ export function SharedTestWorkspace({
     download = useServerFn(getControlledDocumentDownload),
     listFiles = useServerFn(listControlledDocumentFiles);
   const registerDocument = useServerFn(registerSharedDocument);
+  const loadRoleConfiguration = useServerFn(getSharedDepartmentRoleConfiguration);
   const query = useQuery({
     queryKey: ["shared-test-workspace", membership.organizationId, membership.membershipId],
     queryFn: () => load(),
     refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    retry: 1,
+  });
+  const roleConfigurationQuery = useQuery({
+    queryKey: ["shared-department-role-configuration", membership.organizationId, membership.membershipId],
+    queryFn: () => loadRoleConfiguration(),
     refetchOnWindowFocus: true,
     retry: 1,
   });
@@ -174,14 +184,66 @@ export function SharedTestWorkspace({
   const targetDeptCode = adminDepartment ? (adminDepartment === "sales" ? "SAL" : adminDepartment === "hrops" ? "HR" : adminDepartment.toUpperCase()) : "";
   const resolvedAdminDept = adminDepartment ? data.departments.find(d => d.id === adminDepartment || d.code.toUpperCase() === targetDeptCode || d.code.toLowerCase() === adminDepartment.toLowerCase()) : null;
   const ownDepartment = admin ? (resolvedAdminDept?.id || data.departments.find(d => d.code === "EHW")?.id || data.departments[0]?.id) : data.departments.find((d) => d.code === actor.department_code)?.id;
+  const configuredRoles = roleConfigurationQuery.data?.roles ?? [];
   const selectedDepartment = values["department_id"] || ownDepartment || "";
-  const supplierOptions = sharedSupplierOptions(data.records);
+  // Prefer the server-provided minimal supplier directory: purchasing records
+  // are intentionally not exposed as full records to every department.
+  // Keep a visible-record fallback for older TEST snapshots until the shared
+  // directory migration is deployed everywhere.
+  const supplierOptions = sharedSupplierOptions(
+    data.supplierOptions.length
+      ? data.supplierOptions.map(option => ({ ...option, record_type: "Supplier" }))
+      : data.records,
+  );
   const originalRecord = data.records.find(record => record.id === values["record_id"]);
   const generatedReferenceBase = automaticRecordReference(data.records.find(r => r.id === values["project_id"] && r.record_type === "Project")?.reference || "", data.departments.find(d => d.id === selectedDepartment)?.code || "", values["record_type"] || "");
   const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : generatedReferenceBase, data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
   const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
   const generatedReference = generatedReferenceBase ? referenceAtRevision(generatedReferenceBase, selectedRevision) : "";
-  const projects = data.records.filter((r) => r.record_type === "Project");
+  const projects = data.records.filter((r) => r.record_type === "Project" && isSelectableMasterStatus(r.status));
+  const recordMasterOptions = (master: NonNullable<RecordField["master"]>) => {
+    const fromRecords = (types: string[]) => data.records
+      .filter(record => types.includes(record.record_type.toLowerCase()) && isSelectableMasterStatus(record.status))
+      .map(record => ({ value: record.id, label: `${record.reference} · ${record.title}` }));
+    switch (master) {
+      case "customers": return data.customerOptions.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
+      case "suppliers": return supplierOptions;
+      case "parts": return data.partOptions.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}${option.mpn ? ` · ${option.mpn}` : ""}` }));
+      case "products": return data.productOptions.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
+      case "projects": return projects.map(project => ({ value: project.id, label: `${project.reference} · ${project.title}` }));
+      case "people": return data.members.map(member => ({ value: member.id, label: `${member.display_name || "Unnamed member"} · ${data.departments.find(department => department.id === member.department_id)?.code || "Unassigned"}` }));
+      case "locations": return fromRecords(["location", "facility"]);
+      case "routes": return fromRecords(["production route", "route"]);
+      case "documentTypes": return [...new Set(data.documents.map(document => document.document_type).filter(Boolean))].sort().map(type => ({ value: type, label: type }));
+      default: return [];
+    }
+  };
+  const recordMasterValue = (field: RecordField) => {
+    if (field.master === "customers") return values["customerId"] || values["customer_id"] || values[field.key] || "";
+    if (field.master === "suppliers") return values["supplierId"] || values["supplier_id"] || values[field.key] || "";
+    if (field.master === "parts") return values["partId"] || values["part_id"] || values[field.key] || "";
+    if (field.master === "products") return values["productId"] || values["product_id"] || values[field.key] || "";
+    return values[field.key] || "";
+  };
+  const setRecordMasterValue = (field: RecordField, id: string) => {
+    setValues(previous => {
+      const next = { ...previous, [field.key]: id };
+      if (field.master === "customers") {
+        const selected = data.customerOptions.find(option => option.id === id);
+        Object.assign(next, { customerId: id, customer_id: id, customerName: selected?.title || "", customerCode: selected?.reference || "" });
+      } else if (field.master === "suppliers") {
+        const selected = data.supplierOptions.find(option => option.id === id);
+        Object.assign(next, { supplierId: id, supplier_id: id, supplierName: selected?.title || "", supplierCode: selected?.reference || "" });
+      } else if (field.master === "parts") {
+        const selected = data.partOptions.find(option => option.id === id);
+        Object.assign(next, { partId: id, part_id: id, partCode: selected?.reference || "", mpn: selected?.mpn || "" });
+      } else if (field.master === "products") {
+        const selected = data.productOptions.find(option => option.id === id);
+        Object.assign(next, { productId: id, product_id: id, productCode: selected?.reference || "" });
+      }
+      return next;
+    });
+  };
   const recordProject=projects.find(project=>project.id===(values["project_id"]||""));
   const recordBaseline=readLifecycleBaseline(String(recordProject?.fields['lifecycleBaseline']||''));
   const configuredRecordStages=recordBaseline?.stages ?? CANONICAL_STAGE_TEMPLATES.map(stage=>({code:stage.stageCode,name:stage.name,phase:stage.phaseCode,department:stage.defaultOwner}));
@@ -237,6 +299,18 @@ export function SharedTestWorkspace({
   const filteredTasks = data.tasks.filter((task) =>
     activeProjectId === "all" || taskProject(task.record_id) === activeProjectId,
   );
+  const profileSetupMissing =
+    !roleConfigurationQuery.isPending &&
+    !roleConfigurationQuery.isError &&
+    filteredTasks.some(
+      (task) =>
+        !sharedTaskAssigneeOptions(
+          task.department_id,
+          task.assignee_id,
+          data.members,
+          configuredRoles,
+        ).some((option) => option.configuredProfile),
+    );
   const filteredRecords = data.records.filter((r) => r.record_type !== "Project");
   const pending = data.approvals.filter((a) => a.outcome === "pending");
   const myTasks = data.tasks.filter(
@@ -286,7 +360,16 @@ export function SharedTestWorkspace({
         };
       if (form === "create_record") {
         if (!spec) throw new Error("No record types configured for this department.");
-        payload["fields"] = {...payload["fields"] as Record<string, SharedJson>, ...recordFieldValues(spec, values["record_type"] || "", {...values,projectId:values['project_id']||'',revision:selectedRevision,...(procurementTrack(values["record_type"] || "") ? {procurementTrack:procurementTrack(values["record_type"] || "")!} : {})})};
+        const recordType = values["record_type"] || "";
+        const recordValues = {...values,projectId:values['project_id']||'',revision:selectedRevision,...(procurementTrack(recordType) ? {procurementTrack:procurementTrack(recordType)!} : {})};
+        const mappedFields = recordFieldValues(spec, recordType, recordValues);
+        const masterIdFields: Record<string, string> = { customers: "customerId", suppliers: "supplierId", parts: "partId", products: "productId" };
+        for (const item of recordFields(spec, recordType)) {
+          const idField = item.master ? masterIdFields[item.master] : undefined;
+          const selectedId = idField ? values[idField] || values[item.key] : item.key === "projectId" ? values["project_id"] : values[item.key];
+          if (idField && selectedId) mappedFields[idField] = selectedId;
+        }
+        payload["fields"] = {...payload["fields"] as Record<string, SharedJson>, ...mappedFields};
         const mappedStage=hardwareStageForRecordType(values["record_type"]||"")?.code||recordAttachmentStageCode;
         if(mappedStage){
           payload["currentStage"]=mappedStage;
@@ -523,6 +606,16 @@ export function SharedTestWorkspace({
                     )}
                   </div>
                 </div>
+                {profileSetupMissing && (
+                  <p className="text-xs text-muted-foreground" role="status">
+                    Some task assignments are unavailable until an Admin maps an active L1–L4 role to a department member in Settings. Existing assignments are preserved.
+                  </p>
+                )}
+                {roleConfigurationQuery.isError && (
+                  <p className="text-xs text-destructive" role="alert">
+                    Role profiles could not be loaded. Assignment changes are disabled; existing assignments are preserved.
+                  </p>
+                )}
                 <div className="overflow-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
@@ -734,6 +827,15 @@ export function SharedTestWorkspace({
                           admin ||
                           (lead && task.department_id === ownDepartment) ||
                           (actor.role === "member" && task.assignee_id === actor.membership_id);
+                        const assigneeOptions = sharedTaskAssigneeOptions(
+                          task.department_id,
+                          task.assignee_id,
+                          data.members,
+                          configuredRoles,
+                        );
+                        const hasConfiguredAssignee = assigneeOptions.some(
+                          (option) => option.configuredProfile,
+                        );
                         return (
                           <tr className="border-t" key={task.id}>
                             <td className="p-2">
@@ -758,7 +860,7 @@ export function SharedTestWorkspace({
                                 <select
                                   aria-label={`Assignee ${task.title}`}
                                   className={input}
-                                  disabled={busy || !canEdit}
+                                  disabled={busy || !canEdit || roleConfigurationQuery.isPending || roleConfigurationQuery.isError || !hasConfiguredAssignee}
                                   value={task.assignee_id || ""}
                                   onChange={(e) =>
                                     void run("update_task", {
@@ -770,17 +872,11 @@ export function SharedTestWorkspace({
                                   }
                                 >
                                   <option value="">Unassigned</option>
-                                  {data.members
-                                    .filter(
-                                      (m) =>
-                                        m.department_id === task.department_id &&
-                                        m.role !== "viewer",
-                                    )
-                                    .map((m) => (
-                                      <option key={m.id} value={m.id}>
-                                        {m.display_name}
-                                      </option>
-                                    ))}
+                                  {assigneeOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
                                 </select>
                               ) : (
                                 memberName(task.assignee_id)
@@ -1005,6 +1101,18 @@ export function SharedTestWorkspace({
             </DialogHeader>
             <form onSubmit={(e) => void submit(e)} className="grid min-w-0 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
               {form !== "update_record" && field("title", "Title")}
+              {form === "update_record" && originalRecord && (
+                <div aria-label="Saved master links" className="rounded-md border border-border p-3 text-xs sm:col-span-2">
+                  <div className="font-semibold">Linked records</div>
+                  {([ ["Project", originalRecord.fields["projectId"] || originalRecord.fields["project_id"] || originalRecord.fields["linkedProjectId"], [...data.projectOptions, ...data.records.filter(record => record.record_type === "Project")]],
+                      ["Supplier", originalRecord.fields["supplierId"] || originalRecord.fields["supplier_id"], data.supplierOptions] ] as const).map(([label, identity, options]) => {
+                    if (!identity) return null;
+                    const master = options.find(option => option.id === identity || option.reference === identity);
+                    return <div key={label} className="mt-1"><span className="text-muted-foreground">{label}: </span>{master ? `${master.reference} · ${master.title}` : `Unresolved link · ${String(identity)}`}</div>;
+                  })}
+                  <p className="mt-2 text-muted-foreground">These saved links are preserved when revising findings and notes.</p>
+                </div>
+              )}
               {(form === "create_project" || form === "create_record") &&
                 field("reference", "Controlled reference (HLPL-…)")}
                 {form === "create_record" && <>
@@ -1013,28 +1121,21 @@ export function SharedTestWorkspace({
                     <option value="">Choose record type…</option>{(spec?.types || []).map(type => <option key={type} value={type}>{type}</option>)}
                   </select>
                 </label>
-                {spec && recordFields(spec,values["record_type"] || "").filter(item => item.key !== "procurementTrack" || !procurementTrack(values["record_type"] || "")).map(item => <label key={item.key} className="grid gap-1 text-xs">{item.label}
-                  {item.readOnly ? <input className={input} value={item.automaticLabel || item.automaticValue || ""} readOnly aria-readonly="true" /> : item.master === "suppliers" ? <SharedSupplierSelect options={supplierOptions} value={values[item.key] || ""} onChange={value => setValues(v => ({...v,[item.key]:value}))} /> : item.options ? <select className={input} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))}><option value="">Choose…</option>{item.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input className={input} type={item.kind === "date" ? "date" : "text"} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))} />}
+                {spec && recordFields(spec,values["record_type"] || "").filter(item => (item.key !== "procurementTrack" || !procurementTrack(values["record_type"] || "")) && item.key !== "projectId").map(item => <label key={item.key} className="grid gap-1 text-xs">{item.label}
+                  {item.readOnly ? <input className={input} value={item.automaticLabel || item.automaticValue || ""} readOnly aria-readonly="true" /> : item.master ? <SharedMasterSelect label={item.label} options={recordMasterOptions(item.master)} value={recordMasterValue(item)} required={Boolean(item.required)} onChange={value => setRecordMasterValue(item, value)} /> : item.options ? <select className={input} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))}><option value="">Choose…</option>{item.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input className={input} type={item.kind === "date" ? "date" : "text"} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))} />}
                 </label>)}
               </>}
               {(form === "create_record" || form === "create_task") && (
-                <label className="grid gap-1 text-xs">
-                  Project
-                  <select
+                <div className="grid gap-1 text-xs">
+                  <SharedMasterSelect
+                    label="Project"
                     required
-                    className={input}
                     disabled={Boolean(persistedRecord)}
                     value={values["project_id"] || ""}
-                    onChange={(e) => setValues((v) => ({ ...v, project_id: e.target.value }))}
-                  >
-                    <option value="">Select project</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.reference} · {p.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    onChange={(projectId) => setValues((current) => ({ ...current, project_id: projectId }))}
+                    options={recordMasterOptions("projects")}
+                  />
+                </div>
               )}
               {form==="create_record"&&recordProject&&<section aria-label="Automatic project phase and stage" className="rounded-md border bg-muted/20 p-2 text-xs sm:col-span-2"><p className="font-medium">Project phase and record stage · automatic</p><p>{recordProjectPhase?`${recordProjectPhase[0]} · ${recordProjectPhase[1]}`:recordProjectStage?.phaseTitle||"Canonical phase not recorded"}</p><p>{recordProjectStage?`${recordProjectStage.stageCode} · ${recordProjectStage.name}`:recordProjectStoredStageLabel?`Legacy stage label: ${recordProjectStoredStageLabel} · canonical stage code not recorded`:"No current lifecycle stage is recorded for this project."}</p>{!recordProjectStage&&recordProjectStoredStageLabel&&<p className="text-muted-foreground">Stage-bound upload stays locked until this legacy label is reconciled to a canonical stage; no phase is guessed.</p>}{mappedRecordAttachment&&recordProjectStage&&<p className="text-muted-foreground">This record’s original maps to {mappedRecordAttachment.stageCode}; upload is available at that stage or the immediately previous stage.</p>}</section>}
               {form==="create_record"&&recordAttachmentSpec&&<div className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3 text-xs sm:col-span-2"><label className="grid gap-1">{recordAttachmentSpec.label} · optional, attached to this record<input className={input} aria-label={recordAttachmentSpec.label} type="file" accept={recordAttachmentSpec.accept} disabled={busy||Boolean(persistedRecord)||!values["project_id"]||!recordAttachmentAllowed} onChange={event=>setRecordFile(event.target.files?.[0]||null)}/>{recordFile&&<span className="text-muted-foreground">Selected: {recordFile.name} · {(recordFile.size/1024).toFixed(1)} KB</span>}<span className="text-muted-foreground">{recordAttachmentAllowed?`One Save creates the Draft record and privately links its original. Upload does not advance the project or count as approval or release.`:!recordProjectStageCode?"Upload is locked because this project has no canonical current-stage code. The Draft record can still be saved now.":`Upload is locked until ${recordAttachmentSpec.stageCode} or its immediately preceding stage. Current project stage: ${recordProjectStageCode}.`}</span></label></div>}

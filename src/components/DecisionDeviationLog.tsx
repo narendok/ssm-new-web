@@ -363,23 +363,16 @@ export function OfficialDecisionLogModal({
                   <>
                     <label className="block text-xs">
                       Project
-                      <select
-                        aria-label="Decision project"
+                      <SharedMasterSelect
+                        label="Decision project"
                         required
                         value={project}
-                        onChange={(e) => {
-                          setProject(e.target.value);
+                        options={projects.map((item) => ({ value: item.reference, label: `${item.reference} · ${item.title}` }))}
+                        onChange={(value) => {
+                          setProject(value);
                           setStage("");
                         }}
-                        className="mt-1 h-9 w-full rounded-lg border border-input bg-background px-2"
-                      >
-                        <option value="">Choose project…</option>
-                        {projects.map((p) => (
-                          <option key={p.id} value={p.reference}>
-                            {p.reference} · {p.title}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </label>
                     <label className="block text-xs">
                       Workflow stage

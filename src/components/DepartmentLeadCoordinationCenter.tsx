@@ -32,6 +32,8 @@ import {
   Building,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SharedMasterSelect } from "@/components/SharedMasterSelect";
+import { DEMO_ORG_LEVELS } from "@/lib/demo-organization-roster";
 
 export interface TeamMember {
   name: string;
@@ -58,6 +60,7 @@ export interface TaskRecord {
 
 export interface ProjectSummary {
   id: string;
+  reference?: string;
   name: string;
   customer: string;
   currentStage: string;
@@ -93,8 +96,9 @@ interface DepartmentLeadCoordinationCenterProps {
   hideProjectsAndTeam?: boolean;
   initialAssignee?: string;
   onStartTask?: (taskId: string) => void;
-  onOpenTask?: (task: TaskRecord) => void;
+  onOpenTask?: ((task: TaskRecord) => void) | undefined;
   readOnly?: boolean | undefined;
+  canCreateTask?: boolean | undefined;
 }
 
 const DEFAULT_PROJECTS: ProjectSummary[] = [
@@ -161,6 +165,7 @@ export function DepartmentLeadCoordinationCenter({
   onStartTask,
   onOpenTask,
   readOnly = false,
+  canCreateTask = true,
 }: DepartmentLeadCoordinationCenterProps) {
   const [activeTab, setActiveTab] = useState<"tasks" | "projects" | "teams">("tasks");
   const [viewMode, setViewMode] = useState<"kanban" | "table" | "checklist">("checklist");
@@ -178,7 +183,7 @@ export function DepartmentLeadCoordinationCenter({
   // New task form state
   const [newTaskTitle, setNewTaskTitle] = useState<string>("");
   const [newTaskProject, setNewTaskProject] = useState<string>(
-    projectScope !== "all" ? projectScope : ""
+    projectScope !== "all" ? projects?.find(project => [project.id, project.reference].includes(projectScope))?.id || "" : ""
   );
   const [newTaskAssignee, setNewTaskAssignee] = useState<string>(departmentLead);
   const [newTaskPriority, setNewTaskPriority] = useState<"Low" | "Normal" | "High" | "Critical">("Normal");
@@ -191,8 +196,8 @@ export function DepartmentLeadCoordinationCenter({
   // New team member form state
   const [newMemberName, setNewMemberName] = useState<string>("");
   const [newMemberRole, setNewMemberRole] = useState<string>("");
-  const [newMemberLevel, setNewMemberLevel] = useState<string>("Level 3");
-  const [newMemberScore, setNewMemberScore] = useState<string>("3.70/4");
+  const [newMemberLevel, setNewMemberLevel] = useState<string>(DEMO_ORG_LEVELS[3]);
+  const [newMemberScore, setNewMemberScore] = useState<string>("Not assessed · DEMO ONLY");
   const [newMemberSkills, setNewMemberSkills] = useState<string>("");
 
   // Filter tasks to department tasks
@@ -257,7 +262,7 @@ export function DepartmentLeadCoordinationCenter({
 
   const handleOpenCreateTask = (assignee?: string) => {
     setNewTaskAssignee(assignee ?? departmentLead);
-    setNewTaskProject(projectScope !== "all" ? projectScope : "");
+    setNewTaskProject(projectScope !== "all" ? projects?.find(project => [project.id, project.reference].includes(projectScope))?.id || "" : "");
     setNewTaskTitle("");
     setNewTaskPriority("Normal");
     setNewTaskDueDate(businessDate());
@@ -269,6 +274,10 @@ export function DepartmentLeadCoordinationCenter({
   const handleSaveNewTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim() || !newTaskAssignee || taskSaveLock.current) return;
+    if (!newTaskProject) {
+      setTaskSaveError("Select a saved project so this task can follow its lifecycle stage and RACI owner.");
+      return;
+    }
     taskSaveLock.current = true; setSavingTask(true); setTaskSaveError("");
     try { const saved = await onCreateTask({
       title: newTaskTitle.trim(),
@@ -296,7 +305,7 @@ export function DepartmentLeadCoordinationCenter({
       role: newMemberRole.trim(),
       level: newMemberLevel,
       score: newMemberScore,
-      skills: skillsList.length ? skillsList : ["Department Operations", "IATF 16949"],
+      skills: skillsList,
     });
     setIsAddMemberOpen(false);
     setNewMemberName("");
@@ -349,7 +358,7 @@ export function DepartmentLeadCoordinationCenter({
                 </select>
               </div>
 
-              {!readOnly && (
+              {!readOnly && canCreateTask && (
                 <Button
                   size="sm"
                   onClick={() => handleOpenCreateTask()}
@@ -429,7 +438,7 @@ export function DepartmentLeadCoordinationCenter({
           )}
         </div>
 
-        {hideHeader && activeTab === "tasks" && !readOnly && <Button type="button" size="sm" onClick={() => handleOpenCreateTask()} className="h-8 gap-1.5 text-xs"><Plus className="size-3.5"/>Add Task</Button>}
+        {hideHeader && activeTab === "tasks" && !readOnly && canCreateTask && <Button type="button" size="sm" onClick={() => handleOpenCreateTask()} className="h-8 gap-1.5 text-xs"><Plus className="size-3.5"/>Add Task</Button>}
         {/* View Mode Toggle when on Tasks tab */}
         {activeTab === "tasks" && (
           <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/40 p-1">
@@ -605,8 +614,8 @@ export function DepartmentLeadCoordinationCenter({
                               </select>
                             </div>
                           </td>
-                          <td className="px-3 py-3 font-mono text-[11px] text-muted-foreground">
-                            {task.fields["dueDate"] || "No due date"}
+                          <td className={`px-3 py-3 font-mono text-[11px] ${task.fields["dueDateWarning"] ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`} title={task.fields["dueDateWarning"] || undefined}>
+                            {task.fields["dueDateWarning"] ? `Review · ${task.fields["storedDueDate"]}` : task.fields["dueDate"] || "No due date"}
                           </td>
                           <td className="px-3 py-3 text-right">
                             <select
@@ -669,7 +678,7 @@ export function DepartmentLeadCoordinationCenter({
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
-                        {proj.id}
+                        {proj.reference || proj.id}
                       </span>
                       <span className="rounded bg-secondary px-2 py-0.5 font-mono text-[10px] font-semibold uppercase text-secondary-foreground">
                         {proj.currentStage.split("·")[0]?.trim()}
@@ -727,7 +736,7 @@ export function DepartmentLeadCoordinationCenter({
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      onProjectScopeChange(proj.id);
+                      onProjectScopeChange(proj.reference || proj.id);
                       setActiveTab("tasks");
                     }}
                     className="h-8 gap-1.5 text-xs font-semibold"
@@ -832,6 +841,7 @@ export function DepartmentLeadCoordinationCenter({
                             {skill}
                           </span>
                         ))}
+                        {!member.skills.length && <span className="text-[11px] text-muted-foreground">No skills recorded</span>}
                       </div>
                     </div>
                   </div>
@@ -850,7 +860,7 @@ export function DepartmentLeadCoordinationCenter({
                       View Tasks ({taskCount})
                     </Button>
 
-                    {!readOnly && (
+                    {!readOnly && canCreateTask && (
                       <Button
                         size="sm"
                         onClick={() => handleOpenCreateTask(member.name)}
@@ -906,9 +916,9 @@ export function DepartmentLeadCoordinationCenter({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Project
+                    Project *
                   </label>
-                  <CompactFilterSelect label="Task project" icon={FolderKanban} value={newTaskProject} onChange={setNewTaskProject} options={[{value:"",label:"Department task — no project"},...projects.map(p=>({value:p.id,label:`${p.id} · ${p.name}`}))]}/>
+                  <SharedMasterSelect label="Task project" required options={projects.map(p=>({value:p.id,label:`${p.reference || p.id} · ${p.name}`}))} value={newTaskProject} onChange={setNewTaskProject}/>
                 </div>
 
                 <div>
@@ -1036,27 +1046,28 @@ export function DepartmentLeadCoordinationCenter({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Competency Level
+                    Organization level
                   </label>
                   <select
                     value={newMemberLevel}
                     onChange={(e) => setNewMemberLevel(e.target.value)}
                     className="mt-1 h-9 w-full rounded-xl border border-border bg-background px-2.5 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                   >
-                    <option value="Level 2">Level 2 - Practitioner</option>
-                    <option value="Level 3">Level 3 - Independent</option>
-                    <option value="Level 4">Level 4 - Advanced Specialist</option>
+                    {Object.entries(DEMO_ORG_LEVELS).map(([level, label]) => (
+                      <option key={level} value={label}>{label}</option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Skill Score
+                    Skill assessment
                   </label>
                   <input
                     type="text"
                     value={newMemberScore}
                     onChange={(e) => setNewMemberScore(e.target.value)}
+                    placeholder="Not assessed"
                     className="mt-1 h-9 w-full rounded-xl border border-border bg-background px-3 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
@@ -1068,7 +1079,7 @@ export function DepartmentLeadCoordinationCenter({
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Altium Designer, High-Speed Routing, ISO 7637-2"
+                  placeholder="Enter assessed skills only; leave blank if unknown"
                   value={newMemberSkills}
                   onChange={(e) => setNewMemberSkills(e.target.value)}
                   className="mt-1 h-9 w-full rounded-xl border border-border bg-background px-3 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary"
@@ -1315,9 +1326,9 @@ function TaskChecklistView({
                           </select>
 
                           {/* Due Date */}
-                          <span className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground shrink-0">
+                          <span className={`flex items-center gap-1 font-mono text-[10px] shrink-0 ${task.fields["dueDateWarning"] ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`} title={task.fields["dueDateWarning"] || undefined}>
                             <Calendar className="size-3" />
-                            {task.fields["dueDate"] || "No due"}
+                            {task.fields["dueDateWarning"] ? `Review · ${task.fields["storedDueDate"]}` : task.fields["dueDate"] || "No due"}
                           </span>
 
                           {/* Status changer */}
@@ -1482,9 +1493,9 @@ function KanbanTaskCard({
         <span className="rounded bg-secondary/80 px-1.5 py-0.5 text-secondary-foreground font-semibold">
           {projectRef}
         </span>
-        <span className="flex items-center gap-1">
+        <span className={`flex items-center gap-1 ${task.fields["dueDateWarning"] ? "text-amber-700 dark:text-amber-300" : ""}`} title={task.fields["dueDateWarning"] || undefined}>
           <Calendar className="size-3" />
-          {task.fields["dueDate"] || "No due date"}
+          {task.fields["dueDateWarning"] ? `Review · ${task.fields["storedDueDate"]}` : task.fields["dueDate"] || "No due date"}
         </span>
       </div>
 

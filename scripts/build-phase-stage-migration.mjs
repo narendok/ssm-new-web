@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import {additionalLifecycleStages,extensionApplicableTracks,STAGE_DELIVERABLE_BINDINGS} from '../src/lib/lifecycle-stage-extensions.ts';
-const path='supabase/migrations/20261107043504_complete_phase_stage_registry.sql';
+const path='supabase/migrations/20261107094957_complete_phase_stage_registry.sql';
 const q=value=>`'${String(value).replaceAll("'","''")}'`;
 const arr=values=>`ARRAY[${values.map(q).join(',')}]::text[]`;
 const stages=additionalLifecycleStages();

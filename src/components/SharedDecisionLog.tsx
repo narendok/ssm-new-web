@@ -6,6 +6,7 @@ import { getSharedDecisions,mutateSharedDecision,type SharedDecisionPayload } fr
 import { getSharedTestWorkspace } from "@/lib/shared-test.functions";
 import { getCoordination } from "./SharedProjectAnalysis";
 import { CANONICAL_STAGES } from "@/lib/department-chronicles";
+import { isSelectableMasterStatus } from "@/lib/shared-master-options";
 import type { TestMembership } from "@/lib/test-auth.functions";
 import type { DecisionRecord } from "./CompanyDirectoryAndLegalHub";
 export function SharedDecisionLog({membership,departmentCode,activeProject,initialQuery,onClose}:{membership:TestMembership;departmentCode?:string|undefined;activeProject?:string|undefined;initialQuery?:string|undefined;onClose:()=>void}){
@@ -18,7 +19,7 @@ export function SharedDecisionLog({membership,departmentCode,activeProject,initi
   const actor=workspace.data?.membership;
   const code=membership.role==="admin"?({sales:"SAL",sal:"SAL",hrops:"HR"}[departmentCode||""]||departmentCode?.toUpperCase()):membership.departmentCode;
   const department=workspace.data?.departments.find(d=>d.code===code);
-  const projects=(common.data?.records||[]).filter(r=>r.type==="Project");
+  const projects=(common.data?.records||[]).filter(r=>r.type==="Project"&&isSelectableMasterStatus(r.status));
   const entries:DecisionRecord[]=(query.data?.entries||[]).map(e=>({id:e.id,projectCode:e.project_code||"",timestamp:e.created_at,actor:e.author_name,actorRole:e.author_role.replaceAll("_"," "),scope:e.scope,stage:e.stage||undefined,departmentCode:e.department_code,authorId:e.author_id,status:e.status,title:e.title,rationale:e.rationale,impactedDocuments:e.source_references,actionItems:e.conditions,...(e.reviewer_name?{approvedBy:e.reviewer_name}:{}),...(e.reviewed_at?{approvedAt:e.reviewed_at}:{})}));
   async function write(action:"create"|"approve"|"reject"|"visibility",payload:SharedDecisionPayload,key?:string){
     const signature=JSON.stringify([action,payload]);const requestId=key||pending.current.get(signature)||crypto.randomUUID();pending.current.set(signature,requestId);

@@ -6,7 +6,7 @@ This is implementation/verification evidence. The consolidated handoff remains t
 
 Baseline: web `b6de4c3`, Android `5d10316`. GitHub fetch on 24 October found both local baselines equal to origin/main before these edits. Existing unrelated local files were preserved.
 
-The approved backend remains `rzskhndweihuczbdhoxk`. The Supabase connector lacked access to it; no substitute project was used. Migration `20261021134427_business_workspace_contract.sql` was tested in a rollback-only transaction through Lovable, then deployed through its SQL editor. Verification showed RLS enabled, anonymous RPC access false, direct authenticated table access false, 27 memberships preserved, and zero seeded business items immediately after deployment.
+Historical 24 October deployment target: `rzskhndweihuczbdhoxk`. The current web TEST target was later moved to `jiqbxcqlywvvmhbgirzl`; this dated evidence records the earlier deployment only. The Supabase connector lacked access to it; no substitute project was used. Migration `20261021134427_business_workspace_contract.sql` was tested in a rollback-only transaction through Lovable, then deployed through its SQL editor. Verification showed RLS enabled, anonymous RPC access false, direct authenticated table access false, 27 memberships preserved, and zero seeded business items immediately after deployment.
 
 Migration `20261024084915_business_workspace_validation_guards.sql` contains the final RPC corrections. **Deployed on 24 October after explicit user approval.** The initial automatic-review rejection was resolved by that approval. Lovable returned `validation guards deployed`, with 27 memberships and the one synthetic claim preserved. Source tests include both migrations.
 

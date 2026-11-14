@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { InputSheet } from "@/lib/project-inputs";
 import type { InputEvent } from "@/lib/project-inputs.functions";
 import { ProjectPhaseTimeline } from "./ProjectPhaseTimeline";
@@ -18,16 +17,6 @@ type RecordRow = {
   status: string;
   fields: Record<string, string>;
 };
-const tabs = [
-  "Overview",
-  "Operating requirements",
-  "Compliance baseline",
-  "Commercial & BOM",
-  "Phases & gates",
-  "Change control",
-  "Linked records",
-  "Revision history",
-] as const;
 export function ProjectMasterSpecSheet({
   project,
   records,
@@ -51,7 +40,6 @@ export function ProjectMasterSpecSheet({
   onOpenDocument: (id: string) => void;
   canViewCommercial: boolean;
 }) {
-  const [tab, setTab] = useState<(typeof tabs)[number]>("Overview");
   const f = project.fields;
   const baseline = readLifecycleBaseline(f["lifecycleBaseline"]);
   const track = getRecordedProjectTrack(f);
@@ -126,25 +114,12 @@ export function ProjectMasterSpecSheet({
           </button>
         )}
       </header>
-      <nav aria-label="PMSS tabs" className="flex flex-wrap gap-1">
-        {tabs.map((t) => (
-          <button
-            key={t}
-            aria-pressed={tab === t}
-            className={`rounded px-3 py-2 text-xs ${tab === t ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
-      </nav>
-      {tab === "Overview" && (
-        <dl className="grid gap-2 sm:grid-cols-3">
-          {values(["customer", "track", "owner", "targetDate", "scope", "currentStage"])}
-        </dl>
-      )}
-      {tab === "Operating requirements" && (
-        <>
+      <dl aria-label="Project overview" className="grid gap-2 sm:grid-cols-3">
+        {values(["customer", "track", "owner", "targetDate", "scope", "currentStage"])}
+      </dl>
+      <details className="rounded-lg border border-border px-3 py-2">
+        <summary className="cursor-pointer text-xs font-semibold">Operating requirements</summary>
+        <div className="mt-2 space-y-2 border-t border-border/60 pt-2">
           <p className="text-xs">
             Requirements sheet:{" "}
             {inputSheet
@@ -165,10 +140,11 @@ export function ProjectMasterSpecSheet({
               "use_case",
             ])}
           </dl>
-        </>
-      )}
-      {tab === "Compliance baseline" && (
-        <>
+        </div>
+      </details>
+      <details className="rounded-lg border border-border px-3 py-2">
+        <summary className="cursor-pointer text-xs font-semibold">Compliance baseline</summary>
+        <div className="mt-2 space-y-2 border-t border-border/60 pt-2">
           <dl className="grid gap-2 sm:grid-cols-3">
             {values(["certifications", "compliance", "certificationScope"])}
           </dl>
@@ -176,10 +152,12 @@ export function ProjectMasterSpecSheet({
             Certificates and test reports are evidence records; a catalog requirement is not a
             certificate.
           </p>
-        </>
-      )}
-      {tab === "Commercial & BOM" &&
-        (canViewCommercial ? (
+        </div>
+      </details>
+      <details className="rounded-lg border border-border px-3 py-2">
+        <summary className="cursor-pointer text-xs font-semibold">Commercial & BOM</summary>
+        <div className="mt-2 border-t border-border/60 pt-2">
+        {canViewCommercial ? (
           <dl className="grid gap-2 sm:grid-cols-3">
             {values([
               "targetCost",
@@ -194,9 +172,12 @@ export function ProjectMasterSpecSheet({
           <p className="text-sm text-muted-foreground">
             Commercial values remain in the authorized Purchasing / Finance workspace.
           </p>
-        ))}
-      {tab === "Phases & gates" && (
-        <>
+        )}
+        </div>
+      </details>
+      <details className="rounded-lg border border-border px-3 py-2">
+        <summary className="cursor-pointer text-xs font-semibold">Phases & gates · {stages.length}</summary>
+        <div className="mt-2 space-y-2 border-t border-border/60 pt-2">
           <ProjectPhaseTimeline fields={f} />
           <div className="max-h-96 overflow-auto">
             <table className="w-full text-left text-xs">
@@ -230,10 +211,11 @@ export function ProjectMasterSpecSheet({
               </tbody>
             </table>
           </div>
-        </>
-      )}
-      {tab === "Change control" && (
-        <div className="space-y-2">
+        </div>
+      </details>
+      <details className="rounded-lg border border-border px-3 py-2">
+        <summary className="cursor-pointer text-xs font-semibold">Change control · {changes.length}</summary>
+        <div className="mt-2 space-y-2 border-t border-border/60 pt-2">
           <p className="text-xs text-muted-foreground">
             Post-freeze changes use the existing requirements amendment and authorized impact-review
             workflow.
@@ -251,9 +233,10 @@ export function ProjectMasterSpecSheet({
             <p className="text-sm">No change records are visible in this scope.</p>
           )}
         </div>
-      )}
-      {tab === "Linked records" && (
-        <div className="grid gap-2 sm:grid-cols-2">
+      </details>
+      <details className="rounded-lg border border-border px-3 py-2">
+        <summary className="cursor-pointer text-xs font-semibold">Linked records · {linked.length + documents.length}</summary>
+        <div className="mt-2 grid gap-2 border-t border-border/60 pt-2 sm:grid-cols-2">
           {linked.map((r) => (
             <button
               className="rounded border border-border p-2 text-left text-xs"
@@ -273,9 +256,10 @@ export function ProjectMasterSpecSheet({
             </button>
           ))}
         </div>
-      )}
-      {tab === "Revision history" && (
-        <>
+      </details>
+      <details className="rounded-lg border border-border px-3 py-2">
+        <summary className="cursor-pointer text-xs font-semibold">Revision history · {events.length}</summary>
+        <div className="mt-2 space-y-2 border-t border-border/60 pt-2">
           <dl className="grid gap-2 sm:grid-cols-2">
             {values([
               "revision",
@@ -297,8 +281,8 @@ export function ProjectMasterSpecSheet({
               Revision {e.revision} · {e.action} · {e.actor_name} · {e.created_at}
             </p>
           ))}
-        </>
-      )}
+        </div>
+      </details>
     </section>
   );
 }

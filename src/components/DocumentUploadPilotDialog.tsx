@@ -8,8 +8,10 @@ import {
 } from "@/components/ui/dialog";
 import { saveLocalAttachment, removeLocalAttachment } from "@/lib/local-attachments";
 import { projectLifecycleContext } from "@/lib/lifecycle-record-presentation";
+import { SharedMasterSelect } from "@/components/SharedMasterSelect";
 import {
   prepareUploadDraft,
+  eligibleUploadDepartments,
   sourceGerberPackages,
   UPLOAD_TYPES,
   type UploadDepartment,
@@ -208,44 +210,34 @@ export function DocumentUploadPilotDialog({
           </div>
           {needsProject && (
             <div className="space-y-1">
-            <label className="block text-xs font-medium">
-              Project
-              <select
-                aria-label="Document project"
+              <SharedMasterSelect
+                label="Document project"
                 value={metadata.projectId}
-                onChange={(e) =>
-                  setMetadata((m) => ({ ...m, projectId: e.target.value, sourceDocumentId: "" }))
+                required
+                options={projects.filter((p) => !p.archived).map((p) => ({
+                  value: p.id,
+                  label: `${p.reference} · ${p.title}`,
+                }))}
+                onChange={(projectId) =>
+                  setMetadata((m) => ({ ...m, projectId, sourceDocumentId: "" }))
                 }
-                className={fieldClass}
-              >
-                <option value="">Select existing project…</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.reference} · {p.title}
-                  </option>
-                ))}
-              </select>
-            </label>
+              />
             {metadata.projectId && <p className="text-[11px] text-muted-foreground">Project context: {lifecycleContext?.phase ?? "Phase not mapped"} · {lifecycleContext?.stage ?? "Stage not recorded"}. Upload remains Draft; this does not complete a stage or approve the file.</p>}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs font-medium">
-              Owning department
-              <select
-                aria-label="Owning department"
+            <div className="space-y-1 text-xs font-medium">
+              <SharedMasterSelect
+                label="Owning department"
                 value={metadata.departmentId}
-                onChange={(e) => set("departmentId", e.target.value)}
-                className={fieldClass}
-              >
-                <option value="">Select department…</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.code} · {d.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+                required
+                options={eligibleUploadDepartments(departments, actor).map((d) => ({
+                  value: d.id,
+                  label: `${d.code} · ${d.name}`,
+                }))}
+                onChange={(departmentId) => set("departmentId", departmentId)}
+              />
+            </div>
             <label className="text-xs font-medium">
               Revision
               <input
@@ -258,27 +250,22 @@ export function DocumentUploadPilotDialog({
             </label>
           </div>
           {needsSource && (
-            <label className="block text-xs font-medium">
-              Source Gerber package
-              <select
-                aria-label="Source Gerber package"
+            <div className="space-y-1 text-xs font-medium">
+              <SharedMasterSelect
+                label="Source Gerber package"
                 value={metadata.sourceDocumentId}
-                onChange={(e) => set("sourceDocumentId", e.target.value)}
-                className={fieldClass}
-              >
-                <option value="">Select this project's Gerber revision…</option>
-                {packages.map((p) => (
-                  <option key={p.documentId} value={p.documentId}>
-                    {documents.find((d) => d.id === p.documentId)?.title} · Rev {p.revision} ·{" "}
-                    {p.checksum.slice(0, 10)}
-                  </option>
-                ))}
-              </select>
+                required
+                options={packages.map((p) => ({
+                  value: p.documentId,
+                  label: `${documents.find((d) => d.id === p.documentId)?.title ?? p.documentId} · Rev ${p.revision} · ${p.checksum.slice(0, 10)}`,
+                }))}
+                onChange={(sourceDocumentId) => set("sourceDocumentId", sourceDocumentId)}
+              />
               <span className="mt-1 block font-normal text-muted-foreground">
                 Upload a Gerber ZIP for this project first. Its exact revision and checksum will be
                 linked; this is not approval.
               </span>
-            </label>
+            </div>
           )}
         </fieldset>
         {error && (

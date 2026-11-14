@@ -32,7 +32,7 @@ Date: 21 October 2026; record-flow verification expansion: 25 October 2026. Owne
 
 ### Lovable / cloud operator boundary — not an Antigravity directory dependency
 
-Antigravity does not need Lovable editor access to implement repository code or prepare migrations. The Lovable URL is an environment reference, not a local directory. Use only existing project `a3399684-daab-4b38-8666-187b96b451af` and existing backend `rzskhndweihuczbdhoxk`; do not provision a replacement backend, change credentials, widen access or bypass policies to obtain access.
+Antigravity does not need Lovable editor access to implement repository code or prepare migrations. The Lovable URL is an environment reference, not a local directory. This 21 October handoff is historical. Its backend reference `rzskhndweihuczbdhoxk` describes the environment at that time. Current web TEST configuration is `jiqbxcqlywvvmhbgirzl`; confirm the current project from web environment/configuration before any operation. Do not provision another backend, change credentials, widen access or bypass policies to obtain access.
 
 | Cloud item | Current evidence | Owner / next action |
 | --- | --- | --- |

@@ -57,12 +57,15 @@ test('all catalogue entries inherit company location instead of requiring repeat
   assert.doesNotThrow(()=>recordFieldValues(spec,type,values),type);
  }
 });
-test('shared master choices preserve distinct canonical identities even with duplicate MPNs',()=>{
+test('shared master choices preserve distinct canonical identities and exclude inactive records',()=>{
  const code=ts.transpileModule(fs.readFileSync('src/lib/shared-master-options.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
  const mod={exports:{}};new Function('module','exports',code)(mod,mod.exports);
- const records=[{id:'part-a',reference:'PART-A',record_type:'Part',title:'Resistor A',status:'Draft',fields:{mpn:'SAME'}},{id:'part-b',reference:'PART-B',record_type:'Part',title:'Resistor B',status:'Released',fields:{mpn:'SAME'}},{id:'old',reference:'OLD',record_type:'Part',title:'Old',status:'Archived',fields:{}},{id:'customer',reference:'CUS',record_type:'Customer',title:'Client',status:'Open',fields:{}}];
+ const records=[{id:'part-a',reference:'PART-A',record_type:'Part',title:'Resistor A',status:'Draft',fields:{mpn:'SAME'}},{id:'part-b',reference:'PART-B',record_type:'Part',title:'Resistor B',status:'Released',fields:{mpn:'SAME'}},{id:'old',reference:'OLD',record_type:'Part',title:'Old',status:'Archived',fields:{}},{id:'obsolete',reference:'OBS',record_type:'Part',title:'Obsolete',status:'Obsolete',fields:{}},{id:'rejected',reference:'REJ',record_type:'Part',title:'Rejected',status:'Rejected',fields:{}},{id:'inactive',reference:'OFF',record_type:'Part',title:'Inactive',status:'Inactive',fields:{}},{id:'customer',reference:'CUS',record_type:'Customer',title:'Client',status:'Open',fields:{}}];
  const options=mod.exports.sharedMasterOptions(records,['Part']);assert.deepEqual(options.map(o=>o.value),['part-a','part-b']);assert.equal(new Set(options.map(o=>o.label)).size,2);
  assert.deepEqual(mod.exports.sharedMasterOptions([],['Customer']),[]);
+ assert.equal(mod.exports.isSelectableMasterStatus('Draft'),true);
+ assert.equal(mod.exports.isSelectableMasterStatus('rejected'),false);
+ assert.equal(mod.exports.isSelectableMasterStatus('inactive'),false);
 });
 test('EHW record creation can attach its original in the same modal with idempotent retry',()=>{
  const component=fs.readFileSync('src/components/SharedOperationalWorkspace.tsx','utf8');

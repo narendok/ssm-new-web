@@ -57,14 +57,17 @@ export function validateIntakeProject(
 
 export function salesEnquiryFromRecord(
   record: IntakeRecord,
-  customers: { code: string; name: string; spocName: string; spocEmail: string }[],
+  customers: { id?: string | undefined; code: string; name: string; spocName: string; spocEmail: string }[],
 ): EnquiryOpportunity {
-  const customer = customers.find((item) => item.name === record.fields["customer"]);
+  const linkedCustomerId = record.fields["customerId"] || record.fields["customer_id"] || "";
+  const customer = customers.find((item) => Boolean(linkedCustomerId) && item.id === linkedCustomerId)
+    ?? customers.find((item) => item.name === record.fields["customer"]);
   return {
     id: record.id,
     reference: record.reference,
     kind: record.type === "Opportunity" ? "opportunity" : "enquiry",
     title: record.title,
+    ...(customer?.id || linkedCustomerId ? { customerId: customer?.id || linkedCustomerId } : {}),
     customerCode: customer?.code ?? "",
     customerName: customer?.name ?? record.fields["customer"] ?? "Not recorded",
     spocName: customer?.spocName ?? "",
@@ -134,6 +137,11 @@ export function linkIntakeProject<
   if (!source || !isPreProjectIntake(source.type)) throw new Error("Active inquiry not found.");
   validateIntakeProject(records, source.type, projectCode);
   const contracts = records.filter((record) => record.fields["enquiryId"] === sourceId);
+  const customerCandidates = [source, ...contracts]
+    .map(record => ({ record, id: record.fields["customerId"] || record.fields["customer_id"] || "" }))
+    .filter(candidate => candidate.id);
+  const customerIds = new Set(customerCandidates.map(candidate => candidate.id));
+  const linkedCustomer = customerIds.size === 1 ? customerCandidates[0] : undefined;
   const previous = source.fields["projectId"] ?? "";
   if (contracts.length && previous && previous !== projectCode)
     throw new Error(
@@ -141,16 +149,23 @@ export function linkIntakeProject<
     );
   const contractKeys = new Set(contracts.flatMap((record) => [record.id, record.reference]));
   return {
-    records: records.map((record) =>
-      record.id === sourceId ||
-      record.fields["enquiryId"] === sourceId ||
-      (record.type === "Task" &&
-        (record.fields["linkedRecords"] ?? "")
-          .split(/[,·]/)
-          .some((key) => contractKeys.has(key.trim())))
-        ? { ...record, fields: { ...record.fields, projectId: projectCode, projectCode } }
-        : record,
-    ),
+    records: records.map((record) => {
+      const isLinkedIntake = record.id === sourceId || record.fields["enquiryId"] === sourceId ||
+        (record.type === "Task" && (record.fields["linkedRecords"] ?? "")
+          .split(/[,·]/).some((key) => contractKeys.has(key.trim())));
+      const isLinkedProject = Boolean(projectCode) && record.type === "Project" && [record.id, record.reference].includes(projectCode);
+      if (!isLinkedIntake && !isLinkedProject) return record;
+      const fields: Record<string, string> = { ...record.fields, projectId: projectCode, projectCode };
+      if (isLinkedProject && linkedCustomer) {
+        fields["customerId"] = linkedCustomer.id;
+        fields["customer_id"] = linkedCustomer.id;
+        const customerName = linkedCustomer.record.fields["customer"] || linkedCustomer.record.fields["customerName"];
+        const customerCode = linkedCustomer.record.fields["customerCode"];
+        if (customerName) fields["customer"] = customerName;
+        if (customerCode) fields["customerCode"] = customerCode;
+      }
+      return { ...record, fields };
+    }),
     enquiries: enquiries.map((enquiry) =>
       enquiry.id === sourceId ? { ...enquiry, linkedProjectCode: projectCode } : enquiry,
     ),

@@ -12,7 +12,7 @@ Date: 20 October 2026. Status: local implementation; browser and shared-storage 
 | Baseline production build | Passed; existing large-chunk / Vite configuration warnings |
 | Existing working-tree material | Untracked plans, demo files and screenshots retained; not staged as part of this pilot |
 | Browser baseline | Old localhost tab had stale module/HMR errors; server was not running. Started the existing Vite app on `127.0.0.1:8080`. The browser origin approval later timed out, so live behavior remains unverified |
-| Shared backend | Portal target is Lovable-managed `rzskhndweihuczbdhoxk`. Connected Supabase inventory did not include that project; unrelated staging project not used |
+| Shared backend | Historical 20 October baseline target: Lovable-managed `rzskhndweihuczbdhoxk`. Current web TEST configuration later moved to `jiqbxcqlywvvmhbgirzl`; this baseline describes the earlier environment. |
 
 ## First implementation slice
 

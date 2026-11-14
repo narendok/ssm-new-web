@@ -66,7 +66,7 @@ test("saved sales record maps to the same enquiry identity, scope and customer w
     reference: "HLPL-OBDTEST-SAL-ENQ-01",
     type: "Enquiry",
     title: "Synthetic OEM enquiry",
-    fields: { projectId: project.reference, customer: "Synthetic OEM", scope: "New OBD tracker", targetVolume: "12 evaluation units", targetDate: "2027-02-15" },
+    fields: { projectId: project.reference, customerId: "customer-canonical-1", customer: "Synthetic OEM", scope: "New OBD tracker", targetVolume: "12 evaluation units", targetDate: "2027-02-15" },
     createdAt: "2026-10-20",
     updatedAt: "2026-10-20",
   };
@@ -78,6 +78,7 @@ test("saved sales record maps to the same enquiry identity, scope and customer w
   assert.equal(enquiry.targetVolume, "12 evaluation units");
   assert.equal(enquiry.targetClosureDate, "2027-02-15");
   assert.equal(enquiry.customerName, "Synthetic OEM");
+  assert.equal(enquiry.customerId, "customer-canonical-1");
   assert.equal(enquiry.spocEmail, "");
   assert.deepEqual(enquiry.feasibilitySignedDepts, []);
   assert.equal(enquiry.status, "Pending Enquiry");
@@ -123,7 +124,7 @@ test("later project association preserves inquiry, review IDs and outcomes and s
     id: "enquiry",
     reference: "ENQ-1",
     type: "Enquiry",
-    fields: { scope: "Original" },
+    fields: { scope: "Original", customerId: "customer-canonical-1", customer: "Synthetic OEM", customerCode: "CUS-01" },
   };
   const contract = {
     id: "contract",
@@ -165,6 +166,10 @@ test("later project association preserves inquiry, review IDs and outcomes and s
   assert.equal(linked.records[1].fields.revision, "01");
   assert.equal(linked.records[2].status, "Approved");
   assert.equal(linked.records[2].fields.projectId, project.reference);
+  const linkedProject = linked.records.find(record => record.type === "Project");
+  assert.equal(linkedProject.fields.customerId, "customer-canonical-1");
+  assert.equal(linkedProject.fields.customer_id, "customer-canonical-1");
+  assert.equal(linkedProject.fields.customerCode, "CUS-01");
   assert.equal(linked.records[3], unrelated);
   assert.deepEqual(linked.approvals[0], { ...approval, project: project.reference });
   assert.equal(linked.enquiries[0].status, "Feasibility Complete");

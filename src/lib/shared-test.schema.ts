@@ -38,6 +38,7 @@ export const sharedTestResetSchema = z.object({
   runId: z.literal("LC2-2026-10-28"),
   requestId: z.string().uuid(),
 });
+export const sharedTestTimerSchema = z.object({ taskId: z.string().uuid(), action: z.enum(["start", "stop"]) });
 const id = z.string().uuid();
 const nullableId = id.nullable();
 export const sharedTestSnapshotSchema = z.object({
@@ -63,6 +64,24 @@ export const sharedTestSnapshotSchema = z.object({
       department_id: nullableId,
     }),
   ),
+  customerOptions: z.array(
+    z.object({ id, reference: z.string(), title: z.string(), status: z.string() }),
+  ).default([]),
+  supplierOptions: z.array(
+    z.object({ id, reference: z.string(), title: z.string(), status: z.string() }),
+  ).default([]),
+  partOptions: z.array(
+    z.object({ id, reference: z.string(), title: z.string(), status: z.string(), mpn: z.string().nullable().optional() }),
+  ).default([]),
+  productOptions: z.array(
+    z.object({ id, reference: z.string(), title: z.string(), status: z.string() }),
+  ).default([]),
+  // Display-only lookup for project names on linked historical records. This is
+  // separate from selectable project records so archived projects stay hidden
+  // from new-work pickers while their existing relationships remain legible.
+  projectOptions: z.array(
+    z.object({ id, reference: z.string(), title: z.string(), status: z.string(), archived: z.boolean() }),
+  ).default([]),
   records: z.array(
     z.object({
       id,
@@ -88,8 +107,12 @@ export const sharedTestSnapshotSchema = z.object({
       stage_code: z.string().nullable().optional(),
       template_task_key: z.string().nullable().optional(),
       description:z.string().optional(),
+      actual_seconds: z.number().int().nonnegative().optional(),
+      timer_started_at: z.string().nullable().optional(),
+      timer_started_by: nullableId.optional(),
       assignee_id: nullableId,
       due_at: z.string().nullable(),
+      created_at: z.string().optional(),
       updated_at: z.string(),
     }),
   ),

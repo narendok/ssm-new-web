@@ -22,6 +22,8 @@ import {
 
 import type { AreaId } from "./RoleAwareSidebar";
 export type { AreaId } from "./RoleAwareSidebar";
+import { DEPARTMENT_MODULES } from "@/lib/department-modules";
+import { departmentCode } from "@/lib/department-scope";
 
 export interface DepartmentMeta {
   id: AreaId;
@@ -157,6 +159,38 @@ export const DEPARTMENTS_METADATA: DepartmentMeta[] = [
   },
 ];
 
+export interface ConfiguredDepartmentDirectoryRecord {
+  code: string;
+  name: string;
+  active: boolean;
+  lead?: string | null;
+}
+
+/** Build directory cards from the active organization registry, keyed by stable department code. */
+export function buildDepartmentDirectoryMetadata(
+  configuredDepartments: readonly ConfiguredDepartmentDirectoryRecord[],
+): DepartmentMeta[] {
+  const result = new Map<string, DepartmentMeta>();
+
+  for (const department of configuredDepartments) {
+    if (!department.active) continue;
+    const code = departmentCode(department.code.replace(/^DEMO-/i, ""));
+    const area = DEPARTMENT_MODULES[code] as AreaId | undefined;
+    const metadata = DEPARTMENTS_METADATA.find((item) => item.code === code);
+    if (!area || !metadata) continue;
+
+    result.set(code, {
+      ...metadata,
+      id: area,
+      name: department.name.replace(/^DEMO · /, ""),
+      lead: department.lead?.trim() || "Unassigned",
+      leadRole: "Department lead",
+    });
+  }
+
+  return [...result.values()];
+}
+
 interface CommonDepartmentSearchViewProps {
   departments?: DepartmentMeta[];
   currentDepartment: AreaId;
@@ -223,22 +257,22 @@ export function CommonDepartmentSearchView({
               All Departments Directory & Common Search
             </h1>
             <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-              Search and inspect {departments.length} configured operational departments across engineering, supply chain, quality, and commercial domains. Select a department to enter its permitted workspace.
+            Search and inspect {departments.length} active configured departments across engineering, supply chain, quality, and commercial domains. Select a department to enter its permitted workspace.
             </p>
           </div>
 
           {/* Quick Metrics */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="rounded-xl border border-border bg-card/80 px-4 py-2 text-center shadow-2xs">
-              <span className="block font-mono text-xl font-bold text-foreground">12</span>
+              <span className="block font-mono text-xl font-bold text-foreground">{departments.length}</span>
               <span className="text-[11px] font-medium text-muted-foreground uppercase">Departments</span>
             </div>
             <div className="rounded-xl border border-border bg-card/80 px-4 py-2 text-center shadow-2xs">
-              <span className="block font-mono text-xl font-bold text-primary">{totalTasks || 24}</span>
+              <span className="block font-mono text-xl font-bold text-primary">{totalTasks}</span>
               <span className="text-[11px] font-medium text-muted-foreground uppercase">Open Tasks</span>
             </div>
             <div className="rounded-xl border border-border bg-card/80 px-4 py-2 text-center shadow-2xs">
-              <span className="block font-mono text-xl font-bold text-amber-500">{totalApprovals || 7}</span>
+              <span className="block font-mono text-xl font-bold text-amber-500">{totalApprovals}</span>
               <span className="text-[11px] font-medium text-muted-foreground uppercase">Pending Sign-offs</span>
             </div>
           </div>
@@ -292,7 +326,7 @@ export function CommonDepartmentSearchView({
           const isActive = currentDepartment === dept.id;
           const deptTasks = openTaskCounts[dept.id] ?? 0;
           const deptApprovals = approvalCounts[dept.id] ?? 0;
-          const deptProjects = projectCounts[dept.id] ?? 2;
+          const deptProjects = projectCounts[dept.id] ?? 0;
 
           return (
             <div

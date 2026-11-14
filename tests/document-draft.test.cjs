@@ -7,7 +7,30 @@ const filename = path.resolve(__dirname, '../src/lib/document-draft.ts');
 const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const draftModule = { exports: {} };
 new Function('module', 'exports', compiled)(draftModule, draftModule.exports);
-const { buildDocumentDraft } = draftModule.exports;
+const { buildDocumentDraft, restoreDocumentDraftSnapshot } = draftModule.exports;
+
+test('Word rendition preserves draft status and escaped source data in an A4 document', () => {
+  const { unzipSync, strFromU8 } = require('fflate');
+  const exporterSource = fs.readFileSync(path.resolve(__dirname, '../src/lib/document-draft-docx.ts'), 'utf8');
+  const exporter = ts.transpileModule(exporterSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const wordModule = { exports: {} };
+  new Function('module', 'exports', 'require', exporter)(wordModule, wordModule.exports,
+    (name) => name === './document-draft' ? draftModule.exports : require(name));
+  const { buildDraftDocx } = wordModule.exports;
+  const source = { reference: 'ENQ-TEST', fields: { requirements: 'A & B < 10\nSecond line' } };
+  const draft = buildDocumentDraft('Statement of Requirements', 'TEST-SOR-01', source);
+  const document = { documentId: 'TEST-SOR-01', title: 'Statement of Requirements', revision: 'Rev 01', project: 'TEST project', stage: 'TG_0' };
+  const settings = { companyName: 'Test & Co', techCenter: 'Engineering', plantLocation: '', confidentialityNotice: 'Confidential', complianceFooter: 'Controlled record' };
+  const parts = unzipSync(buildDraftDocx(document, draft, settings));
+  const body = strFromU8(parts['word/document.xml']);
+  assert.match(body, /DRAFT · UNISSUED/);
+  assert.match(body, /ENQ-TEST/);
+  assert.match(body, /A &amp; B &lt; 10.*<w:br\/>.*Second line/);
+  assert.match(body, /w:w="11906" w:h="16838"/);
+  assert.match(strFromU8(parts['word/header.xml']), /Test &amp; Co/);
+  assert.match(strFromU8(parts['word/footer.xml']), /w:instr="PAGE"/);
+  assert.throws(() => buildDraftDocx(document, buildDocumentDraft('BOM', 'TEST-BOM-01'), settings), /unavailable/);
+});
 
 test('different document types use different sections without hardware boilerplate in commercial or HR records', () => {
   const invoice = buildDocumentDraft('Commercial Tax Invoice', 'HLPL-SLCT-FIN-INV-01');
@@ -51,6 +74,44 @@ test('draft snapshots retain source values and identify missing fields independe
   assert.equal(draft.snapshot.source.fields.lineItems, 'verified items');
   assert.ok(draft.missingFields.includes('mpn'));
   assert.equal(draft.snapshot.releaseStatus, 'Unissued');
+});
+
+test('persisted vault draft restores the exact sourced rows and stays unissued for print preview', () => {
+  const source = { reference: 'HW-PRS-01', fields: { scope: 'Gateway controller', requirements: 'CAN-FD interface' } };
+  const project = { reference: 'HLPL-BCU-02', fields: { customer: 'Northstar', quantity: '12' } };
+  const draft = buildDocumentDraft('Product Requirement Specification', 'PRS-01', source, project, 'EHW-PRS');
+  const persisted = {
+    templateType: draft.type,
+    templateVersion: draft.templateVersion,
+    catalogueFamilyId: draft.catalogueFamilyId,
+    sourceRecordId: 'source-id',
+    projectRecordId: 'project-id',
+    sourceReference: source.reference,
+    projectReference: project.reference,
+    projectPhase: 'TG_1',
+    projectStage: 'HW_02',
+    classification: draft.snapshot.classification,
+    releaseStatus: 'Unissued',
+    completionPercentage: draft.completionPercentage,
+    missingFields: draft.missingFields,
+    sections: draft.sections.map(section => ({ title: section.title, rows: section.rows.map(row => row.map(value => value ?? '')) })),
+  };
+  const restored = restoreDocumentDraftSnapshot(persisted);
+  assert.deepEqual(restored.sections, draft.sections);
+  assert.equal(restored.snapshot.source.reference, source.reference);
+  assert.equal(restored.snapshot.project.reference, project.reference);
+  assert.deepEqual(restored.snapshot.project.fields, { companyPhase: 'TG_1', currentStage: 'HW_02' });
+  assert.deepEqual(restoreDocumentDraftSnapshot({ ...persisted, projectPhase: null, projectStage: null }).snapshot.project.fields, {});
+  assert.equal(restored.snapshot.releaseStatus, 'Unissued');
+  assert.match(restored.snapshot.classification, /internal confidential/);
+  assert.equal(restoreDocumentDraftSnapshot({ ...persisted, releaseStatus: 'Released' }), undefined);
+  assert.equal(restoreDocumentDraftSnapshot({ ...persisted, sections: [{ title: 'bad', rows: [['field', {}]] }] }), undefined);
+});
+
+test('client deliverable draft metadata never implies client access by document type', () => {
+  const draft = buildDocumentDraft('Customer quotation', 'QUO-01', undefined, undefined, 'QUO');
+  assert.match(draft.snapshot.classification, /release and access require explicit authorization/);
+  assert.doesNotMatch(draft.snapshot.classification, /client access authorized/i);
 });
 
 test('Process 01 domain requirements sheets across all departments isolate domain fields without hardware boilerplate leakage', () => {

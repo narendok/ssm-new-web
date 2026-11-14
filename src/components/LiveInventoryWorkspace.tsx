@@ -216,7 +216,7 @@ export const projectTeamRoster: Record<
     { name: "Samira Holt", department: "MECH", role: "Mechanical Lead", email: "samira.holt@Demo.com" },
     { name: "Casey Rowan", department: "EMF", role: "SMT Production Lead", email: "casey.rowan@Demo.com" },
     { name: "Jordan Blake", department: "QA", role: "Quality Assurance Lead", email: "jordan.blake@Demo.com" },
-    { name: "Mina Cross", department: "TST", role: "EOL Testing Lead", email: "mina.cross@Demo.com" },
+    { name: "Mina Cross", department: "EMF", role: "EOL Testing Lead", email: "mina.cross@Demo.com" },
   ],
   "HLPL-SLCT-01": [
     { name: "Avery Vale", department: "EHW", role: "Hardware Lead", email: "avery.vale@Demo.com" },
@@ -227,7 +227,7 @@ export const projectTeamRoster: Record<
   "HLPL-XLINK-03": [
     { name: "Devon Lane", department: "ESW", role: "Dual-CAN Firmware Lead", email: "devon.lane@Demo.com" },
     { name: "Casey Rowan", department: "EMF", role: "Production Lead", email: "casey.rowan@Demo.com" },
-    { name: "Mina Cross", department: "TST", role: "Test Jig Lead", email: "mina.cross@Demo.com" },
+    { name: "Mina Cross", department: "EMF", role: "EOL Testing Lead", email: "mina.cross@Demo.com" },
     { name: "Kai Morgan", department: "EHW", role: "Service & IT Infrastructure", email: "kai.morgan@Demo.com" },
   ],
 };
@@ -883,7 +883,7 @@ const initialSerializedAssets: AssetRecord[] = [
     serialNumber: "HLPL-JIG-EOL-AI4T-01",
     facilityLocation: "Greater Noida SMT Plant 2 · Final Quality & PDI Bay",
     custodian: "Mina Cross",
-    department: "TST",
+    department: "EMF",
     calibrationDate: "2026-10-01",
     nextCalibrationDue: "2026-11-01",
     status: "In Service",

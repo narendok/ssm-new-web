@@ -15,6 +15,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SharedMasterSelect } from "@/components/SharedMasterSelect";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +43,7 @@ interface DepartmentBudgetsWorkspaceProps {
   persona: Persona;
   departmentScope?: string | undefined;
   selectedProjectId?: string | null;
+  projects?: { id: string; reference: string; title: string }[];
   onOpenProjectDetail?: (projectId: string) => void;
   allocations?: DepartmentAllocation[];
   expenseRequests?: ExpenseRequest[];
@@ -64,6 +66,7 @@ export function DepartmentBudgetsWorkspace({
   persona,
   departmentScope,
   selectedProjectId,
+  projects = [],
   onOpenProjectDetail,
   allocations: propsAllocations,
   expenseRequests: propsExpenseRequests,
@@ -83,6 +86,13 @@ export function DepartmentBudgetsWorkspace({
     );
   }
 
+  const resolveProjectId = (value: string | null | undefined) =>
+    projects.find(project => [project.id, project.reference].includes(value || ""))?.id || "";
+  const projectDisplay = (value: string) => {
+    const project = projects.find(item => [item.id, item.reference].includes(value));
+    return project ? `${project.reference} · ${project.title}` : value;
+  };
+
   // Canonical store-backed state (preserves data across navigation)
   const [allocations, setAllocations] = useState<DepartmentAllocation[]>(
     propsAllocations ?? DEFAULT_DEPARTMENT_ALLOCATIONS
@@ -99,6 +109,10 @@ export function DepartmentBudgetsWorkspace({
     if (propsExpenseRequests) setExpenseRequests(propsExpenseRequests);
   }, [propsExpenseRequests]);
 
+  useEffect(() => {
+    setNewProject(resolveProjectId(selectedProjectId));
+  }, [selectedProjectId, projects]);
+
   const [activeTab, setActiveTab] = useState<"allocations" | "requests">("requests");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -108,7 +122,7 @@ export function DepartmentBudgetsWorkspace({
   const [newCategory, setNewCategory] = useState<BudgetCategory>("Consumables & Lab Supplies");
   const [newAmount, setNewAmount] = useState<string>("");
   const [newPurpose, setNewPurpose] = useState<string>("");
-  const [newProject, setNewProject] = useState<string>(selectedProjectId || "");
+  const [newProject, setNewProject] = useState<string>(() => resolveProjectId(selectedProjectId));
   const [newRequiredDate, setNewRequiredDate] = useState<string>("2026-11-01");
   const [isTravel, setIsTravel] = useState(false);
   const [travelDestination, setTravelDestination] = useState("");
@@ -125,13 +139,16 @@ export function DepartmentBudgetsWorkspace({
   const isFinanceLead = persona.departmentId?.toLowerCase() === "fin";
   const isAdmin = persona.kind === "admin";
   const activeDeptCode = (departmentScope || persona.departmentId)?.toUpperCase();
+  const selectedProjectKeys = selectedProjectId
+    ? [selectedProjectId, ...projects.filter(project => [project.id, project.reference].includes(selectedProjectId)).flatMap(project => [project.id, project.reference])]
+    : [];
 
   // Filtered Allocations (scoped to the active department workspace)
   const filteredAllocations = allocations.filter((alloc) => {
     if (activeDeptCode && activeDeptCode !== "ALL" && activeDeptCode !== "HOME") {
       if (alloc.departmentCode !== activeDeptCode) return false;
     }
-    if (selectedProjectId && alloc.projectId && alloc.projectId !== selectedProjectId) return false;
+    if (selectedProjectId && alloc.projectId && !selectedProjectKeys.includes(alloc.projectId)) return false;
     return true;
   });
 
@@ -152,7 +169,7 @@ export function DepartmentBudgetsWorkspace({
       if (req.requesterDept !== activeDeptCode) return false;
     }
 
-    if (selectedProjectId && req.projectId && req.projectId !== selectedProjectId) return false;
+    if (selectedProjectId && req.projectId && !selectedProjectKeys.includes(req.projectId)) return false;
     if (statusFilter !== "ALL" && req.status !== statusFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -267,6 +284,11 @@ export function DepartmentBudgetsWorkspace({
 
     if (!newPurpose.trim()) {
       setFormError("Business purpose and justification are required.");
+      return;
+    }
+
+    if (newProject && !projects.some(project => [project.id, project.reference].includes(newProject))) {
+      setFormError("Choose an active project from the project register, or clear the project link.");
       return;
     }
 
@@ -528,7 +550,7 @@ export function DepartmentBudgetsWorkspace({
                         <div className="font-medium text-foreground">{req.category}</div>
                         {req.projectId ? (
                           <span className="inline-block px-1.5 py-0.5 mt-1 text-[10px] font-mono rounded bg-secondary text-secondary-foreground font-semibold">
-                            {req.projectId}
+                            {projectDisplay(req.projectId)}
                           </span>
                         ) : (
                           <span className="inline-block px-1.5 py-0.5 mt-1 text-[10px] rounded bg-muted text-muted-foreground">
@@ -690,10 +712,10 @@ export function DepartmentBudgetsWorkspace({
                         {alloc.projectId ? (
                           <button
                             type="button"
-                            onClick={() => onOpenProjectDetail?.(alloc.projectId!)}
+                            onClick={() => onOpenProjectDetail?.(resolveProjectId(alloc.projectId) || alloc.projectId!)}
                             className="font-mono text-primary hover:underline text-[11px] font-bold"
                           >
-                            {alloc.projectId}
+                            {projectDisplay(alloc.projectId)}
                           </button>
                         ) : (
                           <span className="text-[10px] text-muted-foreground">Operational Spend</span>
@@ -886,18 +908,15 @@ export function DepartmentBudgetsWorkspace({
               </div>
             )}
 
-            <div>
-              <label className="font-semibold block mb-1">Linked Project (Optional)</label>
-              <select
+            <div className="grid gap-1">
+              <label className="font-semibold">Linked Project (Optional)</label>
+              <SharedMasterSelect
+                label="Project"
                 value={newProject}
-                onChange={(e) => setNewProject(e.target.value)}
-                className="w-full h-8 px-2 rounded-lg border border-input bg-background text-xs font-mono"
-              >
-                <option value="">None (Department Operational Expense)</option>
-                <option value="HLPL-AI4T-01">HLPL-AI4T-01 · Tata Ace EV 4G</option>
-                <option value="HLPL-SLCT-01">HLPL-SLCT-01 · Select Motors AIS-140</option>
-                <option value="HLPL-XLINK-03">HLPL-XLINK-03 · CV Dual-CAN Gateway</option>
-              </select>
+                onChange={setNewProject}
+                options={projects.map(project => ({ value: project.id, label: `${project.reference} · ${project.title}` }))}
+              />
+              <p className="text-[10px] text-muted-foreground">Leave blank for department operational expense. Choices come from active project records.</p>
             </div>
 
             <div>

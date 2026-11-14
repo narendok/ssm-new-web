@@ -47,7 +47,7 @@ export function additionalLifecycleStages():LifecycleStageDefinition[] {
 }
 
 /** Publish a new configuration; never mutate a pinned project or generated task. */
-export function completeLifecycleDefinitions(revision:{stages:LifecycleStageDefinition[]}):LifecycleStageDefinition[] {
+export function completeLifecycleDefinitions(revision:{stages:LifecycleStageDefinition[];retiredStages?:LifecycleStageDefinition[]}):LifecycleStageDefinition[] {
   const additional=additionalLifecycleStages();
   if(additional.every(stage=>revision.stages.some(existing=>existing.code===stage.code)))return structuredClone(revision.stages);
   return [...revision.stages.map(stage=>{
@@ -58,5 +58,5 @@ export function completeLifecycleDefinitions(revision:{stages:LifecycleStageDefi
     const tasks=stage.code==='CM_02' ? [...stage.tasks,...Object.keys(DEPARTMENT_MODULES).filter(code=>!stage.tasks.some(task=>task.department===code)).map(code=>({id:`FEASIBILITY-${code}`,title:`Review ${code} feasibility inputs`,description:'Assess source requirements, assumptions, effort, budget dependencies and unresolved questions for this department.',department:code}))] : stage.tasks;
     const raci=stage.code==='CM_02' ? {...(stage.raci||{A:[stage.department],C:[],I:[]}),R:Object.keys(DEPARTMENT_MODULES)} : stage.raci;
     return {...structuredClone(stage),prerequisites,exitTypes:exits,tasks:structuredClone(tasks),...(raci?{raci}: {})};
-  }),...additional.filter(stage=>!revision.stages.some(existing=>existing.code===stage.code))];
+  }),...additional.filter(stage=>!revision.stages.some(existing=>existing.code===stage.code)&&!revision.retiredStages?.some(retired=>retired.code===stage.code))];
 }

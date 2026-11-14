@@ -1,21 +1,54 @@
-import { configuredTicketGroups } from '@/lib/department-ticket-groups';
-import { ProjectMasterSpecSheet } from '@/components/ProjectMasterSpecSheet';
-import { CANONICAL_STAGE_TEMPLATES, CANONICAL_TRACK_METADATA, computeProgressiveStageAndTaskState, getRecordedProjectTrack } from '@/lib/canonical-lifecycle';
-import { SharedLifecycleWorkspace } from '@/components/SharedLifecycleWorkspace';
-import { buildRoleLifecyclePack, ROLE_LIFECYCLE_PACK, type RoleLifecyclePackManifest } from '@/lib/role-lifecycle-samples';
-import { assertFeasibilityReviewsReady, planFeasibilityDispatch } from '@/lib/feasibility-routing';
-import { departmentCode as canonicalDepartmentCode } from '@/lib/department-scope';
-import { ReusableAssetsWorkspace } from '@/components/ReusableAssetsWorkspace';
-import { linkReusableAsset, type ReusableAssetRevision, type ProjectAssetUse } from '@/lib/reusable-assets';
-import { LifecycleSettingsEditor } from '@/components/LifecycleSettingsEditor';
-import { SharedDepartmentConfiguration } from '@/components/SharedDepartmentConfiguration';
-import { SharedOrganizationDepartments, SharedCompanyDirectory } from '@/components/SharedOrganizationDirectory';
-import { useOrganizationConfiguration, DEPARTMENT_MODULES } from '@/lib/organization-configuration';
-import { defaultLifecycleRevision, pinLifecycleRevision, readLifecycleBaseline, projectLifecycleStages, type LifecycleRevision } from '@/lib/lifecycle-baseline';
-import { formSpecs, recordFields, recordFormSpec, hardwareStageForRecordType, hardwareAttachmentForRecordType, recordAttachmentAllowedAtStage } from "@/lib/record-form-catalogue";
+import { configuredTicketGroups } from "@/lib/department-ticket-groups";
+import { validateApprovalProjectLink } from "@/lib/approval-master-links";
+import { ProjectMasterSpecSheet } from "@/components/ProjectMasterSpecSheet";
+import {
+  CANONICAL_STAGE_TEMPLATES,
+  CANONICAL_TRACK_METADATA,
+  computeProgressiveStageAndTaskState,
+  getRecordedProjectTrack,
+} from "@/lib/canonical-lifecycle";
+import { SharedLifecycleWorkspace } from "@/components/SharedLifecycleWorkspace";
+import {
+  buildRoleLifecyclePack,
+  ROLE_LIFECYCLE_PACK,
+  type RoleLifecyclePackManifest,
+} from "@/lib/role-lifecycle-samples";
+import { assertFeasibilityReviewsReady, planFeasibilityDispatch } from "@/lib/feasibility-routing";
+import { departmentCode as canonicalDepartmentCode } from "@/lib/department-scope";
+import { ReusableAssetsWorkspace } from "@/components/ReusableAssetsWorkspace";
+import {
+  linkReusableAsset,
+  type ReusableAssetRevision,
+  type ProjectAssetUse,
+} from "@/lib/reusable-assets";
+import { LifecycleSettingsEditor } from "@/components/LifecycleSettingsEditor";
+import { SharedDepartmentConfiguration } from "@/components/SharedDepartmentConfiguration";
+import { SharedDepartmentRoleConfiguration } from "@/components/SharedDepartmentRoleConfiguration";
+import {
+  SharedOrganizationDepartments,
+  SharedCompanyDirectory,
+} from "@/components/SharedOrganizationDirectory";
+import { useOrganizationConfiguration, DEPARTMENT_MODULES } from "@/lib/organization-configuration";
+import {
+  defaultLifecycleRevision,
+  pinLifecycleRevision,
+  readLifecycleBaseline,
+  projectLifecycleStages,
+  type LifecycleRevision,
+} from "@/lib/lifecycle-baseline";
+import {
+  formSpecs,
+  recordFields,
+  recordFormSpec,
+  hardwareStageForRecordType,
+  hardwareAttachmentForRecordType,
+  recordAttachmentAllowedAtStage,
+} from "@/lib/record-form-catalogue";
 import { reconcileDemoProjectLifecycle } from "@/lib/demo-project-lifecycle";
 import { projectLifecycleContext, recordStageLabel } from "@/lib/lifecycle-record-presentation";
 import { SharedBusinessWorkspace } from "@/components/SharedBusinessWorkspace";
+import { SharedSupplierDirectoryWorkspace } from "@/components/SharedSupplierDirectoryWorkspace";
+import { SharedProcurementWorkspace } from "@/components/SharedProcurementWorkspace";
 import { SharedDecisionLog } from "@/components/SharedDecisionLog";
 import { SharedProjectAnalysis } from "@/components/SharedProjectAnalysis";
 import { scopeRecordDefaults } from "@/lib/record-form-defaults";
@@ -25,11 +58,26 @@ import { defaultDecisionLogs, type DecisionRecord } from "@/components/CompanyDi
 import { ProjectAnalysisOverview } from "@/components/ProjectAnalysisOverview";
 import { useId } from "react";
 import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/ResponsiveFilterBar";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { searchVisibleItems } from "@/lib/portal-search";
 import { suggestProjectCode } from "@/lib/project-code";
-import { DocumentUploadPilotDialog, type UploadDraft } from "@/components/DocumentUploadPilotDialog";
-import { assertUploadContextCurrent, sourceGerberPackages, type UploadScope, type UploadType, type SourcePackage } from "@/lib/document-upload-pilot";
+import {
+  DocumentUploadPilotDialog,
+  type UploadDraft,
+} from "@/components/DocumentUploadPilotDialog";
+import {
+  assertUploadContextCurrent,
+  sourceGerberPackages,
+  type UploadScope,
+  type UploadType,
+  type SourcePackage,
+} from "@/lib/document-upload-pilot";
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
 import { SharedOperationalWorkspace } from "@/components/SharedOperationalWorkspace";
 import { SharedDocumentVault } from "@/components/SharedDocumentVault";
@@ -40,11 +88,24 @@ import { importSharedSor, type SorImportRun } from "@/lib/sor-import-flow";
 import { SharedPortalSearch } from "@/components/SharedPortalSearch";
 import { useBusinessDate } from "@/hooks/use-business-date";
 import { SharedTestWorkspace } from "@/components/SharedTestWorkspace";
-import { evolveResponsibilityConfiguration, resolveProjectChronicles, type ResponsibilityVersion } from "@/lib/responsibility-version";
+import {
+  evolveResponsibilityConfiguration,
+  resolveProjectChronicles,
+  type ResponsibilityVersion,
+} from "@/lib/responsibility-version";
 import { DepartmentProjectWorkspace } from "@/components/DepartmentProjectWorkspace";
 import { businessDate } from "@/lib/business-date";
-import { feasibilityIntakeContext, linkIntakeProject, isPreProjectIntake, suggestIntakeReference, salesEnquiryFromRecord, reconcileSalesEnquiries, validateIntakeProject } from "@/lib/portal-intake";
+import {
+  feasibilityIntakeContext,
+  linkIntakeProject,
+  isPreProjectIntake,
+  suggestIntakeReference,
+  salesEnquiryFromRecord,
+  reconcileSalesEnquiries,
+  validateIntakeProject,
+} from "@/lib/portal-intake";
 import { mergeDemoDepartmentCommonDocuments } from "@/lib/demo-common-documents";
+import { DEMO_ORG_LEVELS, DEMO_ORGANIZATION_ROSTER } from "@/lib/demo-organization-roster";
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import {
@@ -110,7 +171,16 @@ import {
   Key,
   LogOut,
 } from "lucide-react";
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { unzipSync } from "fflate";
 import { supabase } from "@/integrations/supabase/client";
 import { getTestMembership, type TestMembership } from "@/lib/test-auth.functions";
@@ -120,7 +190,13 @@ import {
   getControlledDocumentDownload,
   listControlledDocumentFiles,
 } from "@/lib/controlled-documents.functions";
-import { InlineSupplierModal, InlinePartModal, type SupplierRecordItem, type PartRecordItem } from "@/components/InlineMasterModals";
+import {
+  InlineSupplierModal,
+  InlinePartModal,
+  type SupplierRecordItem,
+  type PartRecordItem,
+} from "@/components/InlineMasterModals";
+import { SharedMasterSelect } from "@/components/SharedMasterSelect";
 import { FeasibilityAndHardwareKickoff } from "@/components/FeasibilityAndHardwareKickoff";
 import {
   SalesEnquiriesAndOpportunities,
@@ -133,19 +209,43 @@ import {
   type EnquiryOpportunity,
 } from "@/components/SalesWorkspaceAndCustomerRegister";
 import { PurchasingBOMReviewTable } from "@/components/PurchasingBOMReviewTable";
-import { PurchasingCommandCenter, type PurchasingSubView } from "@/components/PurchasingCommandCenter";
+import {
+  PurchasingCommandCenter,
+  type PurchasingSubView,
+} from "@/components/PurchasingCommandCenter";
 import { CustomerManagementFullPageView } from "@/components/CustomerManagementFullPageView";
+import { SharedCustomerDirectoryWorkspace } from "@/components/SharedCustomerDirectoryWorkspace";
 import { QualityAssuranceDVPReviewTable } from "@/components/QualityAssuranceDVPReviewTable";
-const ProjectLifecyclePlayerAndDetail = lazy(() => import("@/components/ProjectLifecyclePlayerAndDetail").then(module => ({ default: module.ProjectLifecyclePlayerAndDetail })));
+const ProjectLifecyclePlayerAndDetail = lazy(() =>
+  import("@/components/ProjectLifecyclePlayerAndDetail").then((module) => ({
+    default: module.ProjectLifecyclePlayerAndDetail,
+  })),
+);
 import { draftType, buildDocumentDraft, type DraftSource } from "@/lib/document-draft";
 import { assertApprovalDecision } from "@/lib/approval-workflow";
 import { verifyStageTransition } from "@/lib/stage-gates";
 import { commitLatestState, patchRecord } from "@/lib/portal-store";
-import { getLocalAttachment, migrateLegacyAttachment, removeLocalAttachment, saveLocalAttachment } from "@/lib/local-attachments";
+import {
+  getLocalAttachment,
+  migrateLegacyAttachment,
+  removeLocalAttachment,
+  saveLocalAttachment,
+} from "@/lib/local-attachments";
 import { migratePortalState, repairDemoState } from "@/lib/portal-hydration";
-import { approvalInDepartment, approvalScope, canDepartmentSign, departmentCode, projectReferences } from "@/lib/department-scope";
+import {
+  approvalInDepartment,
+  approvalScope,
+  canDepartmentSign,
+  departmentCode,
+  projectReferences,
+} from "@/lib/department-scope";
+import { isSelectableMasterStatus } from "@/lib/shared-master-options";
 import { ApprovalsFullPageView, type ApprovalRecord } from "@/components/ApprovalsFullPageView";
-import { CommonDepartmentSearchView, DEPARTMENTS_METADATA } from "@/components/CommonDepartmentSearchView";
+import {
+  buildDepartmentDirectoryMetadata,
+  CommonDepartmentSearchView,
+  DEPARTMENTS_METADATA,
+} from "@/components/CommonDepartmentSearchView";
 import { DepartmentLeadCoordinationCenter } from "@/components/DepartmentLeadCoordinationCenter";
 import {
   LiveInventoryWorkspace,
@@ -261,6 +361,7 @@ type Department = {
   sortOrder: number;
   settings: DepartmentSettings;
   isDemo?: boolean;
+  isLegacy?: boolean;
 };
 type DepartmentSettings = {
   ticketGroups?: ("service" | "it")[];
@@ -285,7 +386,45 @@ type DepartmentRole = {
   active: boolean;
   assignee: string;
   isDemo?: boolean;
+  isLegacy?: boolean;
 };
+function reconcileDemoEolRoleAssignments(
+  roles: DepartmentRole[],
+  departments: Department[],
+): DepartmentRole[] {
+  const legacyTstDepartmentIds = new Set(
+    departments
+      .filter((department) => department.code.replace(/^DEMO-/, "").toUpperCase() === "TST")
+      .map((department) => department.id),
+  );
+  const legacyLead = roles.find(
+    (role) => legacyTstDepartmentIds.has(role.departmentId) && /lead/i.test(role.name),
+  );
+  const reconciled = roles.map((role) =>
+    legacyTstDepartmentIds.has(role.departmentId)
+      ? { ...role, active: false, isLegacy: true }
+      : role,
+  );
+  const emf = departments.find(
+    (department) => department.code.replace(/^DEMO-/, "").toUpperCase() === "EMF",
+  );
+  if (
+    emf &&
+    legacyLead &&
+    !reconciled.some((role) => role.departmentId === emf.id && /EOL Testing lead/i.test(role.name))
+  ) {
+    reconciled.push({
+      id: `demo-role-${emf.id}-eol-testing`,
+      departmentId: emf.id,
+      name: "TEST EOL Testing lead",
+      assignee: `${legacyLead.assignee.split(" · ")[0]} · EOL Testing`,
+      permissions: [...legacyLead.permissions],
+      active: true,
+      isDemo: true,
+    });
+  }
+  return reconciled;
+}
 type AuditEvent = { id: string; at: string; action: string; detail: string };
 type MasterData = {
   people: string[];
@@ -355,7 +494,14 @@ type ControlledDocument = {
   draftSnapshot?: ReturnType<typeof buildDocumentDraft> | undefined;
   releaseNotes?: string | undefined;
   designer?: string | undefined;
-  deliverableKind?: "Schematic PDF" | "Gerber ZIP" | "3D STEP" | "Firmware binary" | "BOM tracker" | "Technical document" | undefined;
+  deliverableKind?:
+    | "Schematic PDF"
+    | "Gerber ZIP"
+    | "3D STEP"
+    | "Firmware binary"
+    | "BOM tracker"
+    | "Technical document"
+    | undefined;
   lifecycleStage?: string | undefined;
 };
 type LocalControlledFile = {
@@ -372,16 +518,176 @@ type LocalControlledFile = {
   checksum?: string | undefined;
 };
 const inventorySeed = (): InventoryItem[] => [
-  { id: "inv-stm32", partNumber: "STM32G0B1VCT6", description: "Main host MCU · 512 KB flash", category: "Electronics", manufacturer: "STMicroelectronics", packageCase: "LQFP-100", linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01"], location: "Greater Noida SMT Plant 2", bin: "E-02-14", onHand: 18540, allocated: 2500, reorderPoint: 8000, unit: "pcs", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-eg915", partNumber: "EG915N-EU", description: "LTE Cat-1 bis modem with GNSS", category: "Electronics", manufacturer: "Quectel", packageCase: "LGA", linkedProjects: ["HLPL-AI4T-01"], location: "Greater Noida SMT Plant 2", bin: "E-05-03", onHand: 7200, allocated: 2500, reorderPoint: 9000, unit: "pcs", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-tcan", partNumber: "TCAN1042VDRQ1", description: "Automotive CAN transceiver", category: "Hardware / PCB", manufacturer: "Texas Instruments", packageCase: "SOIC-8", linkedProjects: ["HLPL-AI4T-01", "HLPL-XLINK-03"], location: "Greater Noida SMT Plant 2", bin: "P-01-22", onHand: 38100, allocated: 5000, reorderPoint: 12000, unit: "pcs", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-obd", partNumber: "MX150-33472-1601", description: "Sealed OBD-II vehicle interface", category: "Hardware / PCB", manufacturer: "Molex", packageCase: "16-way connector", linkedProjects: ["HLPL-SLCT-01", "HLPL-XLINK-03"], location: "Noida Tech Center", bin: "H-03-08", onHand: 4300, allocated: 2500, reorderPoint: 3000, unit: "pcs", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-enclosure", partNumber: "HLPL-ENC-PCABS-01", description: "IP67 PC/ABS enclosure shell", category: "Mechanical", manufacturer: "HLPL approved molder", packageCase: "IP67 enclosure", linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01"], location: "Greater Noida SMT Plant 2", bin: "M-01-04", onHand: 6200, allocated: 2500, reorderPoint: 3500, unit: "pcs", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-stencil", partNumber: "HLPL-SMT-STN-AI4T-01", description: "Laser-cut SMT prototype stencil", category: "Hardware / PCB", manufacturer: "Approved ECAD supplier", packageCase: "120 µm stainless", linkedProjects: ["HLPL-AI4T-01"], location: "Noida Tech Center", bin: "P-02-01", onHand: 4, allocated: 1, reorderPoint: 2, unit: "sets", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-cal-fixture", partNumber: "HLPL-TST-CAN-FXT-01", description: "CAN loopback and harness verification fixture", category: "Test & Calibration", manufacturer: "HLPL internal", packageCase: "Bench fixture", linkedProjects: ["HLPL-AI4T-01", "HLPL-XLINK-03"], location: "Noida Tech Center", bin: "T-01-06", onHand: 12, allocated: 3, reorderPoint: 3, unit: "sets", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-esd-tray", partNumber: "HLPL-ESD-TRAY-01", description: "ESD-safe tray for prototype and sample kitting", category: "Production Consumables", manufacturer: "Approved stores supplier", packageCase: "Conductive polymer", linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01", "HLPL-XLINK-03"], location: "Greater Noida SMT Plant 2", bin: "C-01-09", onHand: 140, allocated: 30, reorderPoint: 40, unit: "pcs", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-label-roll", partNumber: "HLPL-LBL-AIS140-01", description: "Serialized AIS-140 product label roll", category: "Packaging & Logistics", manufacturer: "Approved print partner", packageCase: "Thermal-transfer", linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01"], location: "Greater Noida SMT Plant 2", bin: "L-01-11", onHand: 18, allocated: 6, reorderPoint: 5, unit: "rolls", updatedAt: "DEMO · live local register", isDemo: true },
-  { id: "inv-fw-kit", partNumber: "HLPL-FW-FLASH-ADP-01", description: "Controlled SWD flashing adapter kit", category: "Firmware / Software", manufacturer: "Segger", packageCase: "J-Link kit", linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01", "HLPL-XLINK-03"], location: "Noida Tech Center", bin: "S-01-02", onHand: 10, allocated: 2, reorderPoint: 2, unit: "kits", updatedAt: "DEMO · live local register", isDemo: true },
+  {
+    id: "inv-stm32",
+    partNumber: "STM32G0B1VCT6",
+    description: "Main host MCU · 512 KB flash",
+    category: "Electronics",
+    manufacturer: "STMicroelectronics",
+    packageCase: "LQFP-100",
+    linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01"],
+    location: "Greater Noida SMT Plant 2",
+    bin: "E-02-14",
+    onHand: 18540,
+    allocated: 2500,
+    reorderPoint: 8000,
+    unit: "pcs",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-eg915",
+    partNumber: "EG915N-EU",
+    description: "LTE Cat-1 bis modem with GNSS",
+    category: "Electronics",
+    manufacturer: "Quectel",
+    packageCase: "LGA",
+    linkedProjects: ["HLPL-AI4T-01"],
+    location: "Greater Noida SMT Plant 2",
+    bin: "E-05-03",
+    onHand: 7200,
+    allocated: 2500,
+    reorderPoint: 9000,
+    unit: "pcs",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-tcan",
+    partNumber: "TCAN1042VDRQ1",
+    description: "Automotive CAN transceiver",
+    category: "Hardware / PCB",
+    manufacturer: "Texas Instruments",
+    packageCase: "SOIC-8",
+    linkedProjects: ["HLPL-AI4T-01", "HLPL-XLINK-03"],
+    location: "Greater Noida SMT Plant 2",
+    bin: "P-01-22",
+    onHand: 38100,
+    allocated: 5000,
+    reorderPoint: 12000,
+    unit: "pcs",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-obd",
+    partNumber: "MX150-33472-1601",
+    description: "Sealed OBD-II vehicle interface",
+    category: "Hardware / PCB",
+    manufacturer: "Molex",
+    packageCase: "16-way connector",
+    linkedProjects: ["HLPL-SLCT-01", "HLPL-XLINK-03"],
+    location: "Noida Tech Center",
+    bin: "H-03-08",
+    onHand: 4300,
+    allocated: 2500,
+    reorderPoint: 3000,
+    unit: "pcs",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-enclosure",
+    partNumber: "HLPL-ENC-PCABS-01",
+    description: "IP67 PC/ABS enclosure shell",
+    category: "Mechanical",
+    manufacturer: "HLPL approved molder",
+    packageCase: "IP67 enclosure",
+    linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01"],
+    location: "Greater Noida SMT Plant 2",
+    bin: "M-01-04",
+    onHand: 6200,
+    allocated: 2500,
+    reorderPoint: 3500,
+    unit: "pcs",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-stencil",
+    partNumber: "HLPL-SMT-STN-AI4T-01",
+    description: "Laser-cut SMT prototype stencil",
+    category: "Hardware / PCB",
+    manufacturer: "Approved ECAD supplier",
+    packageCase: "120 µm stainless",
+    linkedProjects: ["HLPL-AI4T-01"],
+    location: "Noida Tech Center",
+    bin: "P-02-01",
+    onHand: 4,
+    allocated: 1,
+    reorderPoint: 2,
+    unit: "sets",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-cal-fixture",
+    partNumber: "HLPL-TST-CAN-FXT-01",
+    description: "CAN loopback and harness verification fixture",
+    category: "Test & Calibration",
+    manufacturer: "HLPL internal",
+    packageCase: "Bench fixture",
+    linkedProjects: ["HLPL-AI4T-01", "HLPL-XLINK-03"],
+    location: "Noida Tech Center",
+    bin: "T-01-06",
+    onHand: 12,
+    allocated: 3,
+    reorderPoint: 3,
+    unit: "sets",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-esd-tray",
+    partNumber: "HLPL-ESD-TRAY-01",
+    description: "ESD-safe tray for prototype and sample kitting",
+    category: "Production Consumables",
+    manufacturer: "Approved stores supplier",
+    packageCase: "Conductive polymer",
+    linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01", "HLPL-XLINK-03"],
+    location: "Greater Noida SMT Plant 2",
+    bin: "C-01-09",
+    onHand: 140,
+    allocated: 30,
+    reorderPoint: 40,
+    unit: "pcs",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-label-roll",
+    partNumber: "HLPL-LBL-AIS140-01",
+    description: "Serialized AIS-140 product label roll",
+    category: "Packaging & Logistics",
+    manufacturer: "Approved print partner",
+    packageCase: "Thermal-transfer",
+    linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01"],
+    location: "Greater Noida SMT Plant 2",
+    bin: "L-01-11",
+    onHand: 18,
+    allocated: 6,
+    reorderPoint: 5,
+    unit: "rolls",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
+  {
+    id: "inv-fw-kit",
+    partNumber: "HLPL-FW-FLASH-ADP-01",
+    description: "Controlled SWD flashing adapter kit",
+    category: "Firmware / Software",
+    manufacturer: "Segger",
+    packageCase: "J-Link kit",
+    linkedProjects: ["HLPL-AI4T-01", "HLPL-SLCT-01", "HLPL-XLINK-03"],
+    location: "Noida Tech Center",
+    bin: "S-01-02",
+    onHand: 10,
+    allocated: 2,
+    reorderPoint: 2,
+    unit: "kits",
+    updatedAt: "DEMO · live local register",
+    isDemo: true,
+  },
 ];
 type ControlledFile = {
   id: string;
@@ -401,98 +707,131 @@ type TeamMember = {
   level: string;
   skills: string[];
 };
-const demoTeam: TeamMember[] = [
-  // SAL - Sales & BD
-  { name: "Priya Sharma", area: "sales", role: "Sales & BD Lead", score: "3.85/4", level: "Level 4", skills: ["RFQ intake", "Commercial review", "Client communications", "Contract controls"] },
-  { name: "Rohan Mehta", area: "sales", role: "Senior Key Account Manager", score: "3.80/4", level: "Level 4", skills: ["Fleet accounts", "Commercial negotiations", "OEM pipeline", "CRM"] },
-  { name: "Tanya Sen", area: "sales", role: "OEM Proposals Specialist", score: "3.65/4", level: "Level 3", skills: ["SOR analysis", "Cost breakdown", "Quotation drafting", "Tender submissions"] },
-  { name: "Amit Deshmukh", area: "sales", role: "Client Relationship Executive", score: "3.40/4", level: "Level 2", skills: ["Lead tracking", "MOM documentation", "Order confirmations", "Customer follow-ups"] },
-
-  // EHW - Embedded Hardware
-  { name: "Avery Vale", area: "ehw", role: "Hardware Engineering Lead", score: "3.90/4", level: "Level 4", skills: ["Architecture", "Schematics", "PCB release", "DFMEA"] },
-  { name: "Maya Lin", area: "ehw", role: "Senior PCB Layout Engineer", score: "3.85/4", level: "Level 4", skills: ["Altium Designer", "High-Speed Routing", "Stackup design", "DFM verification"] },
-  { name: "Alex Chen", area: "ehw", role: "Hardware Validation Engineer", score: "3.70/4", level: "Level 3", skills: ["Power supplies", "ISO 7637-2 Clamping", "Thermal relief", "Bench bring-up"] },
-  { name: "Raghav Joshi", area: "ehw", role: "Component Qualification Specialist", score: "3.65/4", level: "Level 3", skills: ["AEC-Q100", "AEC-Q200", "Second sourcing", "EOL replacement"] },
-
-  // FW - Firmware
-  { name: "Devon Lane", area: "fw", role: "Firmware Lead", score: "3.75/4", level: "Level 4", skills: ["RTOS", "MCU HAL", "Bootloader", "CAN driver"] },
-  { name: "Sneha Patel", area: "fw", role: "CAN Protocol & Telematics Engineer", score: "3.70/4", level: "Level 3", skills: ["J1939 stack", "OBD-II PIDs", "cellular modem AT", "TLS encryption"] },
-
-  // SW - Cloud & Application Software
-  { name: "Siddharth Roy", area: "sw", role: "Cloud & Application Software Lead", score: "3.85/4", level: "Level 4", skills: ["Telemetry architecture", "MQTT broker", "APIs", "Cloud infrastructure"] },
-  { name: "Nathan Cole", area: "sw", role: "Cloud Telemetry & OTA Specialist", score: "3.60/4", level: "Level 3", skills: ["FOTA server", "device shadows", "webhooks", "Crash dumps"] },
-
-  // MECH - Mechanical Engineering
-  { name: "Samira Holt", area: "mech", role: "Mechanical Engineering Lead", score: "3.60/4", level: "Level 4", skills: ["STEP model", "Tolerance stack", "Tooling", "Sealing review"] },
-  { name: "Vikram Kapoor", area: "mech", role: "Senior CAD & Mold Specialist", score: "3.75/4", level: "Level 4", skills: ["SolidWorks", "Injection mold tooling", "Draft angles", "Enclosure design"] },
-  { name: "Deepak Nair", area: "mech", role: "Thermal & Ingress Protection Engineer", score: "3.65/4", level: "Level 3", skills: ["IP67 gaskets", "CFD thermal modeling", "Vibration mounts", "Shock absorption"] },
-  { name: "Pooja Verma", area: "mech", role: "Rapid Prototyping Technician", score: "3.40/4", level: "Level 2", skills: ["3D printing SLA/SLS", "CMM measurement", "Harness routing", "BOM verification"] },
-
-  // PUR - Purchasing & SCM
-  { name: "Morgan Reed", area: "pur", role: "Purchasing & SCM Lead", score: "3.70/4", level: "Level 4", skills: ["Supplier qualification", "PPAP", "Cost controls", "Capacity planning"] },
-  { name: "Anita Desai", area: "pur", role: "Strategic Sourcing Specialist", score: "3.80/4", level: "Level 4", skills: ["Distributor agreements", "Volume pricing breaks", "Contractual terms", "Lead-time buffering"] },
-  { name: "Vikram Malhotra", area: "pur", role: "Vendor Quality & ASL Coordinator", score: "3.65/4", level: "Level 3", skills: ["ASL audits", "IATF/ISO certificate validation", "VDA 6.3 scoring", "PPAP dossier review"] },
-  { name: "Kavita Rao", area: "pur", role: "Inward Stores & Inventory Coordinator", score: "3.55/4", level: "Level 3", skills: ["IQC quarantine control", "Bin management", "FIFO stock tracking", "GRN issuance"] },
-
-  // QA - Quality Assurance & APQP
-  { name: "Jordan Blake", area: "qa", role: "Quality Assurance & APQP Head", score: "3.95/4", level: "Level 4", skills: ["APQP", "DVP&R", "CAPA", "Release approval"] },
-  { name: "Sneha Kulkarni", area: "qa", role: "Senior DVP&R Compliance Lead", score: "3.90/4", level: "Level 4", skills: ["AIS-140 verification", "ISO 7637-2 transients", "Environmental chambers", "Lab coordination"] },
-  { name: "Harish Menon", area: "qa", role: "IQC & Supplier PPAP Auditor", score: "3.70/4", level: "Level 3", skills: ["First article inspection", "Incoming lot sampling", "Defect containment", "Material certifications"] },
-  { name: "Neha Singhania", area: "qa", role: "QMS & Compliance Internal Auditor", score: "3.65/4", level: "Level 3", skills: ["IATF 16949 audit checklists", "ISO 9001 compliance", "Document change control", "CAPA 8D"] },
-
-  // EMF - Electronics & Mechanical Manufacturing
-  { name: "Casey Rowan", area: "emf", role: "Electronics Manufacturing Lead", score: "3.65/4", level: "Level 4", skills: ["PFD", "PFMEA", "Line startup", "Control plan"] },
-  { name: "Rajesh Gokhale", area: "emf", role: "Box-Build Line Supervisor", score: "3.75/4", level: "Level 4", skills: ["PCBA lot traceability", "Controlled firmware loading", "First-off sign-off", "Fixture readiness"] },
-  { name: "Ankit Sharma", area: "emf", role: "Process Quality Technician", score: "3.50/4", level: "Level 3", skills: ["Incoming PCBA evidence review", "Harness continuity checks", "Controlled assembly rework", "Line defect logging"] },
-  { name: "Sunita Das", area: "emf", role: "Box-Build Assembly Technician", score: "3.35/4", level: "Level 2", skills: ["Stencil cleaning", "Reel changeover", "ESD verification", "Visual inspection"] },
-
-  // TST - Production & EOL Testing Jigs
-  { name: "Mina Cross", area: "tst", role: "Automated EOL Test Jig Lead", score: "3.65/4", level: "Level 4", skills: ["Pre-flash", "CAN loopback", "QR labels", "Yield analysis"] },
-  { name: "Rohit Pillai", area: "tst", role: "Automated Test Firmware Engineer", score: "3.60/4", level: "Level 3", skills: ["National Instruments", "CANoe automation", "Automated flashing", "Log parsing"] },
-  { name: "Suresh Yadav", area: "tst", role: "EOL PDI Inspection Technician", score: "3.45/4", level: "Level 3", skills: ["100% PDI release", "Golden unit calibration", "Pass/fail tagging", "Test reports"] },
-  { name: "Divya Nair", area: "tst", role: "Pre-flash & Label Verification Technician", score: "3.30/4", level: "Level 2", skills: ["QR code scanning", "IMEI registration", "Flash verification", "Packaging inspection"] },
-
-  // FIN - Finance & Accounts
-  { name: "Priya Voss", area: "fin", role: "Finance & Accounts Controller", score: "3.80/4", level: "Level 4", skills: ["Invoice control", "GRN validation", "Receivables", "Tax close"] },
-  { name: "Arun Chawla", area: "fin", role: "Commercial Invoicing Manager", score: "3.70/4", level: "Level 3", skills: ["GST / HSN compliance", "e-Way billing", "Dispatch reconciliation", "Credit notes"] },
-  { name: "Meenakshi S", area: "fin", role: "Vendor Payables Specialist", score: "3.55/4", level: "Level 3", skills: ["3-way PO matching", "Advance adjustment", "Vendor ledger reconciliation", "Audit schedules"] },
-
-  // SIT - Service & IT Infrastructure
-  { name: "Kai Morgan", area: "sit", role: "Service & IT Infrastructure Lead", score: "3.50/4", level: "Level 3", skills: ["Telemetry", "Backup assurance", "Support", "ISMS"] },
-  { name: "Sameer Khan", area: "sit", role: "Cloud Server & Gateway Admin", score: "3.65/4", level: "Level 3", skills: ["Kubernetes", "PostgreSQL tuning", "VPN tunnels", "ISMS 27001 hardening"] },
-  { name: "Preeti Joshi", area: "sit", role: "Field RMA & Diagnostic Specialist", score: "3.35/4", level: "Level 2", skills: ["Field log diagnostics", "RMA device intake", "Firmware reflashing", "Ticket resolution"] },
-
-  // HR/OPS - HR & Operations
-  { name: "Taylor Quinn", area: "hrops", role: "HR & Operations Manager", score: "3.65/4", level: "Level 4", skills: ["Skill matrix", "TNI", "Compliance calendar", "DMAIC"] },
-  { name: "Shalini Rao", area: "hrops", role: "Technical Training & Competency Coordinator", score: "3.60/4", level: "Level 3", skills: ["HLPL/F/HR/03 evaluation", "Onboarding roadmaps", "Competency testing", "HR records"] },
-  { name: "Kunal Varma", area: "hrops", role: "Facility & EHS Officer", score: "3.40/4", level: "Level 2", skills: ["ISO 45001 safety", "ESD audit inspection", "PPE compliance", "Incident reporting"] },
-];
+const demoTeam: TeamMember[] = DEMO_ORGANIZATION_ROSTER.map((profile) => ({
+  name: profile.name,
+  area: profile.area as TeamMember["area"],
+  role: profile.roleTitle,
+  score: profile.sampleAssessment,
+  level: DEMO_ORG_LEVELS[profile.hierarchyLevel],
+  skills: profile.skills,
+}));
 const rfqStages = [
-  ["Stage 1", "RFQ logged & mNDA signed", "RFQ-2026-TATA-EV-042 · DEMO Tata Ace EV 4G Telematics Gateway · 50,000 units/year"],
+  [
+    "Stage 1",
+    "RFQ logged & mNDA signed",
+    "RFQ-2026-TATA-EV-042 · DEMO Tata Ace EV 4G Telematics Gateway · 50,000 units/year",
+  ],
   ["Stage 2", "Contract review signed", "HLPL/F/MKT/01 · six DEMO HOD sign-offs complete"],
-  ["Stage 3", "Requirement freeze & quotation accepted", "PRS-02 and illustrative commercial quotation accepted"],
+  [
+    "Stage 3",
+    "Requirement freeze & quotation accepted",
+    "PRS-02 and illustrative commercial quotation accepted",
+  ],
   ["Stage 4", "MCU bring-up & bench PoC passed", "DEMO bring-up, CAN and 4G bench checks passed"],
-  ["Stage 5", "Pilot build & tentative BOM released", "Tentative BOM issued for DEMO pilot planning"],
+  [
+    "Stage 5",
+    "Pilot build & tentative BOM released",
+    "Tentative BOM issued for DEMO pilot planning",
+  ],
   ["Stage 6", "Pre-compliance & DVP&R approved", "DEMO client-review and DVP&R gate complete"],
   ["Stage 7", "Final Gerber & production BOM released", "Gerber and BOM release package recorded"],
-  ["Stage 8", "Type approval & PPAP cleared", "Illustrative AIS-140 TAC #842 reference and PPAP Level 3 gate cleared · not a certification claim"],
-  ["Stage 9", "Production & EOL package generated", "SMT Line 2 · SLCT-2026-0101 to 0120 PASS · FPY 97.4% · QR, PDI and invoice simulated"],
+  [
+    "Stage 8",
+    "Type approval & PPAP cleared",
+    "Illustrative AIS-140 TAC #842 reference and PPAP Level 3 gate cleared · not a certification claim",
+  ],
+  [
+    "Stage 9",
+    "Production & EOL package generated",
+    "SMT Line 2 · SLCT-2026-0101 to 0120 PASS · FPY 97.4% · QR, PDI and invoice simulated",
+  ],
 ] as const;
 const personas: Persona[] = [
   { id: "admin", label: "Executive Admin / MD", person: "Full master access", kind: "admin" },
-  { id: "sales", label: "SAL Lead", person: "Priya Sharma · Sales & BD", departmentId: "sales", kind: "lead" },
-  { id: "ehw", label: "EHW Lead", person: "Avery Vale · Embedded Hardware", departmentId: "ehw", kind: "lead" },
+  {
+    id: "sales",
+    label: "SAL Lead",
+    person: "Priya Sharma · Sales & BD",
+    departmentId: "sales",
+    kind: "lead",
+  },
+  {
+    id: "ehw",
+    label: "EHW Lead",
+    person: "Avery Vale · Embedded Hardware",
+    departmentId: "ehw",
+    kind: "lead",
+  },
   { id: "fw", label: "FW Lead", person: "Devon Lane · Firmware", departmentId: "fw", kind: "lead" },
-  { id: "sw", label: "SW Lead", person: "Siddharth Roy · Cloud & Application SW", departmentId: "sw", kind: "lead" },
-  { id: "mech", label: "MECH Lead", person: "Samira Holt · Mechanical Engineering", departmentId: "mech", kind: "lead" },
-  { id: "pur", label: "PUR Lead", person: "Morgan Reed · Purchasing & SCM", departmentId: "pur", kind: "lead" },
-  { id: "qa", label: "QA Lead", person: "Jordan Blake · Quality Assurance", departmentId: "qa", kind: "lead" },
-  { id: "emf", label: "EMF Lead", person: "Casey Rowan · Electronics Manufacturing", departmentId: "emf", kind: "lead" },
-  { id: "mmf", label: "MMF Lead", person: "Mechanical Manufacturing Lead (Interim)", departmentId: "mmf", kind: "lead" },
-  { id: "fin", label: "FIN Lead", person: "Priya Voss · Finance & Accounts", departmentId: "fin", kind: "lead" },
-  { id: "sit", label: "SIT Lead", person: "Kai Morgan · Service & IT", departmentId: "sit", kind: "lead" },
-  { id: "hrops", label: "HR Lead", person: "Taylor Quinn · HR & Operations", departmentId: "hrops", kind: "lead" },
-  { id: "client", label: "Client Portal", person: "Casey Example · Northstar test contact", kind: "client" },
+  {
+    id: "sw",
+    label: "SW Lead",
+    person: "Siddharth Roy · Cloud & Application SW",
+    departmentId: "sw",
+    kind: "lead",
+  },
+  {
+    id: "mech",
+    label: "MECH Lead",
+    person: "Samira Holt · Mechanical Engineering",
+    departmentId: "mech",
+    kind: "lead",
+  },
+  {
+    id: "pur",
+    label: "PUR Lead",
+    person: "Morgan Reed · Purchasing & SCM",
+    departmentId: "pur",
+    kind: "lead",
+  },
+  {
+    id: "qa",
+    label: "QA Lead",
+    person: "Jordan Blake · Quality Assurance",
+    departmentId: "qa",
+    kind: "lead",
+  },
+  {
+    id: "emf",
+    label: "EMF Lead",
+    person: "Casey Rowan · Electronics Manufacturing",
+    departmentId: "emf",
+    kind: "lead",
+  },
+  {
+    id: "mmf",
+    label: "MMF Lead",
+    person: "Mechanical Manufacturing Lead (Interim)",
+    departmentId: "mmf",
+    kind: "lead",
+  },
+  {
+    id: "fin",
+    label: "FIN Lead",
+    person: "Priya Voss · Finance & Accounts",
+    departmentId: "fin",
+    kind: "lead",
+  },
+  {
+    id: "sit",
+    label: "SIT Lead",
+    person: "Kai Morgan · Service & IT",
+    departmentId: "sit",
+    kind: "lead",
+  },
+  {
+    id: "hrops",
+    label: "HR Lead",
+    person: "Taylor Quinn · HR & Operations",
+    departmentId: "hrops",
+    kind: "lead",
+  },
+  {
+    id: "client",
+    label: "Client Portal",
+    person: "Casey Example · Northstar test contact",
+    kind: "client",
+  },
 ];
 
 const VALID_PERSONA_IDS = new Set([
@@ -532,39 +871,147 @@ export function normalizePersonaId(role: string | null | undefined): string {
 }
 
 const ai4tStages = [
-  ["Stage 1", "Enquiry & scope intake", "Fictional SOR and mutual NDA checklist are drafts; no customer agreement is represented."],
-  ["Stage 2", "Cross-department feasibility", "EHW, FW, SW, MECH, PUR, QA and FIN capture open assumptions and indicative estimates."],
-  ["Stage 3", "Requirements baseline proposal", "A reviewable baseline is prepared; requirement freeze and commercial commitment remain pending."],
-  ["Stage 4", "Design & development PoC", "Schematic, preliminary BOM, firmware bring-up and software interfaces are work-in-progress items."],
-  ["Stage 5", "Prototype build readiness", "Prototype routing, build instructions and mechanical fitment checks are planned; no production authorization."],
-  ["Stage 6", "QA verification planning", "DVP&R scenarios and evidence checklist are in review; test results are not asserted."],
-  ["Stage 7", "Design and sourcing review", "Gerber, DFMEA and supplier evidence are candidate deliverables; no production release."],
-  ["Stage 8", "Certification readiness planning", "External certification is not submitted or issued; any gate remains subject to authorized review."],
-  ["Stage 9", "Prototype validation & service feedback", "Inspection, field-installation feedback and budget workflows are sample scenarios, not deployment or billing."],
+  [
+    "Stage 1",
+    "Enquiry & scope intake",
+    "Fictional SOR and mutual NDA checklist are drafts; no customer agreement is represented.",
+  ],
+  [
+    "Stage 2",
+    "Cross-department feasibility",
+    "EHW, FW, SW, MECH, PUR, QA and FIN capture open assumptions and indicative estimates.",
+  ],
+  [
+    "Stage 3",
+    "Requirements baseline proposal",
+    "A reviewable baseline is prepared; requirement freeze and commercial commitment remain pending.",
+  ],
+  [
+    "Stage 4",
+    "Design & development PoC",
+    "Schematic, preliminary BOM, firmware bring-up and software interfaces are work-in-progress items.",
+  ],
+  [
+    "Stage 5",
+    "Prototype build readiness",
+    "Prototype routing, build instructions and mechanical fitment checks are planned; no production authorization.",
+  ],
+  [
+    "Stage 6",
+    "QA verification planning",
+    "DVP&R scenarios and evidence checklist are in review; test results are not asserted.",
+  ],
+  [
+    "Stage 7",
+    "Design and sourcing review",
+    "Gerber, DFMEA and supplier evidence are candidate deliverables; no production release.",
+  ],
+  [
+    "Stage 8",
+    "Certification readiness planning",
+    "External certification is not submitted or issued; any gate remains subject to authorized review.",
+  ],
+  [
+    "Stage 9",
+    "Prototype validation & service feedback",
+    "Inspection, field-installation feedback and budget workflows are sample scenarios, not deployment or billing.",
+  ],
 ] as const;
-const raciDepartments = ["SAL", "EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF", "FIN", "SIT", "HR"] as const;
+const raciDepartments = [
+  "SAL",
+  "EHW",
+  "FW",
+  "SW",
+  "MECH",
+  "PUR",
+  "QA",
+  "EMF",
+  "MMF",
+  "FIN",
+  "SIT",
+  "HR",
+] as const;
 const projectDocumentProfiles: Record<string, ProjectDocumentProfile> = {
-  "HLPL-OBD4-01": { name: "4G OBD-II Fleet Gateway · Prototype", customer: "Meridian Fleet Devices (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative annual volume · under review", techSpec: "4G Cat-1 · J1962 OBD-II · Dual CAN · GNSS · BLE sensor hub · proposed only", commercialValue: "Budget estimate pending", environmental: "12V / 24V · environmental limits to be confirmed", compliance: "Target standards require review; no certification claimed" },
-  "HLPL-AI4T-01": { name: "Northstar Cargo EV Gateway · Engineering Pilot", customer: "Northstar Mobility Systems (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative pilot volume · under review", techSpec: "4G Cat-1 · CAN · GNSS · proposed only", commercialValue: "Budget estimate pending", environmental: "12V / 24V · environmental limits to be confirmed", compliance: "Target standards require review; no certification claimed" },
-  "HLPL-BCU-02": { name: "Meridian Fleet Gateway · HW+FW PoC", customer: "Meridian Fleet Devices (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative PoC quantity · under review", techSpec: "Dual CAN · BLE sensor hub · cellular modem · proposed only", commercialValue: "Budget estimate pending", environmental: "Environmental limits to be confirmed", compliance: "Target standards require review; no certification claimed" },
-  "HLPL-SLCT-01": { name: "Northstar Fleet Tracker · HW+FW+SW Pilot", customer: "Northstar Mobility Systems (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative pilot quantity · under review", techSpec: "4G · GNSS · CAN · cloud telemetry · proposed only", commercialValue: "Budget estimate pending", environmental: "Environmental limits to be confirmed", compliance: "Target standards require review; no certification claimed" },
-  "HLPL-SW-01": { name: "Fleet Telemetry Service · QA Feedback Cycle", customer: "Copperfield Transit Works (fictional)", contact: "Test contact · unassigned", quantity: "Illustrative fleet size · under review", techSpec: "Telemetry API · dashboard · mobile workflow · proposed only", commercialValue: "Budget estimate pending", environmental: "Service objectives under review", compliance: "Security and privacy review pending; no certification claimed" },
-  "HLPL-XLINK-03": { name: "Commercial Fleet Gateway", customer: "Commercial Fleet Solutions Limited", contact: "Demo fleet programme SPOC", quantity: "25,000 units / year", techSpec: "Dual CAN · OBD-II · GNSS · 4G fleet gateway", commercialValue: "Commercial value pending controlled review", environmental: "12V / 24V · −40°C to +85°C · IP67", compliance: "AEC-Q100 · ISO 7637-2 · RoHS / REACH" },
+  "HLPL-OBD4-01": {
+    name: "4G OBD-II Fleet Gateway · Prototype",
+    customer: "Meridian Fleet Devices (fictional)",
+    contact: "Test contact · unassigned",
+    quantity: "Illustrative annual volume · under review",
+    techSpec: "4G Cat-1 · J1962 OBD-II · Dual CAN · GNSS · BLE sensor hub · proposed only",
+    commercialValue: "Budget estimate pending",
+    environmental: "12V / 24V · environmental limits to be confirmed",
+    compliance: "Target standards require review; no certification claimed",
+  },
+  "HLPL-AI4T-01": {
+    name: "Northstar Cargo EV Gateway · Engineering Pilot",
+    customer: "Northstar Mobility Systems (fictional)",
+    contact: "Test contact · unassigned",
+    quantity: "Illustrative pilot volume · under review",
+    techSpec: "4G Cat-1 · CAN · GNSS · proposed only",
+    commercialValue: "Budget estimate pending",
+    environmental: "12V / 24V · environmental limits to be confirmed",
+    compliance: "Target standards require review; no certification claimed",
+  },
+  "HLPL-BCU-02": {
+    name: "Meridian Fleet Gateway · HW+FW PoC",
+    customer: "Meridian Fleet Devices (fictional)",
+    contact: "Test contact · unassigned",
+    quantity: "Illustrative PoC quantity · under review",
+    techSpec: "Dual CAN · BLE sensor hub · cellular modem · proposed only",
+    commercialValue: "Budget estimate pending",
+    environmental: "Environmental limits to be confirmed",
+    compliance: "Target standards require review; no certification claimed",
+  },
+  "HLPL-SLCT-01": {
+    name: "Northstar Fleet Tracker · HW+FW+SW Pilot",
+    customer: "Northstar Mobility Systems (fictional)",
+    contact: "Test contact · unassigned",
+    quantity: "Illustrative pilot quantity · under review",
+    techSpec: "4G · GNSS · CAN · cloud telemetry · proposed only",
+    commercialValue: "Budget estimate pending",
+    environmental: "Environmental limits to be confirmed",
+    compliance: "Target standards require review; no certification claimed",
+  },
+  "HLPL-SW-01": {
+    name: "Fleet Telemetry Service · QA Feedback Cycle",
+    customer: "Copperfield Transit Works (fictional)",
+    contact: "Test contact · unassigned",
+    quantity: "Illustrative fleet size · under review",
+    techSpec: "Telemetry API · dashboard · mobile workflow · proposed only",
+    commercialValue: "Budget estimate pending",
+    environmental: "Service objectives under review",
+    compliance: "Security and privacy review pending; no certification claimed",
+  },
+  "HLPL-XLINK-03": {
+    name: "Commercial Fleet Gateway",
+    customer: "Commercial Fleet Solutions Limited",
+    contact: "Demo fleet programme SPOC",
+    quantity: "25,000 units / year",
+    techSpec: "Dual CAN · OBD-II · GNSS · 4G fleet gateway",
+    commercialValue: "Commercial value pending controlled review",
+    environmental: "12V / 24V · −40°C to +85°C · IP67",
+    compliance: "AEC-Q100 · ISO 7637-2 · RoHS / REACH",
+  },
 };
 function defaultRaciMatrix(): RaciMatrix {
-  return Object.fromEntries(ai4tStages.map(([stage], index) => [
-    stage,
-    Object.fromEntries(raciDepartments.map((department) => [
-      department,
-      department === (index < 3 ? "SAL" : index === 5 ? "QA" : index === 8 ? "EMF" : "EHW") || (index === 2 && department === "HR")
-        ? "R"
-        : department === "SAL"
-        ? "A"
-        : ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"].includes(department)
-        ? "C"
-        : "I"
-    ]))
-  ]));
+  return Object.fromEntries(
+    ai4tStages.map(([stage], index) => [
+      stage,
+      Object.fromEntries(
+        raciDepartments.map((department) => [
+          department,
+          department === (index < 3 ? "SAL" : index === 5 ? "QA" : index === 8 ? "EMF" : "EHW") ||
+          (index === 2 && department === "HR")
+            ? "R"
+            : department === "SAL"
+              ? "A"
+              : ["EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF"].includes(department)
+                ? "C"
+                : "I",
+        ]),
+      ),
+    ]),
+  );
 }
 const ai4tDossier = [
   ["Customer SOR", "HLPL-AI4T-SAL-SOR-01", "SAL", "Stage 1"],
@@ -608,12 +1055,26 @@ export type DepartmentAnalysisEntry = {
 
 export function defaultProjectAnalysis(projectId: string): Record<string, DepartmentAnalysisEntry> {
   if (!Object.prototype.hasOwnProperty.call(projectDocumentProfiles, projectId)) {
-    return Object.fromEntries(Object.entries(defaultProjectAnalysis("HLPL-SLCT-01")).map(([code, sample]) => {
-      const { lastUpdated: _sampleDate, ...entry } = sample;
-      return [code, { ...entry, lead: "Not assigned", progress: 0, status: "On Track" as const,
-        currentDeliverable: "Not recorded", targetDate: "", internalRemarks: "", clientRemarks: "",
-        keyDocumentId: "", stageGate: "Not assigned" }];
-    }));
+    return Object.fromEntries(
+      Object.entries(defaultProjectAnalysis("HLPL-SLCT-01")).map(([code, sample]) => {
+        const { lastUpdated: _sampleDate, ...entry } = sample;
+        return [
+          code,
+          {
+            ...entry,
+            lead: "Not assigned",
+            progress: 0,
+            status: "On Track" as const,
+            currentDeliverable: "Not recorded",
+            targetDate: "",
+            internalRemarks: "",
+            clientRemarks: "",
+            keyDocumentId: "",
+            stageGate: "Not assigned",
+          },
+        ];
+      }),
+    );
   }
   const projectPrefix = projectId.replace(/-\d+$/, "");
   const stages: Record<string, string> = {
@@ -633,42 +1094,83 @@ export function defaultProjectAnalysis(projectId: string): Record<string, Depart
   };
   const teams: Array<[string, string, string, number]> = [
     ["SAL", "Sales & Business Development", "Enquiry scope and volume assumptions · draft", 32],
-    ["EHW", "Embedded Hardware Engineering", "Requirements map, reusable assets and tentative BOM", 46],
+    [
+      "EHW",
+      "Embedded Hardware Engineering",
+      "Requirements map, reusable assets and tentative BOM",
+      46,
+    ],
     ["FW", "Firmware", "Boot, sensor and offline-buffering PoC questions", 28],
     ["SW", "Cloud & Application Software", "API, data retention and connectivity assumptions", 22],
     ["MECH", "Mechanical Engineering", "Mounting, enclosure and environment inputs", 18],
-    ["PUR", "Purchasing & Supply Chain", "Inventory availability and indicative lead-time review", 38],
-    ["QA", "Quality Assurance & APQP", "Verification plan and certification evidence checklist", 24],
-    ["EMF", "Electronics Manufacturing & Box-Build", "Prototype build route and process questions", 15],
+    [
+      "PUR",
+      "Purchasing & Supply Chain",
+      "Inventory availability and indicative lead-time review",
+      38,
+    ],
+    [
+      "QA",
+      "Quality Assurance & APQP",
+      "Verification plan and certification evidence checklist",
+      24,
+    ],
+    [
+      "EMF",
+      "Electronics Manufacturing & Box-Build",
+      "Prototype build route and process questions",
+      15,
+    ],
     ["MMF", "Mechanical Manufacturing", "Prototype enclosure route and fixture inputs", 12],
-    ["TST", "Production & Automated EOL Testing", "Bench-test and defect-capture approach", 20],
     ["FIN", "Accounts & Finance", "Indicative NRE, unit-cost and budget assumptions", 34],
-    ["SIT", "Service & IT Infrastructure", "Installation, connectivity and field-feedback plan", 16],
+    [
+      "SIT",
+      "Service & IT Infrastructure",
+      "Installation, connectivity and field-feedback plan",
+      16,
+    ],
     ["HR", "HR & Operations Competency", "Role coverage and training needs", 25],
   ];
   const leads: Record<string, string> = {
-    SAL: "Riley Stone", EHW: "Avery Vale", FW: "Devon Lane", SW: "Siddharth Roy",
-    MECH: "Samira Holt", PUR: "Morgan Reed", QA: "Jordan Blake", EMF: "Casey Rowan",
-    MMF: "Taylor Quinn", TST: "Mina Cross", FIN: "Priya Voss", SIT: "Kai Morgan", HR: "Taylor Quinn",
+    SAL: "Riley Stone",
+    EHW: "Avery Vale",
+    FW: "Devon Lane",
+    SW: "Siddharth Roy",
+    MECH: "Samira Holt",
+    PUR: "Morgan Reed",
+    QA: "Jordan Blake",
+    EMF: "Casey Rowan",
+    MMF: "Taylor Quinn",
+    FIN: "Priya Voss",
+    SIT: "Kai Morgan",
+    HR: "Taylor Quinn",
   };
   const today = businessDate();
-  return Object.fromEntries(teams.map(([code, departmentName, currentDeliverable, progress], index) => [
-    code,
-    {
-      departmentCode: code,
-      departmentName,
-      lead: leads[code] ?? "Unassigned",
-      progress,
-      status: (code === "PUR" ? "Needs Attention" : code === "QA" || code === "EHW" ? "At Risk" : "On Track") as DepartmentAnalysisEntry["status"],
-      currentDeliverable,
-      targetDate: today,
-      internalRemarks: "Fictional TEST scenario. Replace assumptions with project evidence during authorized work; this row records no approval, purchase, certification, customer acceptance or completed test.",
-      clientRemarks: "No customer-facing commitment or acceptance is represented in this test fixture.",
-      keyDocumentId: `${projectPrefix}-${code}-DRAFT-01`,
-      stageGate: stages[code] ?? "Not recorded",
-      lastUpdated: today,
-    },
-  ]));
+  return Object.fromEntries(
+    teams.map(([code, departmentName, currentDeliverable, progress], index) => [
+      code,
+      {
+        departmentCode: code,
+        departmentName,
+        lead: leads[code] ?? "Unassigned",
+        progress,
+        status: (code === "PUR"
+          ? "Needs Attention"
+          : code === "QA" || code === "EHW"
+            ? "At Risk"
+            : "On Track") as DepartmentAnalysisEntry["status"],
+        currentDeliverable,
+        targetDate: today,
+        internalRemarks:
+          "Fictional TEST scenario. Replace assumptions with project evidence during authorized work; this row records no approval, purchase, certification, customer acceptance or completed test.",
+        clientRemarks:
+          "No customer-facing commitment or acceptance is represented in this test fixture.",
+        keyDocumentId: `${projectPrefix}-${code}-DRAFT-01`,
+        stageGate: stages[code] ?? "Not recorded",
+        lastUpdated: today,
+      },
+    ]),
+  );
 }
 
 type PortalState = {
@@ -740,7 +1242,8 @@ const areas = [
     short: "SAL",
     icon: UsersRound,
     recordType: "Enquiry & Opportunity",
-    summary: "One sales flow: Active opportunities, pending enquiries, mNDA, feasibility and quotations",
+    summary:
+      "One sales flow: Active opportunities, pending enquiries, mNDA, feasibility and quotations",
   },
   {
     id: "ehw" as const,
@@ -803,7 +1306,8 @@ const areas = [
     short: "EMF",
     icon: Factory,
     recordType: "Manufacturing record",
-    summary: "Box-build, harness fitment, controlled firmware loading, in-line testing, and travelers",
+    summary:
+      "Box-build, harness fitment, controlled firmware loading, in-line testing, and travelers",
   },
   {
     id: "mmf" as const,
@@ -812,7 +1316,8 @@ const areas = [
     short: "MMF",
     icon: Wrench,
     recordType: "Mechanical production record",
-    summary: "Mechanical fabrication, finishing, subassembly, fit checks, and EMF integration handoff",
+    summary:
+      "Mechanical fabrication, finishing, subassembly, fit checks, and EMF integration handoff",
   },
   {
     id: "tst" as const,
@@ -935,7 +1440,11 @@ const automotivePhases = [
     "Gerber, fabrication, EMC and ESD evidence",
   ],
   ["Phase_8_Hardware_Software_Integration", "HW_28–29", "HSI and bring-up records"],
-  ["Phase_9_Production_and_Verification", "HW_30–35", "Box-build, DVR, tests, pilot and release records"],
+  [
+    "Phase_9_Production_and_Verification",
+    "HW_30–35",
+    "Box-build, DVR, tests, pilot and release records",
+  ],
   [
     "Phase_10_Change_Control_and_Compliance",
     "HW_36–37",
@@ -1030,7 +1539,14 @@ const emptyPortal = (): PortalState => ({
     people: [],
     suppliers: [],
     parts: [],
-    products: ["HLPL-AI4T-01", "HLPL-SLCT-01", "HLPL-XLINK-03", "HLPL-BCU-02", "HLPL-EFAN-01", "HLPL-PST-01"],
+    products: [
+      "HLPL-AI4T-01",
+      "HLPL-SLCT-01",
+      "HLPL-XLINK-03",
+      "HLPL-BCU-02",
+      "HLPL-EFAN-01",
+      "HLPL-PST-01",
+    ],
     customers: defaultCustomers.map((c) => c.name),
     locations: [
       "XYZ Pvt Ltd — Noida Tech Center",
@@ -1064,7 +1580,7 @@ const emptyPortal = (): PortalState => ({
   assignedTrainings: DEFAULT_ASSIGNED_TRAININGS,
   assignedForms: DEFAULT_ASSIGNED_FORMS,
   employeeAssets: DEFAULT_EMPLOYEE_ASSETS,
-    serviceTickets: INITIAL_SERVICE_TICKETS,
+  serviceTickets: INITIAL_SERVICE_TICKETS,
 });
 
 function defaultTemplateSettings(): TemplateSettings {
@@ -1075,23 +1591,57 @@ function defaultTemplateSettings(): TemplateSettings {
     accreditationMarks: "TEST sample · standards targets only · certification status unverified",
     prefix: "HLPL",
     logoBadge: "SS",
-    confidentialityNotice: "Fictional TEST content for internal workflow validation. No customer or production information is represented.",
-    complianceFooter: "Fictional browser-local TEST draft. Verify company details, standards, approval, release, and customer acceptance before any real use.",
+    confidentialityNotice:
+      "Fictional TEST content for internal workflow validation. No customer or production information is represented.",
+    complianceFooter:
+      "Fictional browser-local TEST draft. Verify company details, standards, approval, release, and customer acceptance before any real use.",
   };
 }
 
 function defaultTemplateBodies() {
-  return Object.fromEntries(autoDraftTemplates.map(([title, id]) => [title, templateBlueprint(title, id)]));
+  return Object.fromEntries(
+    autoDraftTemplates.map(([title, id]) => [title, templateBlueprint(title, id)]),
+  );
 }
 
 function templateBlueprint(title: string, id: string = "") {
   const draft = buildDocumentDraft(title, id);
-  return draft.supported ? draft.sections.map(section => section.title + ": " + section.rows.map(row => row[0]).join(", ")).join("\n") : "Controlled source information and an approved document-specific format are required. No specifications or approvals are inferred.";
+  return draft.supported
+    ? draft.sections
+        .map((section) => section.title + ": " + section.rows.map((row) => row[0]).join(", "))
+        .join("\n")
+    : "Controlled source information and an approved document-specific format are required. No specifications or approvals are inferred.";
 }
 
 const templateProjects = ["HLPL-AI4T-01", "HLPL-SLCT-01", "HLPL-XLINK-03", "VCU", "BMS"];
-const templateDepartments = ["SAL", "EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF", "FIN", "SIT", "HR"];
-const templateDocumentTypes = ["PRS", "SOR", "DVP", "DFMEA", "PFMEA", "CP", "BOM", "PPAP", "WI", "SOP", "QUO", "INV"];
+const templateDepartments = [
+  "SAL",
+  "EHW",
+  "FW",
+  "SW",
+  "MECH",
+  "PUR",
+  "QA",
+  "EMF",
+  "MMF",
+  "FIN",
+  "SIT",
+  "HR",
+];
+const templateDocumentTypes = [
+  "PRS",
+  "SOR",
+  "DVP",
+  "DFMEA",
+  "PFMEA",
+  "CP",
+  "BOM",
+  "PPAP",
+  "WI",
+  "SOP",
+  "QUO",
+  "INV",
+];
 const formDocumentTypes = ["Contract Review", "Skill Matrix", "Form"];
 const projectSeed = {
   customer: "Northstar Mobility Systems (fictional)",
@@ -1100,7 +1650,10 @@ const projectSeed = {
   techSpec: "4G · GNSS · CAN · proposed engineering scope",
   commercialValue: "Budget estimate pending",
 };
-const departmentSignatories: Record<string, { author: string; reviewer: string; approver: string }> = {
+const departmentSignatories: Record<
+  string,
+  { author: string; reviewer: string; approver: string }
+> = {
   SAL: { author: "Priya Sharma", reviewer: "Priya Sharma", approver: "Executive Admin / MD" },
   EHW: { author: "Avery Vale", reviewer: "Jordan Blake · QA HOD", approver: "Tech Director" },
   FW: { author: "Devon Lane", reviewer: "Jordan Blake · QA HOD", approver: "Tech Director" },
@@ -1109,17 +1662,38 @@ const departmentSignatories: Record<string, { author: string; reviewer: string; 
   PUR: { author: "Morgan Reed", reviewer: "Jordan Blake · QA HOD", approver: "Plant Head" },
   QA: { author: "Jordan Blake", reviewer: "Jordan Blake · QA HOD", approver: "Tech Director" },
   EMF: { author: "Casey Rowan", reviewer: "Jordan Blake · QA HOD", approver: "Plant Head" },
-  MMF: { author: "Mechanical Manufacturing Lead", reviewer: "Jordan Blake · QA HOD", approver: "Plant Head" },
+  MMF: {
+    author: "Mechanical Manufacturing Lead",
+    reviewer: "Jordan Blake · QA HOD",
+    approver: "Plant Head",
+  },
   TST: { author: "Mina Cross", reviewer: "Jordan Blake · QA HOD", approver: "Plant Head" },
   PROD: { author: "Casey Rowan", reviewer: "Jordan Blake · QA HOD", approver: "Plant Head" },
   FIN: { author: "Priya Voss", reviewer: "Executive Admin / MD", approver: "Executive Admin / MD" },
   SIT: { author: "Kai Morgan", reviewer: "Executive Admin / MD", approver: "Executive Admin / MD" },
-  HR: { author: "Taylor Quinn", reviewer: "Executive Admin / MD", approver: "Executive Admin / MD" },
+  HR: {
+    author: "Taylor Quinn",
+    reviewer: "Executive Admin / MD",
+    approver: "Executive Admin / MD",
+  },
 };
 
-function documentNumber(project: string, department: string, type: string, revision = "01", prefix = "HLPL") {
-  const shortProject = project.replace(/^HLPL-/, "").replace(/-\d+$/, "").replace(/[^A-Z0-9]/gi, "").toUpperCase() || "GEN";
-  return formDocumentTypes.includes(type) ? `${prefix}/F/${department}/${revision}` : `${prefix}-${shortProject}-${department}-${type}-${revision}`;
+function documentNumber(
+  project: string,
+  department: string,
+  type: string,
+  revision = "01",
+  prefix = "HLPL",
+) {
+  const shortProject =
+    project
+      .replace(/^HLPL-/, "")
+      .replace(/-\d+$/, "")
+      .replace(/[^A-Z0-9]/gi, "")
+      .toUpperCase() || "GEN";
+  return formDocumentTypes.includes(type)
+    ? `${prefix}/F/${department}/${revision}`
+    : `${prefix}-${shortProject}-${department}-${type}-${revision}`;
 }
 
 const demoPortal = (): PortalState => {
@@ -1140,91 +1714,91 @@ const demoPortal = (): PortalState => {
       name: "Sales & Business Development",
       code: "SAL",
       departmentType: "Sales & Business Development",
-    lead: "Riley Stone",
+      lead: "Riley Stone",
     },
     {
       id: "ehw",
       name: "Embedded Hardware",
       code: "EHW",
       departmentType: "Embedded Hardware",
-    lead: "Avery Vale",
+      lead: "Avery Vale",
     },
     {
       id: "fw",
       name: "Firmware",
       code: "FW",
       departmentType: "Firmware",
-    lead: "Devon Lane",
+      lead: "Devon Lane",
     },
     {
       id: "sw",
       name: "Cloud & Application Software",
       code: "SW",
       departmentType: "Cloud & Application Software",
-    lead: "Siddharth Roy",
+      lead: "Siddharth Roy",
     },
     {
       id: "mech",
       name: "Mechanical Engineering",
       code: "MECH",
       departmentType: "Mechanical Engineering",
-    lead: "Samira Holt",
+      lead: "Samira Holt",
     },
     {
       id: "pur",
       name: "Purchasing & SCM",
       code: "PUR",
       departmentType: "Purchasing & SCM",
-    lead: "Morgan Reed",
+      lead: "Morgan Reed",
     },
     {
       id: "qa",
       name: "Quality Assurance",
       code: "QA",
       departmentType: "Quality Assurance",
-    lead: "Jordan Blake",
+      lead: "Jordan Blake",
     },
     {
       id: "emf",
       name: "Electronics Manufacturing",
       code: "EMF",
       departmentType: "Electronics Manufacturing",
-    lead: "Casey Rowan",
+      lead: "Casey Rowan",
     },
     {
       id: "mmf",
       name: "Mechanical Manufacturing",
       code: "MMF",
       departmentType: "Mechanical Manufacturing",
-    lead: "Mechanical Manufacturing Lead (Interim)",
+      lead: "Mechanical Manufacturing Lead (Interim)",
     },
     {
       id: "tst",
       name: "EOL Testing",
       code: "TST",
       departmentType: "EOL Testing",
-    lead: "Mina Cross",
+      lead: "Mina Cross",
     },
     {
       id: "fin",
       name: "Accounts & Finance",
       code: "FIN",
       departmentType: "Accounts & Finance",
-    lead: "Priya Voss",
+      lead: "Priya Voss",
     },
     {
       id: "sit",
       name: "Service & IT",
       code: "SIT",
       departmentType: "Service & IT",
-    lead: "Kai Morgan",
+      lead: "Kai Morgan",
     },
     {
       id: "hrops",
       name: "HR & Operations",
       code: "HROPS",
       departmentType: "HR & Operations",
-    lead: "Taylor Quinn",
+      lead: "Taylor Quinn",
     },
   ];
   const departments: Department[] = departmentSeeds.map((seed, sortOrder) => ({
@@ -1232,10 +1806,11 @@ const demoPortal = (): PortalState => {
     name: seed.name,
     code: seed.code,
     departmentType: seed.departmentType,
-    active: true,
+    active: seed.code !== "TST",
     lead: seed.lead,
     sortOrder,
     isDemo: true,
+    ...(seed.code === "TST" ? { isLegacy: true } : {}),
     settings: {
       ...blankSettings(),
       prefix: `TEST-${seed.code}`,
@@ -1283,7 +1858,10 @@ const demoPortal = (): PortalState => {
   });
   const task = (
     id: string,
-    area: Exclude<AreaId, "home" | "audit" | "rnd" | "stores" | "production" | "quality" | "people">,
+    area: Exclude<
+      AreaId,
+      "home" | "audit" | "rnd" | "stores" | "production" | "quality" | "people"
+    >,
     title: string,
     priority: Priority,
     dueDate: string,
@@ -1375,17 +1953,149 @@ const demoPortal = (): PortalState => {
         compliance: "AIS-140 · AEC-Q100/Q200 · ISO 7637-2 · targets only, NOT certified",
       },
     ),
-    make("HLPL-SLCT-SAL-SOR-01", "sales", "Customer SOR", "Customer SOR · RFQ-2026-TATA-SLCT-088", "Approved", "Critical", "Stage 1 · Sales Intake & Client Portal Form", ["HLPL-SLCT-SAL-mNDA-01", "HLPL/F/MKT/01"], { rfq: "RFQ-2026-TATA-SLCT-088", customer: "Tata Motors Limited · EV Fleet Division, Pune" }),
-    make("HLPL-SLCT-SAL-mNDA-01", "sales", "mNDA", "Bilateral mutual NDA", "Approved", "High", "Stage 1 · Sales Intake & Client Portal Form", ["HLPL-SLCT-SAL-SOR-01", "HLPL/F/MKT/01"], { ndaStatus: "DEMO bilateral signature simulation · no legal effect" }),
-    make("HLPL/F/MKT/01", "sales", "Contract review", "Cross-department feasibility review · five HOD approvals", "Approved", "Critical", "Stage 2 · Cross-Dept Feasibility Analysis", ["HLPL-SLCT-SAL-SOR-01", "HLPL-SLCT-EHW-PRS-01", "HLPL-SLCT-SAL-QUO-01"], { signoffs: "Hardware · Software · Mechanical · Purchase · Quality · all DEMO approvals complete", feasibility: "Approved automatically compiles PRS and quotation" }),
-    make("HLPL-SLCT-EHW-PRS-01", "ehw", "PRS", "Auto-compiled Product Requirement Specification", "Approved", "Critical", "Stage 3 · Requirement Freeze & Commercial Confirmation", ["HLPL/F/MKT/01", "HLPL-SLCT-SAL-QUO-01", "HLPL-SLCT-01"], { generatedFrom: "Generated automatically from approved Contract Review HLPL/F/MKT/01", baseline: "Frozen · automated baseline · changes require PMSS amendment", requirements: "12V/24V · GNSS · LTE 4G · CAN/OBD · tamper and power-loss alerts · panic/SOS · illustrative" }),
-    make("HLPL-SLCT-SAL-QUO-01", "sales", "Commercial quotation", "Auto-generated commercial quotation", "Approved", "High", "Stage 3 · Requirement Freeze & Commercial Confirmation", ["HLPL/F/MKT/01", "HLPL-SLCT-EHW-PRS-01"], { generatedFrom: "Generated automatically from approved Contract Review HLPL/F/MKT/01", commercial: "₹20.33 Cr total value · DEMO only" }),
-    make("PO-TATA-SLCT-2026-9041", "sales", "Order", "Customer purchase order sync · 50,000 units", "Approved", "Critical", "Stage 8 · Type Approval & SCM", ["HLPL-SLCT-01", "HLPL-SLCT-FIN-INV-01", "HLPL-SLCT-EHW-PRS-01"], { volume: "50,000 units · DEMO only", value: "₹20.33 Cr · illustrative only", loi: "Customer LOI confirmed · DEMO simulation" }),
-    make("HLPL-SLCT-FIN-INV-01", "fin", "Commercial billing", "Advance deposit verification and tax invoice", "Approved", "Critical", "Stage 8 · Type Approval & SCM", ["PO-TATA-SLCT-2026-9041"], { advance: "₹6.10 Cr · illustrative payment verification only", invoice: "Generated · DEMO only" }),
-    make("HLPL-SLCT-EHW-BOM-01", "ehw", "BOM", "Production BOM release", "Approved", "High", "Stage 7 · Final Hardware & Mechanical Design Release", ["HLPL-SLCT-EHW-PRS-01", "PO-TATA-SLCT-2026-9041"], { release: "Final production BOM · DEMO release" }),
-    make("HLPL-SLCT-EHW-GER-01", "ehw", "Gerber release", "Final Gerber package release", "Approved", "High", "Stage 7 · Final Hardware & Mechanical Design Release", ["HLPL-SLCT-EHW-BOM-01"], { release: "Final Gerber package · DEMO release" }),
-    make("HLPL-SLCT-QA-APQP-01", "qa", "APQP gate", "APQP phases 1–4 closed", "Approved", "Critical", "Stage 8 · Type Approval & SCM", ["HLPL-SLCT-01", "HLPL-SLCT-QA-DVP-01"], { apqp: "Phases 1–4 closed · DEMO only", auditReadiness: "100% IATF 16949 & AIS-140 compliant · 0 NCRs · DEMO assertion only" }),
-    make("HLPL-SLCT-QA-DVP-01", "qa", "DVP&R", "AIS-140 evidence pack", "Approved", "Critical", "Stage 8 · Type Approval & SCM", ["HLPL-SLCT-QA-APQP-01"], { tac: "DEMO reference #ARAI/TAC/2026/AIS140-842 · no certification claim" }),
+    make(
+      "HLPL-SLCT-SAL-SOR-01",
+      "sales",
+      "Customer SOR",
+      "Customer SOR · RFQ-2026-TATA-SLCT-088",
+      "Approved",
+      "Critical",
+      "Stage 1 · Sales Intake & Client Portal Form",
+      ["HLPL-SLCT-SAL-mNDA-01", "HLPL/F/MKT/01"],
+      { rfq: "RFQ-2026-TATA-SLCT-088", customer: "Tata Motors Limited · EV Fleet Division, Pune" },
+    ),
+    make(
+      "HLPL-SLCT-SAL-mNDA-01",
+      "sales",
+      "mNDA",
+      "Bilateral mutual NDA",
+      "Approved",
+      "High",
+      "Stage 1 · Sales Intake & Client Portal Form",
+      ["HLPL-SLCT-SAL-SOR-01", "HLPL/F/MKT/01"],
+      { ndaStatus: "DEMO bilateral signature simulation · no legal effect" },
+    ),
+    make(
+      "HLPL/F/MKT/01",
+      "sales",
+      "Contract review",
+      "Cross-department feasibility review · five HOD approvals",
+      "Approved",
+      "Critical",
+      "Stage 2 · Cross-Dept Feasibility Analysis",
+      ["HLPL-SLCT-SAL-SOR-01", "HLPL-SLCT-EHW-PRS-01", "HLPL-SLCT-SAL-QUO-01"],
+      {
+        signoffs:
+          "Hardware · Software · Mechanical · Purchase · Quality · all DEMO approvals complete",
+        feasibility: "Approved automatically compiles PRS and quotation",
+      },
+    ),
+    make(
+      "HLPL-SLCT-EHW-PRS-01",
+      "ehw",
+      "PRS",
+      "Auto-compiled Product Requirement Specification",
+      "Approved",
+      "Critical",
+      "Stage 3 · Requirement Freeze & Commercial Confirmation",
+      ["HLPL/F/MKT/01", "HLPL-SLCT-SAL-QUO-01", "HLPL-SLCT-01"],
+      {
+        generatedFrom: "Generated automatically from approved Contract Review HLPL/F/MKT/01",
+        baseline: "Frozen · automated baseline · changes require PMSS amendment",
+        requirements:
+          "12V/24V · GNSS · LTE 4G · CAN/OBD · tamper and power-loss alerts · panic/SOS · illustrative",
+      },
+    ),
+    make(
+      "HLPL-SLCT-SAL-QUO-01",
+      "sales",
+      "Commercial quotation",
+      "Auto-generated commercial quotation",
+      "Approved",
+      "High",
+      "Stage 3 · Requirement Freeze & Commercial Confirmation",
+      ["HLPL/F/MKT/01", "HLPL-SLCT-EHW-PRS-01"],
+      {
+        generatedFrom: "Generated automatically from approved Contract Review HLPL/F/MKT/01",
+        commercial: "₹20.33 Cr total value · DEMO only",
+      },
+    ),
+    make(
+      "PO-TATA-SLCT-2026-9041",
+      "sales",
+      "Order",
+      "Customer purchase order sync · 50,000 units",
+      "Approved",
+      "Critical",
+      "Stage 8 · Type Approval & SCM",
+      ["HLPL-SLCT-01", "HLPL-SLCT-FIN-INV-01", "HLPL-SLCT-EHW-PRS-01"],
+      {
+        volume: "50,000 units · DEMO only",
+        value: "₹20.33 Cr · illustrative only",
+        loi: "Customer LOI confirmed · DEMO simulation",
+      },
+    ),
+    make(
+      "HLPL-SLCT-FIN-INV-01",
+      "fin",
+      "Commercial billing",
+      "Advance deposit verification and tax invoice",
+      "Approved",
+      "Critical",
+      "Stage 8 · Type Approval & SCM",
+      ["PO-TATA-SLCT-2026-9041"],
+      {
+        advance: "₹6.10 Cr · illustrative payment verification only",
+        invoice: "Generated · DEMO only",
+      },
+    ),
+    make(
+      "HLPL-SLCT-EHW-BOM-01",
+      "ehw",
+      "BOM",
+      "Production BOM release",
+      "Approved",
+      "High",
+      "Stage 7 · Final Hardware & Mechanical Design Release",
+      ["HLPL-SLCT-EHW-PRS-01", "PO-TATA-SLCT-2026-9041"],
+      { release: "Final production BOM · DEMO release" },
+    ),
+    make(
+      "HLPL-SLCT-EHW-GER-01",
+      "ehw",
+      "Gerber release",
+      "Final Gerber package release",
+      "Approved",
+      "High",
+      "Stage 7 · Final Hardware & Mechanical Design Release",
+      ["HLPL-SLCT-EHW-BOM-01"],
+      { release: "Final Gerber package · DEMO release" },
+    ),
+    make(
+      "HLPL-SLCT-QA-APQP-01",
+      "qa",
+      "APQP gate",
+      "APQP phases 1–4 closed",
+      "Approved",
+      "Critical",
+      "Stage 8 · Type Approval & SCM",
+      ["HLPL-SLCT-01", "HLPL-SLCT-QA-DVP-01"],
+      {
+        apqp: "Phases 1–4 closed · DEMO only",
+        auditReadiness: "100% IATF 16949 & AIS-140 compliant · 0 NCRs · DEMO assertion only",
+      },
+    ),
+    make(
+      "HLPL-SLCT-QA-DVP-01",
+      "qa",
+      "DVP&R",
+      "AIS-140 evidence pack",
+      "Approved",
+      "Critical",
+      "Stage 8 · Type Approval & SCM",
+      ["HLPL-SLCT-QA-APQP-01"],
+      { tac: "DEMO reference #ARAI/TAC/2026/AIS140-842 · no certification claim" },
+    ),
     make(
       "HLPL-SLCT-EHW-PRS-02",
       "ehw",
@@ -1476,7 +2186,8 @@ const demoPortal = (): PortalState => {
       "Architecture",
       ["HLPL-SLCT-ESW-HSI-01"],
       {
-        telemetry: "High-throughput MQTT broker ingestion pipeline (50k msgs/s target) · REST API v2",
+        telemetry:
+          "High-throughput MQTT broker ingestion pipeline (50k msgs/s target) · REST API v2",
         fota: "Automated delta OTA campaign orchestration engine with cryptographic binary verification",
       },
     ),
@@ -1490,7 +2201,8 @@ const demoPortal = (): PortalState => {
       "PoC Bench",
       ["HLPL-SLCT-CSW-ARCH-01"],
       {
-        benchmark: "50,000 telemetry msgs/sec sustained at 42ms p99 latency · zero packet loss in simulation",
+        benchmark:
+          "50,000 telemetry msgs/sec sustained at 42ms p99 latency · zero packet loss in simulation",
       },
     ),
     make(
@@ -1596,7 +2308,9 @@ const demoPortal = (): PortalState => {
       "High",
       "PFD",
       ["SS-SLCT-02", "HLPL-SLCT-EMF-CP-01"],
-      { flow: "Accepted outsourced PCBA → box-build → programming → functional test → QA disposition → pack · illustrative" },
+      {
+        flow: "Accepted outsourced PCBA → box-build → programming → functional test → QA disposition → pack · illustrative",
+      },
     ),
     make(
       "SS-SLCT-02",
@@ -1677,7 +2391,7 @@ const demoPortal = (): PortalState => {
       ["HLPL-SLCT-01"],
       {
         roles: "Telematics Box-Build Lead · Firmware Architect",
-        score: "Level 4 · 3.8/4.0 average · DEMO competency profile",
+        score: "Not assessed · DEMO competency profile",
       },
     ),
     make(
@@ -1702,59 +2416,346 @@ const demoPortal = (): PortalState => {
       ["HLPL-SLCT-QA-DVP-01", "HLPL-SLCT-TST-EOL-01"],
       { approval: "PENDING · NEVER AUTO-APPROVED", release: "Not released" },
     ),
-    task("DEMO-TASK-EHW-BLE-MOD", "ehw", "Review & approve ECN-2026-BLE-01: Nordic nRF52840 layout on PCB-04", "Critical", today, "Avery Vale", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "Nordic BLE 5.2 2.4GHz RF trace impedance matching & 3.7V battery charger layout review", true),
-    task("DEMO-TASK-QA-CONTRACT", "qa", "Sign Contract Review Record HLPL/F/MKT/01 for Select Motors Telematics", "High", today, "Jordan Blake", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Cross-functional sign-off · due today 16:30", true),
-    task("DEMO-TASK-QA-ICAT-TAC", "qa", "Coordinate iCAT Manesar witness testing & Form 22 TAC for Ashok Leyland Gateway", "High", today, "Jordan Blake", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "iCAT Annexure 8 testing & NABL 3.7V Li-ion battery certificate review", true),
-    task("DEMO-TASK-EMF-REFLOW", "emf", "Verify accepted outsourced PCBA lot traceability and box-build readiness for BATCH-04", "High", today, "Casey Rowan", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Process verification · due today 11:00"),
-    task("DEMO-TASK-ESW-BLE-GATT", "fw", "Implement FreeRTOS Bluetooth GATT profiles for wireless TPMS & temperature sensors", "High", today, "Devon Lane", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "BLE 5.2 GATT parser integration & AIS-140 MQTT aggregation", false),
-    task("TASK-EFW-CAN01", "fw", "CAN J1939 driver bring-up on STM32G0B1", "High", today, "Sneha Patel", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Bring up CAN controller registers and test loopback"),
-    task("TASK-EFW-BOOT01", "fw", "Secure dual-bank bootloader & rollback check", "High", today, "Devon Lane", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "Dual-bank flash partition swap and CRC32 signature check"),
-    task("TASK-CSW-MQTT01", "sw", "High-throughput MQTT ingestion pipeline", "Critical", today, "Siddharth Roy", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "Deploy and test scalable MQTT broker ingestion cluster"),
-    task("TASK-CSW-DASH01", "sw", "Telematics fleet dashboard WebSocket feed", "High", today, "Nathan Cole", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Live map telemetry WebSocket stream for fleet operators"),
-    task("TASK-CSW-OTA01", "sw", "Cloud FOTA campaign orchestrator & binary signing", "High", today, "Nathan Cole", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "Automated FOTA distribution rollout with rollback protection"),
-    task("DEMO-TASK-FIN-NRE-BLE", "fin", "Verify NRE tooling invoice & 30% advance commercial deposit for Ashok Leyland", "High", today, "Priya Voss", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "₹1.85L PCB spin NRE + ₹2.40L iCAT & NABL agency testing review", true),
-    task("DEMO-TASK-FIN-ADVANCE", "fin", "Approve advance billing payment release for EC200U reel batch", "High", today, "Priya Voss", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Financial commitment · due today 15:00", true),
-    task("DEMO-TASK-PUR-FIBOCOM", "pur", "Verify second-source vendor capacity scorecard F-PUR-16 for Fibocom", "Normal", today, "Morgan Reed", "HLPL-XLINK-03", "HLPL-XLINK-03 · Commercial Vehicle Gateway", "Capacity scorecard review · due today 18:00"),
-    task("DEMO-TASK-HR-IPC", "hrops", "Log IPC-A-610 workmanship training attendance in Skill Matrix HLPL/F/HR/03", "Low", today, "Taylor Quinn", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Competency record update · due today 17:30"),
-    task("DEMO-TASK-SIT-BACKUP", "sit", "Execute offsite encrypted backup replication drill for telemetry DB", "Normal", today, "Kai Morgan", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Recovery evidence capture · due today 19:00"),
-    task("DEMO-TASK-MECH-CLEARANCE", "mech", "Conduct 3D STEP clearance check for BCU Gen 3 connector harness", "High", tomorrow, "Samira Holt", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "Harness clearance review · tomorrow"),
-    task("DEMO-TASK-TST-CAL", "tst", "Calibrate automated EOL jig JIG-SLCT-01 optical barcode scanner", "Normal", tomorrow, "Mina Cross", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Jig calibration check · tomorrow"),
-    task("DEMO-TASK-SAL-QUO", "sales", "Transmit revised quotation HLPL-BCU-SAL-QUO-02 to Ashok Leyland SCM", "High", tomorrow, "Riley Stone", "HLPL-BCU-02", "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway", "Commercial response draft · tomorrow"),
-    task("DEMO-TASK-QA-PPAP", "qa", "Review Supplier PPAP Level 3 submission F-PUR-15 for Molex connector", "High", tomorrow, "Jordan Blake", "HLPL-SLCT-01", "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway", "Supplier evidence review · tomorrow"),
-    task("DEMO-TASK-EMF-5S", "emf", "Conduct pre-manufacturing 5S audit for through-hole assembly station", "Normal", tomorrow, "Casey Rowan", "HLPL-PST-01", "HLPL-PST-01 · Power Shuttle Transmission Unit", "Readiness audit · tomorrow"),
-    task("DEMO-TASK-PUR-MLCC", "pur", "Audit lead-time variance report for passive MLCC capacitors", "Normal", tomorrow, "Morgan Reed", "HLPL-EFAN-01", "HLPL-EFAN-01 · High-Power eFan Speed Controller", "Supply risk review · tomorrow"),
+    task(
+      "DEMO-TASK-EHW-BLE-MOD",
+      "ehw",
+      "Review & approve ECN-2026-BLE-01: Nordic nRF52840 layout on PCB-04",
+      "Critical",
+      today,
+      "Avery Vale",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "Nordic BLE 5.2 2.4GHz RF trace impedance matching & 3.7V battery charger layout review",
+      true,
+    ),
+    task(
+      "DEMO-TASK-QA-CONTRACT",
+      "qa",
+      "Sign Contract Review Record HLPL/F/MKT/01 for Select Motors Telematics",
+      "High",
+      today,
+      "Jordan Blake",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "Cross-functional sign-off · due today 16:30",
+      true,
+    ),
+    task(
+      "DEMO-TASK-QA-ICAT-TAC",
+      "qa",
+      "Coordinate iCAT Manesar witness testing & Form 22 TAC for Ashok Leyland Gateway",
+      "High",
+      today,
+      "Jordan Blake",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "iCAT Annexure 8 testing & NABL 3.7V Li-ion battery certificate review",
+      true,
+    ),
+    task(
+      "DEMO-TASK-EMF-REFLOW",
+      "emf",
+      "Verify accepted outsourced PCBA lot traceability and box-build readiness for BATCH-04",
+      "High",
+      today,
+      "Casey Rowan",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "Process verification · due today 11:00",
+    ),
+    task(
+      "DEMO-TASK-ESW-BLE-GATT",
+      "fw",
+      "Implement FreeRTOS Bluetooth GATT profiles for wireless TPMS & temperature sensors",
+      "High",
+      today,
+      "Devon Lane",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "BLE 5.2 GATT parser integration & AIS-140 MQTT aggregation",
+      false,
+    ),
+    task(
+      "TASK-EFW-CAN01",
+      "fw",
+      "CAN J1939 driver bring-up on STM32G0B1",
+      "High",
+      today,
+      "Sneha Patel",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "Bring up CAN controller registers and test loopback",
+    ),
+    task(
+      "TASK-EFW-BOOT01",
+      "fw",
+      "Secure dual-bank bootloader & rollback check",
+      "High",
+      today,
+      "Devon Lane",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "Dual-bank flash partition swap and CRC32 signature check",
+    ),
+    task(
+      "TASK-CSW-MQTT01",
+      "sw",
+      "High-throughput MQTT ingestion pipeline",
+      "Critical",
+      today,
+      "Siddharth Roy",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "Deploy and test scalable MQTT broker ingestion cluster",
+    ),
+    task(
+      "TASK-CSW-DASH01",
+      "sw",
+      "Telematics fleet dashboard WebSocket feed",
+      "High",
+      today,
+      "Nathan Cole",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "Live map telemetry WebSocket stream for fleet operators",
+    ),
+    task(
+      "TASK-CSW-OTA01",
+      "sw",
+      "Cloud FOTA campaign orchestrator & binary signing",
+      "High",
+      today,
+      "Nathan Cole",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "Automated FOTA distribution rollout with rollback protection",
+    ),
+    task(
+      "DEMO-TASK-FIN-NRE-BLE",
+      "fin",
+      "Verify NRE tooling invoice & 30% advance commercial deposit for Ashok Leyland",
+      "High",
+      today,
+      "Priya Voss",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "₹1.85L PCB spin NRE + ₹2.40L iCAT & NABL agency testing review",
+      true,
+    ),
+    task(
+      "DEMO-TASK-FIN-ADVANCE",
+      "fin",
+      "Approve advance billing payment release for EC200U reel batch",
+      "High",
+      today,
+      "Priya Voss",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "Financial commitment · due today 15:00",
+      true,
+    ),
+    task(
+      "DEMO-TASK-PUR-FIBOCOM",
+      "pur",
+      "Verify second-source vendor capacity scorecard F-PUR-16 for Fibocom",
+      "Normal",
+      today,
+      "Morgan Reed",
+      "HLPL-XLINK-03",
+      "HLPL-XLINK-03 · Commercial Vehicle Gateway",
+      "Capacity scorecard review · due today 18:00",
+    ),
+    task(
+      "DEMO-TASK-HR-IPC",
+      "hrops",
+      "Log IPC-A-610 workmanship training attendance in Skill Matrix HLPL/F/HR/03",
+      "Low",
+      today,
+      "Taylor Quinn",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "Competency record update · due today 17:30",
+    ),
+    task(
+      "DEMO-TASK-SIT-BACKUP",
+      "sit",
+      "Execute offsite encrypted backup replication drill for telemetry DB",
+      "Normal",
+      today,
+      "Kai Morgan",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "Recovery evidence capture · due today 19:00",
+    ),
+    task(
+      "DEMO-TASK-MECH-CLEARANCE",
+      "mech",
+      "Conduct 3D STEP clearance check for BCU Gen 3 connector harness",
+      "High",
+      tomorrow,
+      "Samira Holt",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "Harness clearance review · tomorrow",
+    ),
+    task(
+      "DEMO-TASK-TST-CAL",
+      "emf",
+      "Calibrate automated EOL jig JIG-SLCT-01 optical barcode scanner",
+      "Normal",
+      tomorrow,
+      "Mina Cross",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "EMF-owned EOL Testing role · jig calibration check · tomorrow",
+    ),
+    task(
+      "DEMO-TASK-SAL-QUO",
+      "sales",
+      "Transmit revised quotation HLPL-BCU-SAL-QUO-02 to Ashok Leyland SCM",
+      "High",
+      tomorrow,
+      "Riley Stone",
+      "HLPL-BCU-02",
+      "HLPL-BCU-02 · Ashok Leyland Telematics & BLE Gateway",
+      "Commercial response draft · tomorrow",
+    ),
+    task(
+      "DEMO-TASK-QA-PPAP",
+      "qa",
+      "Review Supplier PPAP Level 3 submission F-PUR-15 for Molex connector",
+      "High",
+      tomorrow,
+      "Jordan Blake",
+      "HLPL-SLCT-01",
+      "HLPL-SLCT-01 · AIS-140 GPS/4G Telematics Gateway",
+      "Supplier evidence review · tomorrow",
+    ),
+    task(
+      "DEMO-TASK-EMF-5S",
+      "emf",
+      "Conduct pre-manufacturing 5S audit for through-hole assembly station",
+      "Normal",
+      tomorrow,
+      "Casey Rowan",
+      "HLPL-PST-01",
+      "HLPL-PST-01 · Power Shuttle Transmission Unit",
+      "Readiness audit · tomorrow",
+    ),
+    task(
+      "DEMO-TASK-PUR-MLCC",
+      "pur",
+      "Audit lead-time variance report for passive MLCC capacitors",
+      "Normal",
+      tomorrow,
+      "Morgan Reed",
+      "HLPL-EFAN-01",
+      "HLPL-EFAN-01 · High-Power eFan Speed Controller",
+      "Supply risk review · tomorrow",
+    ),
   ];
   const projectProfiles = [
-    ["HLPL-SLCT-01", "Select Motors AIS-140 GPS Telematics Tracker (Reusable Platform)", "Select Motors Limited · Telematics Division", "Stage 8 · Type Approval & SCM", "12V / 24V", "IP67", "$35.42"],
-    ["HLPL-BCU-02", "Ashok Leyland Telematics & BLE Sensor Gateway (OEM Modification)", "Ashok Leyland Limited · Commercial Vehicle Telematics", "Stage 2 · Multi-Dept Feasibility", "12V / 24V", "IP67", "$38.57"],
-    ["HLPL-AI4T-01", "Tata Ace EV 4G Telematics Gateway", "Tata Motors Limited · EV Fleet Division", "Stage 8 · Type Approval & SCM", "12V / 24V", "IP67", "$35.42"],
-    ["HLPL-XLINK-03", "Commercial Vehicle Gateway", "Commercial Fleet Solutions Limited", "Stage 4 · PoC", "24V", "IP67", "$44.10"],
-    ["HLPL-EFAN-01", "High-Power eFan Speed Controller", "Sonalika Tractors Limited", "Stage 2 · Feasibility", "48V", "IP68", "$29.80"],
-    ["HLPL-PST-01", "Power Shuttle Transmission Unit", "Escorts Kubota Limited", "Stage 9 · Mass Production", "24V", "IP67", "$64.50"],
+    [
+      "HLPL-SLCT-01",
+      "Select Motors AIS-140 GPS Telematics Tracker (Reusable Platform)",
+      "Select Motors Limited · Telematics Division",
+      "Stage 8 · Type Approval & SCM",
+      "12V / 24V",
+      "IP67",
+      "$35.42",
+    ],
+    [
+      "HLPL-BCU-02",
+      "Ashok Leyland Telematics & BLE Sensor Gateway (OEM Modification)",
+      "Ashok Leyland Limited · Commercial Vehicle Telematics",
+      "Stage 2 · Multi-Dept Feasibility",
+      "12V / 24V",
+      "IP67",
+      "$38.57",
+    ],
+    [
+      "HLPL-AI4T-01",
+      "Tata Ace EV 4G Telematics Gateway",
+      "Tata Motors Limited · EV Fleet Division",
+      "Stage 8 · Type Approval & SCM",
+      "12V / 24V",
+      "IP67",
+      "$35.42",
+    ],
+    [
+      "HLPL-XLINK-03",
+      "Commercial Vehicle Gateway",
+      "Commercial Fleet Solutions Limited",
+      "Stage 4 · PoC",
+      "24V",
+      "IP67",
+      "$44.10",
+    ],
+    [
+      "HLPL-EFAN-01",
+      "High-Power eFan Speed Controller",
+      "Sonalika Tractors Limited",
+      "Stage 2 · Feasibility",
+      "48V",
+      "IP68",
+      "$29.80",
+    ],
+    [
+      "HLPL-PST-01",
+      "Power Shuttle Transmission Unit",
+      "Escorts Kubota Limited",
+      "Stage 9 · Mass Production",
+      "24V",
+      "IP67",
+      "$64.50",
+    ],
   ] as const;
   projectProfiles.slice(1).forEach(([id, title, client, stage, voltage, enclosure, bom]) => {
-    records.push(make(id, "ehw", "Project", title, "In review", "High", stage, [], { client, currentStage: stage, voltage, enclosure, actualBom: `${bom} · illustrative`, pmss: `${id}-PMSS-00` }));
+    records.push(
+      make(id, "ehw", "Project", title, "In review", "High", stage, [], {
+        client,
+        currentStage: stage,
+        voltage,
+        enclosure,
+        actualBom: `${bom} · illustrative`,
+        pmss: `${id}-PMSS-00`,
+      }),
+    );
   });
-  const roles: DepartmentRole[] = departments.flatMap((department, index) => [
-    {
-      id: `demo-role-${department.id}-lead`,
-      departmentId: department.id,
-      name: "DEMO Department lead",
-      assignee: department.lead,
+  const roles: DepartmentRole[] = departments
+    .filter((department) => department.active)
+    .flatMap((department, index) => [
+      {
+        id: `demo-role-${department.id}-lead`,
+        departmentId: department.id,
+        name: "DEMO Department lead",
+        assignee: department.lead,
+        permissions: [...permissionOptions],
+        active: true,
+        isDemo: true,
+      },
+      {
+        id: `demo-role-${department.id}-coordinator`,
+        departmentId: department.id,
+        name: "DEMO Coordinator",
+        assignee: `Taylor ${index + 1} · demo@example.test`,
+        permissions: ["records:view", "records:create", "tasks:assign", "approvals:routine"],
+        active: true,
+        isDemo: true,
+      },
+    ]);
+  const emfDepartment = departments.find((department) => department.code === "EMF");
+  if (emfDepartment) {
+    roles.push({
+      id: `demo-role-${emfDepartment.id}-eol-testing`,
+      departmentId: emfDepartment.id,
+      name: "DEMO EOL Testing lead",
+      assignee: "Mina Cross · EOL Testing",
       permissions: [...permissionOptions],
       active: true,
       isDemo: true,
-    },
-    {
-      id: `demo-role-${department.id}-coordinator`,
-      departmentId: department.id,
-      name: "DEMO Coordinator",
-      assignee: `Taylor ${index + 1} · demo@example.test`,
-      permissions: ["records:view", "records:create", "tasks:assign", "approvals:routine"],
-      active: true,
-      isDemo: true,
-    },
-  ]);
+    });
+  }
   const document = (
     id: string,
     title: string,
@@ -1832,8 +2833,21 @@ const demoPortal = (): PortalState => {
         "DEMO AXP2101",
         "DEMO 1000mAh LiPo",
       ],
-      products: ["HLPL-SLCT-01", "HLPL-SLCT-01", "HLPL-BCU-02", "HLPL-XLINK-03", "HLPL-EFAN-01", "HLPL-PST-01"],
-      customers: ["Tata Motors Limited · EV Fleet Division, Pune", "Mahindra Electric Mobility Limited", "Ashok Leyland Limited", "Sonalika Tractors Limited", "Escorts Kubota Limited"],
+      products: [
+        "HLPL-SLCT-01",
+        "HLPL-SLCT-01",
+        "HLPL-BCU-02",
+        "HLPL-XLINK-03",
+        "HLPL-EFAN-01",
+        "HLPL-PST-01",
+      ],
+      customers: [
+        "Tata Motors Limited · EV Fleet Division, Pune",
+        "Mahindra Electric Mobility Limited",
+        "Ashok Leyland Limited",
+        "Sonalika Tractors Limited",
+        "Escorts Kubota Limited",
+      ],
       routes: ["DEMO box-build integration"],
       documentTypes: [
         "PRS",
@@ -1848,73 +2862,195 @@ const demoPortal = (): PortalState => {
       ],
     },
     approvals: [
-      { id: "demo-approval-quality-release", title: `DEMO · Human quality release — ${project}`, recordId: "HLPL-SLCT-QA-REL-01", outcome: "Pending", updatedAt: timestamp },
-      { id: "demo-approval-ecn-002", title: "DEMO · EHW ECN-002 thermal layout review", recordId: "DEMO-TASK-EHW-ECN-002", outcome: "Pending", updatedAt: timestamp },
-      { id: "demo-approval-fin-advance", title: "DEMO · FIN advance billing payment release", recordId: "DEMO-TASK-FIN-ADVANCE", outcome: "Pending", updatedAt: timestamp },
+      {
+        id: "demo-approval-quality-release",
+        title: `DEMO · Human quality release — ${project}`,
+        recordId: "HLPL-SLCT-QA-REL-01",
+        outcome: "Pending",
+        updatedAt: timestamp,
+      },
+      {
+        id: "demo-approval-ecn-002",
+        title: "DEMO · EHW ECN-002 thermal layout review",
+        recordId: "DEMO-TASK-EHW-ECN-002",
+        outcome: "Pending",
+        updatedAt: timestamp,
+      },
+      {
+        id: "demo-approval-fin-advance",
+        title: "DEMO · FIN advance billing payment release",
+        recordId: "DEMO-TASK-FIN-ADVANCE",
+        outcome: "Pending",
+        updatedAt: timestamp,
+      },
     ],
-    documents: mergeAutomotiveDemoDocuments(mergeDemoDepartmentCommonDocuments([
-      document(
-        "demo-doc-pmss",
-        "Project master specification sheet",
-        "demo-dept-ehw",
-        "02_Product_Platforms/Telematics_Gateways",
-        "HLPL-SLCT-PMSS-00",
-        "Stage 8 · Type Approval & SCM Planning",
-        "In review",
-        ["HLPL-SLCT-01", "HLPL-SLCT-EHW-PRS-02"],
+    documents: mergeAutomotiveDemoDocuments(
+      mergeDemoDepartmentCommonDocuments(
+        [
+          document(
+            "demo-doc-pmss",
+            "Project master specification sheet",
+            "demo-dept-ehw",
+            "02_Product_Platforms/Telematics_Gateways",
+            "HLPL-SLCT-PMSS-00",
+            "Stage 8 · Type Approval & SCM Planning",
+            "In review",
+            ["HLPL-SLCT-01", "HLPL-SLCT-EHW-PRS-02"],
+          ),
+          document(
+            "demo-doc-prs",
+            "Product requirement specification",
+            "demo-dept-ehw",
+            "03_Engineering/EHW",
+            "HLPL-SLCT-EHW-PRS-02",
+            "Phase_2_Requirements_and_Architecture",
+            "Approved",
+            ["HLPL-SLCT-EHW-PRS-02", "HLPL-SLCT-EHW-SCH-02"],
+          ),
+          document(
+            "demo-doc-bom",
+            "Production BOM",
+            "demo-dept-ehw",
+            "03_Engineering/EHW",
+            "HLPL-SLCT-EHW-BOM-01",
+            "Phase_9_Production_and_Verification",
+            "Approved",
+            ["HLPL-SLCT-EHW-BOM-01", "F-PUR-15/SLCT-01"],
+          ),
+          document(
+            "demo-doc-dvpr",
+            "DVP&R report",
+            "demo-dept-qa",
+            "04_Quality/Device_Audit_Packs",
+            "HLPL-SLCT-QA-DVP-01",
+            "Stage 8 · Type Approval & SCM Planning",
+            "In review",
+            ["HLPL-SLCT-QA-DVP-01", "HLPL-APQP-001"],
+          ),
+          document(
+            "demo-doc-control-plan",
+            "Production control plan",
+            "demo-dept-emf",
+            "05_Manufacturing/Control_Plans",
+            "HLPL-SLCT-EMF-CP-01",
+            "Phase_9_Production_and_Verification",
+            "In review",
+            ["HLPL-SLCT-EMF-CP-01", "SS-SLCT-02"],
+          ),
+          document(
+            "demo-doc-quotation",
+            "Commercial quotation · $41.20 unit volume tier",
+            "demo-dept-sales",
+            "Governance/QMS",
+            "HLPL-SLCT-SAL-QUO-01",
+            "Stage 3 · Requirement Freeze",
+            "Approved",
+            ["HLPL-SLCT-SAL-QUO-01"],
+          ),
+          document(
+            "demo-doc-contract",
+            "Cross-functional feasibility record",
+            "demo-dept-sales",
+            "Governance/QMS",
+            "HLPL/F/MKT/01",
+            "Stage 2 · Feasibility",
+            "In review",
+            ["HLPL/F/MKT/01"],
+          ),
+          document(
+            "demo-doc-schematic",
+            "Approved schematic package",
+            "demo-dept-ehw",
+            "Product/Device Audit Packs",
+            "HLPL-SLCT-EHW-SCH-02",
+            "Phase_4_Schematic_Design · HW_15–16",
+            "Approved",
+            ["HLPL-SLCT-EHW-SCH-02"],
+          ),
+          document(
+            "demo-doc-gerber",
+            "Gerber and PCB release",
+            "demo-dept-ehw",
+            "Product/Device Audit Packs",
+            "HLPL-SLCT-EHW-GER-01",
+            "Phase_7_Fabrication_and_Precompliance · HW_24–27",
+            "Approved",
+            ["HLPL-SLCT-EHW-GER-01"],
+          ),
+          document(
+            "demo-doc-hsi",
+            "Hardware-software interface specification",
+            "demo-dept-fw",
+            "Product/Device Audit Packs",
+            "HLPL-SLCT-ESW-HSI-01",
+            "Phase_8_Hardware_Software_Integration · HW_28–29",
+            "Approved",
+            ["HLPL-SLCT-ESW-HSI-01"],
+          ),
+          document(
+            "demo-doc-csw-arch",
+            "Cloud Telemetry Architecture & API Contract",
+            "demo-dept-sw",
+            "03_Engineering/CSW",
+            "HLPL-SLCT-CSW-ARCH-01",
+            "Phase_2_Requirements_and_Architecture",
+            "Approved",
+            ["HLPL-SLCT-CSW-ARCH-01"],
+          ),
+          document(
+            "demo-doc-step",
+            "3D STEP enclosure clearance report",
+            "demo-dept-mech",
+            "Product/Device Audit Packs",
+            "HLPL-SLCT-MECH-CAD-01",
+            "Phase_5_Mechanical_and_Enclosure · HW_17–18",
+            "Approved",
+            ["HLPL-SLCT-MECH-CAD-01"],
+          ),
+          document(
+            "demo-doc-ppap",
+            "Supplier PPAP Level 3 dossier",
+            "demo-dept-pur",
+            "Supplier Quality/IQC",
+            "F-PUR-15/SLCT-01",
+            "Stage 8 · Type Approval & SCM Planning",
+            "In review",
+            ["F-PUR-15/SLCT-01"],
+          ),
+          document(
+            "demo-doc-eol",
+            "Pre-dispatch inspection and serialized EOL certificate",
+            "demo-dept-tst",
+            "Product/Device Audit Packs",
+            "HLPL-SLCT-TST-PDI-01",
+            "Phase_9_Production_and_Verification · HW_30–35",
+            "Approved",
+            ["HLPL-SLCT-TST-EOL-01"],
+          ),
+          document(
+            "demo-doc-invoice",
+            "Commercial tax invoice and e-Way bill",
+            "demo-dept-fin",
+            "Governance/QMS",
+            "HLPL-SLCT-FIN-INV-01",
+            "Stage 9 · Mass Production",
+            "In review",
+            ["HLPL-INV-2026-089"],
+          ),
+          document(
+            "demo-doc-skill",
+            "Annual skill matrix and competency evaluation",
+            "demo-dept-hrops",
+            "Governance/QMS",
+            "HLPL/F/HR/03",
+            "Stage 9 · Mass Production",
+            "Approved",
+            ["HLPL/F/HR/03"],
+          ),
+        ],
+        departments,
       ),
-      document(
-        "demo-doc-prs",
-        "Product requirement specification",
-        "demo-dept-ehw",
-        "03_Engineering/EHW",
-        "HLPL-SLCT-EHW-PRS-02",
-        "Phase_2_Requirements_and_Architecture",
-        "Approved",
-        ["HLPL-SLCT-EHW-PRS-02", "HLPL-SLCT-EHW-SCH-02"],
-      ),
-      document(
-        "demo-doc-bom",
-        "Production BOM",
-        "demo-dept-ehw",
-        "03_Engineering/EHW",
-        "HLPL-SLCT-EHW-BOM-01",
-        "Phase_9_Production_and_Verification",
-        "Approved",
-        ["HLPL-SLCT-EHW-BOM-01", "F-PUR-15/SLCT-01"],
-      ),
-      document(
-        "demo-doc-dvpr",
-        "DVP&R report",
-        "demo-dept-qa",
-        "04_Quality/Device_Audit_Packs",
-        "HLPL-SLCT-QA-DVP-01",
-        "Stage 8 · Type Approval & SCM Planning",
-        "In review",
-        ["HLPL-SLCT-QA-DVP-01", "HLPL-APQP-001"],
-      ),
-      document(
-        "demo-doc-control-plan",
-        "Production control plan",
-        "demo-dept-emf",
-        "05_Manufacturing/Control_Plans",
-        "HLPL-SLCT-EMF-CP-01",
-        "Phase_9_Production_and_Verification",
-        "In review",
-        ["HLPL-SLCT-EMF-CP-01", "SS-SLCT-02"],
-      ),
-      document("demo-doc-quotation", "Commercial quotation · $41.20 unit volume tier", "demo-dept-sales", "Governance/QMS", "HLPL-SLCT-SAL-QUO-01", "Stage 3 · Requirement Freeze", "Approved", ["HLPL-SLCT-SAL-QUO-01"]),
-      document("demo-doc-contract", "Cross-functional feasibility record", "demo-dept-sales", "Governance/QMS", "HLPL/F/MKT/01", "Stage 2 · Feasibility", "In review", ["HLPL/F/MKT/01"]),
-      document("demo-doc-schematic", "Approved schematic package", "demo-dept-ehw", "Product/Device Audit Packs", "HLPL-SLCT-EHW-SCH-02", "Phase_4_Schematic_Design · HW_15–16", "Approved", ["HLPL-SLCT-EHW-SCH-02"]),
-      document("demo-doc-gerber", "Gerber and PCB release", "demo-dept-ehw", "Product/Device Audit Packs", "HLPL-SLCT-EHW-GER-01", "Phase_7_Fabrication_and_Precompliance · HW_24–27", "Approved", ["HLPL-SLCT-EHW-GER-01"]),
-      document("demo-doc-hsi", "Hardware-software interface specification", "demo-dept-fw", "Product/Device Audit Packs", "HLPL-SLCT-ESW-HSI-01", "Phase_8_Hardware_Software_Integration · HW_28–29", "Approved", ["HLPL-SLCT-ESW-HSI-01"]),
-      document("demo-doc-csw-arch", "Cloud Telemetry Architecture & API Contract", "demo-dept-sw", "03_Engineering/CSW", "HLPL-SLCT-CSW-ARCH-01", "Phase_2_Requirements_and_Architecture", "Approved", ["HLPL-SLCT-CSW-ARCH-01"]),
-      document("demo-doc-step", "3D STEP enclosure clearance report", "demo-dept-mech", "Product/Device Audit Packs", "HLPL-SLCT-MECH-CAD-01", "Phase_5_Mechanical_and_Enclosure · HW_17–18", "Approved", ["HLPL-SLCT-MECH-CAD-01"]),
-      document("demo-doc-ppap", "Supplier PPAP Level 3 dossier", "demo-dept-pur", "Supplier Quality/IQC", "F-PUR-15/SLCT-01", "Stage 8 · Type Approval & SCM Planning", "In review", ["F-PUR-15/SLCT-01"]),
-      document("demo-doc-eol", "Pre-dispatch inspection and serialized EOL certificate", "demo-dept-tst", "Product/Device Audit Packs", "HLPL-SLCT-TST-PDI-01", "Phase_9_Production_and_Verification · HW_30–35", "Approved", ["HLPL-SLCT-TST-EOL-01"]),
-      document("demo-doc-invoice", "Commercial tax invoice and e-Way bill", "demo-dept-fin", "Governance/QMS", "HLPL-SLCT-FIN-INV-01", "Stage 9 · Mass Production", "In review", ["HLPL-INV-2026-089"]),
-      document("demo-doc-skill", "Annual skill matrix and competency evaluation", "demo-dept-hrops", "Governance/QMS", "HLPL/F/HR/03", "Stage 9 · Mass Production", "Approved", ["HLPL/F/HR/03"]),
-    ], departments)),
+    ),
     audit: [
       {
         id: "demo-audit-slct",
@@ -1923,14 +3059,61 @@ const demoPortal = (): PortalState => {
         detail: `${project} Stage 8 sample data loaded. ${demoNote}`,
       },
     ],
-    notifications: [`${project} Stage 8 production authorization is active`, "Human quality release is pending; no automatic approval is possible."],
+    notifications: [
+      `${project} Stage 8 production authorization is active`,
+      "Human quality release is pending; no automatic approval is possible.",
+    ],
     alerts: [
-      { id: "ALERT_HW_01", severity: "Critical", title: "Key MOSFET selected on EFAN-01 lacks AEC-Q qualification", detail: "R&D risk waiver is required before the component selection can advance.", departmentId: "demo-dept-ehw", resolved: false },
-      { id: "ALERT_SAL_02", severity: "Warning", title: "Contract Review pending functional sign-offs beyond 48 hours", detail: "DEMO Tata Ace EV contract review is awaiting simulated functional acknowledgement.", departmentId: "demo-dept-sales", resolved: false },
-      { id: "ALERT_TST_01", severity: "Critical", title: "First-pass yield below 95% threshold on Line 1", detail: "Current DEMO FPY: 92.4%. Review the simulated failure trend before release.", departmentId: "demo-dept-tst", resolved: false },
-      { id: "ALERT_FIN_03", severity: "Warning", title: "Customer payment overdue beyond 45 days for Ashok Leyland Batch 02", detail: "Illustrative exposure: ₹8,40,000. No actual receivable is represented.", departmentId: "demo-dept-fin", resolved: false },
-      { id: "ALERT_ESW_FW_01", severity: "Warning", title: "Firmware stack memory margin below threshold on BLE task", detail: "FreeRTOS task stack high-water mark indicates 12% headroom. Optimization needed.", departmentId: "demo-dept-fw", resolved: false },
-      { id: "ALERT_CSW_INGEST_01", severity: "Warning", title: "Cloud telemetry MQTT connection broker ping latency", detail: "Simulated MQTT broker connection latency elevated (68ms). Review websocket worker pool.", departmentId: "demo-dept-sw", resolved: false },
+      {
+        id: "ALERT_HW_01",
+        severity: "Critical",
+        title: "Key MOSFET selected on EFAN-01 lacks AEC-Q qualification",
+        detail: "R&D risk waiver is required before the component selection can advance.",
+        departmentId: "demo-dept-ehw",
+        resolved: false,
+      },
+      {
+        id: "ALERT_SAL_02",
+        severity: "Warning",
+        title: "Contract Review pending functional sign-offs beyond 48 hours",
+        detail:
+          "DEMO Tata Ace EV contract review is awaiting simulated functional acknowledgement.",
+        departmentId: "demo-dept-sales",
+        resolved: false,
+      },
+      {
+        id: "ALERT_TST_01",
+        severity: "Critical",
+        title: "First-pass yield below 95% threshold on Line 1",
+        detail: "Current DEMO FPY: 92.4%. Review the simulated failure trend before release.",
+        departmentId: "demo-dept-tst",
+        resolved: false,
+      },
+      {
+        id: "ALERT_FIN_03",
+        severity: "Warning",
+        title: "Customer payment overdue beyond 45 days for Ashok Leyland Batch 02",
+        detail: "Illustrative exposure: ₹8,40,000. No actual receivable is represented.",
+        departmentId: "demo-dept-fin",
+        resolved: false,
+      },
+      {
+        id: "ALERT_ESW_FW_01",
+        severity: "Warning",
+        title: "Firmware stack memory margin below threshold on BLE task",
+        detail: "FreeRTOS task stack high-water mark indicates 12% headroom. Optimization needed.",
+        departmentId: "demo-dept-fw",
+        resolved: false,
+      },
+      {
+        id: "ALERT_CSW_INGEST_01",
+        severity: "Warning",
+        title: "Cloud telemetry MQTT connection broker ping latency",
+        detail:
+          "Simulated MQTT broker connection latency elevated (68ms). Review websocket worker pool.",
+        departmentId: "demo-dept-sw",
+        resolved: false,
+      },
     ],
     customersRegistry: defaultCustomers,
     enquiriesOpportunities: defaultEnquiriesOpportunities,
@@ -1972,7 +3155,8 @@ const demoPortal = (): PortalState => {
     }
     if (typeof value !== "string") return value;
     let text = value;
-    for (const [source, replacement] of fictionalNameMap) text = text.replaceAll(source, replacement);
+    for (const [source, replacement] of fictionalNameMap)
+      text = text.replaceAll(source, replacement);
     text = text
       .replaceAll("DEMO · ", "")
       .replaceAll(" · DEMO", " · TEST DATA")
@@ -1980,57 +3164,100 @@ const demoPortal = (): PortalState => {
       .replaceAll("DEMO-TASK", "TEST-TASK")
       .replaceAll(" · demo", "")
       .replaceAll("DEMO", "TEST DATA")
-      .replaceAll("Customer purchase order sync · 50,000 units", "Commercial volume planning checkpoint")
+      .replaceAll(
+        "Customer purchase order sync · 50,000 units",
+        "Commercial volume planning checkpoint",
+      )
       .replaceAll("Advance deposit verification and tax invoice", "Budget estimate review")
       .replaceAll("Final production BOM", "Tentative BOM · not released")
       .replaceAll("Final Gerber package release", "Gerber package review")
       .replaceAll("Production BOM release", "Tentative BOM review")
       .replaceAll("Production BOM", "Tentative BOM")
-      .replaceAll("Customer purchase order sync · 50,000 units", "Commercial planning checkpoint · volume under discussion")
+      .replaceAll(
+        "Customer purchase order sync · 50,000 units",
+        "Commercial planning checkpoint · volume under discussion",
+      )
       .replaceAll("Customer purchase order sync", "Commercial planning checkpoint")
       .replaceAll("Commercial tax invoice and e-Way bill", "Budget estimate workflow review")
       .replaceAll("Advance deposit verification and tax invoice", "Budget estimate review")
       .replaceAll("Advance deposit", "Indicative cost assumption")
-      .replaceAll("Customer LOI confirmed · TEST DATA simulation", "No customer commitment recorded in this test fixture")
+      .replaceAll(
+        "Customer LOI confirmed · TEST DATA simulation",
+        "No customer commitment recorded in this test fixture",
+      )
       .replaceAll("Customer LOI confirmed", "No customer commitment recorded")
       .replaceAll("Commercial billing", "Indicative budget review")
       .replaceAll("invoice", "budget estimate")
       .replaceAll("Invoice", "Budget estimate")
-      .replaceAll("Customer LOI confirmed · TEST DATA simulation", "No customer commitment recorded in this test fixture")
-      .replaceAll("Customer payment overdue beyond 45 days", "Internal budget estimate pending review")
+      .replaceAll(
+        "Customer LOI confirmed · TEST DATA simulation",
+        "No customer commitment recorded in this test fixture",
+      )
+      .replaceAll(
+        "Customer payment overdue beyond 45 days",
+        "Internal budget estimate pending review",
+      )
       .replaceAll("Customer payment overdue", "Internal budget estimate pending review")
       .replaceAll("commercial deposit", "budget estimate")
       .replaceAll("Customer purchase order", "Commercial plan")
       .replaceAll("purchase orders placed", "indicative sourcing options are under review")
-      .replaceAll("all TEST DATA approvals complete", "department inputs captured for workflow testing; no customer acceptance")
+      .replaceAll(
+        "all TEST DATA approvals complete",
+        "department inputs captured for workflow testing; no customer acceptance",
+      )
       .replaceAll("approved automatically compiles", "requires human review before compiling")
-      .replaceAll("0 errors · TEST DATA verification", "review checklist pending; no DRC evidence asserted")
-      .replaceAll("All RPNs below 100 · TEST DATA assessment", "Risk scores under review · illustrative and unapproved")
-      .replaceAll("100% pass · 0 critical bugs · TEST DATA telemetry", "test results not recorded · sample placeholder")
-      .replaceAll("Customer SOR requirements accepted in full", "Customer requirements are not accepted or baselined")
+      .replaceAll(
+        "0 errors · TEST DATA verification",
+        "review checklist pending; no DRC evidence asserted",
+      )
+      .replaceAll(
+        "All RPNs below 100 · TEST DATA assessment",
+        "Risk scores under review · illustrative and unapproved",
+      )
+      .replaceAll(
+        "100% pass · 0 critical bugs · TEST DATA telemetry",
+        "test results not recorded · sample placeholder",
+      )
+      .replaceAll(
+        "Customer SOR requirements accepted in full",
+        "Customer requirements are not accepted or baselined",
+      )
       .replaceAll("Confirmed & Locked", "Under review")
       .replaceAll("Executed", "Draft")
       .replaceAll("approved", "pending review")
       .replaceAll("Approved", "In review")
       .replaceAll("Production Release & PPAP", "Engineering review and PPAP planning")
       .replaceAll("Type Approval & Production Authorization", "Certification readiness planning")
-      .replaceAll("PDI, Field Mounting & Commercial Invoice", "Prototype validation and service feedback")
+      .replaceAll(
+        "PDI, Field Mounting & Commercial Invoice",
+        "Prototype validation and service feedback",
+      )
       .replaceAll("certified", "planned for review")
       .replaceAll("passed", "planned for verification")
       .replaceAll("verified", "awaiting evidence")
-      .replaceAll("100% IATF 16949 & AIS-140 compliant · 0 NCRs · TEST DATA assertion only", "Quality evidence review in progress; no compliance or certification claim")
+      .replaceAll(
+        "100% IATF 16949 & AIS-140 compliant · 0 NCRs · TEST DATA assertion only",
+        "Quality evidence review in progress; no compliance or certification claim",
+      )
       .replaceAll("Stage 8 · Type Approval & SCM", "Stage 8 · readiness planning")
       .replaceAll("Stage 8 · Type Approval & SCM Planning", "Stage 8 · readiness planning")
       .replaceAll("production authorization is active", "pilot readiness planning is open")
       .replaceAll("Generated · TEST DATA only", "Estimate only · not an issued invoice")
       .replaceAll("PO-TATA", "TEST-PO-NORTHSTAR")
       .replaceAll("RFQ-2026-TATA", "TEST-RFQ-NORTHSTAR")
-      .replaceAll("₹6.10 Cr · illustrative payment verification only", "Indicative estimate · no payment represented")
-      .replaceAll("₹20.33 Cr total value · TEST DATA only", "Indicative commercial estimate · not an offer")
+      .replaceAll(
+        "₹6.10 Cr · illustrative payment verification only",
+        "Indicative estimate · no payment represented",
+      )
+      .replaceAll(
+        "₹20.33 Cr total value · TEST DATA only",
+        "Indicative commercial estimate · not an offer",
+      )
       .replaceAll("₹8,40,000", "illustrative amount")
       .replaceAll("production", "pilot")
       .replaceAll("Production", "Pilot");
-    if ((key === "status" || key === "lifecycle" || key === "outcome") && text === "Approved") text = "In review";
+    if ((key === "status" || key === "lifecycle" || key === "outcome") && text === "Approved")
+      text = "In review";
     if (key === "loi") text = "No customer commitment recorded in this test fixture";
     if (key === "invoice") text = "No invoice issued · budget estimate only";
     if (key === "release") text = "Not released · candidate for review";
@@ -2047,8 +3274,14 @@ const demoPortal = (): PortalState => {
         .replace(/commercial tax invoice.*$/i, "Budget estimate workflow review")
         .replace(/advance deposit.*$/i, "Budget estimate review")
         .replace(/^Approved schematic package$/i, "Schematic package review")
-        .replace(/^Commercial tax invoice and e-Way bill$/i, "Budget estimate and billing workflow review")
-        .replace(/^Pre-dispatch inspection and serialized EOL certificate$/i, "Prototype validation checklist")
+        .replace(
+          /^Commercial tax invoice and e-Way bill$/i,
+          "Budget estimate and billing workflow review",
+        )
+        .replace(
+          /^Pre-dispatch inspection and serialized EOL certificate$/i,
+          "Prototype validation checklist",
+        )
         .replace(/^AIS-140 evidence pack$/i, "Certification evidence plan · not submitted");
     }
     return text;
@@ -2080,7 +3313,7 @@ const areaById = (id: AreaId) => areas.find((area) => area.id === id) ?? homeAre
 export function canDepartmentAccessDocument(
   document: ControlledDocument,
   persona: Persona,
-  departmentContext: string | null
+  departmentContext: string | null,
 ): boolean {
   if (persona.kind === "admin") return true;
 
@@ -2095,8 +3328,15 @@ export function canDepartmentAccessDocument(
   const deptCode = (areaById(deptId)?.short || "").toUpperCase();
 
   // Ownership and explicit department-code assignments only. A title or filename is not an access grant.
-  const isOwner = Boolean(document.departmentId && (document.departmentId === deptId || document.departmentId === departmentContext || departmentCode(document.departmentId) === departmentCode(deptCode)));
-  const assignedCodes = [document.approver, document.designer].flatMap(value => (value ?? "").split(/[,;·/]/).map(part => departmentCode(part)));
+  const isOwner = Boolean(
+    document.departmentId &&
+    (document.departmentId === deptId ||
+      document.departmentId === departmentContext ||
+      departmentCode(document.departmentId) === departmentCode(deptCode)),
+  );
+  const assignedCodes = [document.approver, document.designer].flatMap((value) =>
+    (value ?? "").split(/[,;·/]/).map((part) => departmentCode(part)),
+  );
   return isOwner || assignedCodes.includes(departmentCode(deptCode));
 }
 const areaDepartmentType: Partial<Record<AreaId, string>> = {
@@ -2183,9 +3423,21 @@ const readPortal = (): PortalState => {
       masters: {
         ...base.masters,
         ...value.masters,
-        products: Array.from(new Set([...(base.masters.products || []), ...(value.masters?.products || []), "HLPL-AI4T-01", "HLPL-SLCT-01", "HLPL-XLINK-03"])),
-        locations: Array.from(new Set([...(base.masters.locations || []), ...(value.masters?.locations || [])])),
-        customers: Array.from(new Set([...(base.masters.customers || []), ...(value.masters?.customers || [])])),
+        products: Array.from(
+          new Set([
+            ...(base.masters.products || []),
+            ...(value.masters?.products || []),
+            "HLPL-AI4T-01",
+            "HLPL-SLCT-01",
+            "HLPL-XLINK-03",
+          ]),
+        ),
+        locations: Array.from(
+          new Set([...(base.masters.locations || []), ...(value.masters?.locations || [])]),
+        ),
+        customers: Array.from(
+          new Set([...(base.masters.customers || []), ...(value.masters?.customers || [])]),
+        ),
       },
       departments: Array.isArray(value.departments)
         ? value.departments.map((department) => ({
@@ -2193,36 +3445,88 @@ const readPortal = (): PortalState => {
             settings: { ...blankSettings(), ...department.settings },
           }))
         : [],
-      roles: Array.isArray(value.roles) ? value.roles : [],
-      approvals: Array.isArray(value.approvals) && value.approvals.length > 0 ? value.approvals : base.approvals,
+      roles: Array.isArray(value.roles)
+        ? value.demoLoaded === true
+          ? reconcileDemoEolRoleAssignments(
+              value.roles,
+              Array.isArray(value.departments) ? value.departments : [],
+            )
+          : value.roles
+        : [],
+      approvals:
+        Array.isArray(value.approvals) && value.approvals.length > 0
+          ? value.approvals
+          : base.approvals,
       records:
         value.demoLoaded === true
           ? (() => {
-              const additions = demoPortal().records.filter((item) => item.reference.startsWith("HLPL-SLCT") || item.reference === "PO-TATA-SLCT-2026-9041");
-              const existing = Array.isArray(value.records) ? value.records.map((record) => ({ ...record, area: legacyAreaMap[record.area] ?? record.area })) : [];
-              return [...existing, ...additions.filter((item) => !existing.some((record) => record.reference === item.reference))];
+              const additions = demoPortal().records.filter(
+                (item) =>
+                  item.reference.startsWith("HLPL-SLCT") ||
+                  item.reference === "PO-TATA-SLCT-2026-9041",
+              );
+              const existing = Array.isArray(value.records)
+                ? value.records.map((record) => ({
+                    ...record,
+                    area: legacyAreaMap[record.area] ?? record.area,
+                  }))
+                : [];
+              return [
+                ...existing,
+                ...additions.filter(
+                  (item) => !existing.some((record) => record.reference === item.reference),
+                ),
+              ];
             })()
           : Array.isArray(value.records)
-            ? value.records.map((record) => ({ ...record, area: legacyAreaMap[record.area] ?? record.area }))
+            ? value.records.map((record) => ({
+                ...record,
+                area: legacyAreaMap[record.area] ?? record.area,
+              }))
             : [],
-      documents: value.demoLoaded === true
-        ? mergeAutomotiveDemoDocuments(mergeDemoDepartmentCommonDocuments(documents, value.departments ?? []))
-        : documents,
+      documents:
+        value.demoLoaded === true
+          ? mergeAutomotiveDemoDocuments(
+              mergeDemoDepartmentCommonDocuments(documents, value.departments ?? []),
+            )
+          : documents,
       audit: Array.isArray(value.audit) ? value.audit : [],
       notifications: Array.isArray(value.notifications) ? value.notifications : [],
       alerts: Array.isArray(value.alerts) ? value.alerts : [],
-      inventory: Array.isArray(value.inventory) ? value.inventory : value.demoLoaded ? inventorySeed() : [],
+      inventory: Array.isArray(value.inventory)
+        ? value.inventory
+        : value.demoLoaded
+          ? inventorySeed()
+          : [],
       inventoryMovements: Array.isArray(value.inventoryMovements) ? value.inventoryMovements : [],
-      inventoryAssignments: Array.isArray(value.inventoryAssignments) ? value.inventoryAssignments : [],
-      departmentAllocations: Array.isArray(value.departmentAllocations) ? value.departmentAllocations : DEFAULT_DEPARTMENT_ALLOCATIONS,
-      expenseRequests: Array.isArray(value.expenseRequests) ? value.expenseRequests : DEFAULT_EXPENSE_REQUESTS,
-      employeeLetters: Array.isArray(value.employeeLetters) ? value.employeeLetters : DEFAULT_EMPLOYEE_LETTERS,
-      assignedPolicies: Array.isArray(value.assignedPolicies) ? value.assignedPolicies : DEFAULT_ASSIGNED_POLICIES,
-      assignedTrainings: Array.isArray(value.assignedTrainings) ? value.assignedTrainings : DEFAULT_ASSIGNED_TRAININGS,
-      assignedForms: Array.isArray(value.assignedForms) ? value.assignedForms : DEFAULT_ASSIGNED_FORMS,
-      employeeAssets: Array.isArray(value.employeeAssets) ? value.employeeAssets : DEFAULT_EMPLOYEE_ASSETS,
+      inventoryAssignments: Array.isArray(value.inventoryAssignments)
+        ? value.inventoryAssignments
+        : [],
+      departmentAllocations: Array.isArray(value.departmentAllocations)
+        ? value.departmentAllocations
+        : DEFAULT_DEPARTMENT_ALLOCATIONS,
+      expenseRequests: Array.isArray(value.expenseRequests)
+        ? value.expenseRequests
+        : DEFAULT_EXPENSE_REQUESTS,
+      employeeLetters: Array.isArray(value.employeeLetters)
+        ? value.employeeLetters
+        : DEFAULT_EMPLOYEE_LETTERS,
+      assignedPolicies: Array.isArray(value.assignedPolicies)
+        ? value.assignedPolicies
+        : DEFAULT_ASSIGNED_POLICIES,
+      assignedTrainings: Array.isArray(value.assignedTrainings)
+        ? value.assignedTrainings
+        : DEFAULT_ASSIGNED_TRAININGS,
+      assignedForms: Array.isArray(value.assignedForms)
+        ? value.assignedForms
+        : DEFAULT_ASSIGNED_FORMS,
+      employeeAssets: Array.isArray(value.employeeAssets)
+        ? value.employeeAssets
+        : DEFAULT_EMPLOYEE_ASSETS,
       raciMatrix: value.raciMatrix ?? defaultRaciMatrix(),
-      chronicles: Array.isArray(value.chronicles) ? value.chronicles : DEFAULT_DEPARTMENT_CHRONICLES,
+      chronicles: Array.isArray(value.chronicles)
+        ? value.chronicles
+        : DEFAULT_DEPARTMENT_CHRONICLES,
     };
     const finalHydrated = {
       ...hydrated,
@@ -2230,7 +3534,9 @@ const readPortal = (): PortalState => {
         hydrated.enquiriesOpportunities ?? defaultEnquiriesOpportunities,
         hydrated.records,
       ),
-      records: hydrated.demoLoaded ? reconcileDemoProjectLifecycle(hydrated.records) : hydrated.records,
+      records: hydrated.demoLoaded
+        ? reconcileDemoProjectLifecycle(hydrated.records)
+        : hydrated.records,
       documents: hydrated.documents.map((document) => ({
         ...document,
         localFiles: document.localFiles?.map((file) => ({
@@ -2242,13 +3548,19 @@ const readPortal = (): PortalState => {
 
     if (
       finalHydrated.demoLoaded &&
-      (!hasCompleteDemoDocumentSet(finalHydrated.documents) || !finalHydrated.departments.length || !finalHydrated.records.length)
+      (!hasCompleteDemoDocumentSet(finalHydrated.documents) ||
+        !finalHydrated.departments.length ||
+        !finalHydrated.records.length)
     ) {
       const restored = demoPortal();
       return repairDemoState(finalHydrated, restored);
     }
 
-    const migrated = migratePortalState(finalHydrated as any, base as any, typeof window !== "undefined" ? window.localStorage : null) as PortalState;
+    const migrated = migratePortalState(
+      finalHydrated as any,
+      base as any,
+      typeof window !== "undefined" ? window.localStorage : null,
+    ) as PortalState;
     if (typeof window !== "undefined" && value && (value as any).schemaVersion !== 2) {
       try {
         window.localStorage.setItem(storeKey, JSON.stringify(migrated));
@@ -2285,11 +3597,15 @@ function Portal() {
   const writeSorInputs = useServerFn(mutateProjectInputs);
   const sorRun = useRef<SorImportRun | null>(null);
   const [testMembership, setTestMembership] = useState<TestMembership | null>(null);
-  const organizationConfiguration = useOrganizationConfiguration(testMembership && !testMembership.isClient ? testMembership.membershipId : undefined);
+  const organizationConfiguration = useOrganizationConfiguration(
+    testMembership && !testMembership.isClient ? testMembership.membershipId : undefined,
+  );
   const [testAuthReady, setTestAuthReady] = useState(false);
-  const [testAuthError,setTestAuthError]=useState<string|null>(null);
+  const [testAuthError, setTestAuthError] = useState<string | null>(null);
   const [showSharedTestWorkspace, setShowSharedTestWorkspace] = useState(false);
-  const [sharedTestInitialTab, setSharedTestInitialTab] = useState<"Projects" | "Records" | "Tasks" | "Approvals" | "Documents">("Tasks");
+  const [sharedTestInitialTab, setSharedTestInitialTab] = useState<
+    "Projects" | "Records" | "Tasks" | "Approvals" | "Documents"
+  >("Tasks");
 
   const isInvalidUrlRole =
     typeof window !== "undefined" &&
@@ -2348,15 +3664,33 @@ function Portal() {
 
   const initialPersona = mustPromptRole
     ? safeUnassignedPersona
-    : (initialRole
-        ? (personas.find((p) => p.id === initialRole) ?? safeUnassignedPersona)
-        : (personas[0] ?? safeUnassignedPersona));
+    : initialRole
+      ? (personas.find((p) => p.id === initialRole) ?? safeUnassignedPersona)
+      : (personas[0] ?? safeUnassignedPersona);
 
   const [adminDepartment, setAdminDepartment] = useState<AreaId>(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = window.sessionStorage.getItem("scms_admin_department") || window.localStorage.getItem("scms_admin_department");
-        if (saved && ["ehw", "fw", "sw", "mech", "pur", "qa", "emf", "mmf", "sales", "fin", "sit", "hrops"].includes(saved)) {
+        const saved =
+          window.sessionStorage.getItem("scms_admin_department") ||
+          window.localStorage.getItem("scms_admin_department");
+        if (
+          saved &&
+          [
+            "ehw",
+            "fw",
+            "sw",
+            "mech",
+            "pur",
+            "qa",
+            "emf",
+            "mmf",
+            "sales",
+            "fin",
+            "sit",
+            "hrops",
+          ].includes(saved)
+        ) {
           return saved as AreaId;
         }
       } catch {}
@@ -2365,14 +3699,35 @@ function Portal() {
   });
 
   const [activeArea, setActiveArea] = useState<AreaId>(() => {
-    if ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId) {
+    if (
+      (initialPersona.kind === "lead" || initialPersona.kind === "member") &&
+      initialPersona.departmentId
+    ) {
       return initialPersona.departmentId;
     }
     if (initialPersona.kind === "admin") {
       if (typeof window !== "undefined") {
         try {
-          const saved = window.sessionStorage.getItem("scms_admin_department") || window.localStorage.getItem("scms_admin_department");
-          if (saved && ["ehw", "fw", "sw", "mech", "pur", "qa", "emf", "mmf", "sales", "fin", "sit", "hrops"].includes(saved)) {
+          const saved =
+            window.sessionStorage.getItem("scms_admin_department") ||
+            window.localStorage.getItem("scms_admin_department");
+          if (
+            saved &&
+            [
+              "ehw",
+              "fw",
+              "sw",
+              "mech",
+              "pur",
+              "qa",
+              "emf",
+              "mmf",
+              "sales",
+              "fin",
+              "sit",
+              "hrops",
+            ].includes(saved)
+          ) {
             return saved as AreaId;
           }
         } catch {}
@@ -2389,7 +3744,7 @@ function Portal() {
     setShowSharedTestWorkspace(false);
     if (persona.kind === "client") {
       setView("queue");
-      setClientDeliverablesFocus(value => value + 1);
+      setClientDeliverablesFocus((value) => value + 1);
     } else {
       setView("vault");
     }
@@ -2428,22 +3783,30 @@ function Portal() {
     | "hr_admin"
   >("queue");
   const [selectedAssignee, setSelectedAssignee] = useState<string | null>(null);
-  const allTeamMembers = useMemo(() => [...(portal?.demoLoaded ? demoTeam : []), ...(portal?.teamMembers ?? [])], [portal?.demoLoaded, portal?.teamMembers]);
+  const allTeamMembers = useMemo(
+    () => [...(portal?.demoLoaded ? demoTeam : []), ...(portal?.teamMembers ?? [])],
+    [portal?.demoLoaded, portal?.teamMembers],
+  );
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [queueStage, setQueueStage] = useState<string | null>(null);
   const [modal, setModal] = useState<
     "create" | "wizard" | "approvals" | "documents" | "document" | "history" | "admin" | null
   >(null);
   const [createType, setCreateType] = useState<string | null>(null);
-  const [createInitialValues, setCreateInitialValues] = useState<Record<string, string> | null>(null);
+  const [createInitialValues, setCreateInitialValues] = useState<Record<string, string> | null>(
+    null,
+  );
   const [mobileMenu, setMobileMenu] = useState(false);
   const [globalSorOpen, setGlobalSorOpen] = useState(false);
   const [analysisSourceId, setAnalysisSourceId] = useState<string | undefined>();
-  const [vaultDocumentId,setVaultDocumentId]=useState<string|undefined>();
-  const [vaultProjectId,setVaultProjectId]=useState<string|undefined>();
+  const [vaultDocumentId, setVaultDocumentId] = useState<string | undefined>();
+  const [vaultProjectId, setVaultProjectId] = useState<string | undefined>();
   const [notice, setNotice] = useState<string | null>(null);
   const [departmentContext, setDepartmentContext] = useState<string | null>(() => {
-    if ((initialPersona.kind === "lead" || initialPersona.kind === "member") && initialPersona.departmentId) {
+    if (
+      (initialPersona.kind === "lead" || initialPersona.kind === "member") &&
+      initialPersona.departmentId
+    ) {
       return `demo-dept-${initialPersona.departmentId}`;
     }
     if (initialPersona.kind === "admin") {
@@ -2452,7 +3815,7 @@ function Portal() {
     return null;
   });
   const [persona, setPersona] = useState<Persona>(() => initialPersona);
-  const [recordTypeFilter, setRecordTypeFilter] = useState<string|null>(null);
+  const [recordTypeFilter, setRecordTypeFilter] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   useBusinessDate(); // Keep all task projections current across the business midnight.
   const [globalSearchQuery, setGlobalSearchQuery] = useState("");
@@ -2462,21 +3825,26 @@ function Portal() {
   const [syncHubOpen, setSyncHubOpen] = useState(false);
   const [draftHubOpen, setDraftHubOpen] = useState(false);
   const [documentUploadRequested, setDocumentUploadRequested] = useState(false);
-  const [documentUploadProjectId, setDocumentUploadProjectId] = useState<string | undefined>(undefined);
+  const [documentUploadProjectId, setDocumentUploadProjectId] = useState<string | undefined>(
+    undefined,
+  );
   const [templateSettingsOpen, setTemplateSettingsOpen] = useState(false);
   const [printTemplate, setPrintTemplate] = useState<PrintableDocument | null>(null);
   const [ai4tOpen, setAi4tOpen] = useState(false);
-  const [ai4tInitialTab, setAi4tInitialTab] = useState<"stages" | "feasibility" | "binder">("stages");
+  const [ai4tInitialTab, setAi4tInitialTab] = useState<"stages" | "feasibility" | "binder">(
+    "stages",
+  );
   const [ai4tSimulation, setAi4tSimulation] = useState<Ai4tSimulation>({ stage: 0, history: [] });
   const [projectScopes, setProjectScopes] = useState<Partial<Record<AreaId, ProjectScope>>>({});
   const [selectedProjectId, setSelectedProjectId] = useState("HLPL-SLCT-01");
   const [roleSamplesOpen, setRoleSamplesOpen] = useState(false);
-  const [roleSampleNotice, setRoleSampleNotice] = useState('');
+  const [roleSampleNotice, setRoleSampleNotice] = useState("");
   const [darkMode, setDarkMode] = useState(true);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [customerRegisterOpen, setCustomerRegisterOpen] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(() => mustPromptRole);
-  const [feasibilityDispatchEnquiry, setFeasibilityDispatchEnquiry] = useState<EnquiryOpportunity | null>(null);
+  const [feasibilityDispatchEnquiry, setFeasibilityDispatchEnquiry] =
+    useState<EnquiryOpportunity | null>(null);
   const [directoryOpen, setDirectoryOpen] = useState(false);
   const [decisionLogOpen, setDecisionLogOpen] = useState(false);
   const [decisionInitialQuery, setDecisionInitialQuery] = useState("");
@@ -2485,16 +3853,39 @@ function Portal() {
   const [assetLinkerProjectId, setAssetLinkerProjectId] = useState<string | null>(null);
   const [purchasingSubView, setPurchasingSubView] = useState<PurchasingSubView>("recordage");
   const [adminTab, setAdminTab] = useState<
-    "company" | "chronicles" | "lifecycle" | "departments" | "templates" | "roles" | "masters" | "cloud" | "team" | "demo"
+    | "company"
+    | "chronicles"
+    | "lifecycle"
+    | "departments"
+    | "templates"
+    | "roles"
+    | "masters"
+    | "cloud"
+    | "team"
+    | "demo"
   >("company");
   useEffect(() => {
     setPortal(readPortal());
-    const refresh = (event: StorageEvent) => { if (event.key === storeKey) setPortal(readPortal()); };
+    const refresh = (event: StorageEvent) => {
+      if (event.key === storeKey) setPortal(readPortal());
+    };
     window.addEventListener("storage", refresh);
     return () => window.removeEventListener("storage", refresh);
   }, []);
-  useEffect(() => { setSearchOpen(false); setGlobalSearchQuery(""); setDirectoryOpen(false); setDraftHubOpen(false); setModal(null); setPrintTemplate(null); setAi4tOpen(false); setCustomerRegisterOpen(false); }, [persona.id]);
-  useEffect(() => { setSearchOpen(false); setGlobalSearchQuery(""); }, [departmentContext]);
+  useEffect(() => {
+    setSearchOpen(false);
+    setGlobalSearchQuery("");
+    setDirectoryOpen(false);
+    setDraftHubOpen(false);
+    setModal(null);
+    setPrintTemplate(null);
+    setAi4tOpen(false);
+    setCustomerRegisterOpen(false);
+  }, [persona.id]);
+  useEffect(() => {
+    setSearchOpen(false);
+    setGlobalSearchQuery("");
+  }, [departmentContext]);
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("XYZ Pvt Ltd-scms-theme");
     setDarkMode(savedTheme !== "light");
@@ -2515,15 +3906,30 @@ function Portal() {
   }, []);
 
   const update = async (recipe: (state: PortalState) => PortalState): Promise<boolean> => {
-    if (testMembership) { setNotice("This view contains browser-local examples. Open Shared TEST records to save account data."); return false; }
+    if (testMembership) {
+      setNotice(
+        "This view contains browser-local examples. Open Shared TEST records to save account data.",
+      );
+      return false;
+    }
     try {
-      const save = (state: PortalState) => window.localStorage.setItem(storeKey, JSON.stringify(state));
-      const next = await commitLatestState(readPortal, save, recipe, commit => navigator.locks ? navigator.locks.request(storeKey, commit) : Promise.resolve(commit()));
+      const save = (state: PortalState) =>
+        window.localStorage.setItem(storeKey, JSON.stringify(state));
+      const next = await commitLatestState(readPortal, save, recipe, (commit) =>
+        navigator.locks ? navigator.locks.request(storeKey, commit) : Promise.resolve(commit()),
+      );
       setPortal(next);
       return true;
     } catch (error) {
-      const quotaExceeded = error instanceof DOMException && (error.name === "QuotaExceededError" || error.code === 22);
-      setNotice(quotaExceeded ? "Browser record storage is full. File attachments are now kept separately; reload this page and try the action again." : error instanceof Error ? error.message : "The change could not be saved. Please retry.");
+      const quotaExceeded =
+        error instanceof DOMException && (error.name === "QuotaExceededError" || error.code === 22);
+      setNotice(
+        quotaExceeded
+          ? "Browser record storage is full. File attachments are now kept separately; reload this page and try the action again."
+          : error instanceof Error
+            ? error.message
+            : "The change could not be saved. Please retry.",
+      );
       return false;
     }
   };
@@ -2561,7 +3967,9 @@ function Portal() {
     if (targetView !== "deliverables" && targetView !== "records") setRecordTypeFilter(null);
     if (persona.kind === "client") {
       if (area !== "home") {
-        announce("Access restricted under ISO 27001 §A.9: External OEM Clients are contained within the Client Delivery Portal.");
+        announce(
+          "Access restricted under ISO 27001 §A.9: External OEM Clients are contained within the Client Delivery Portal.",
+        );
         setActiveArea("home");
         setView("queue");
         setSelectedId(null);
@@ -2572,11 +3980,12 @@ function Portal() {
       }
     }
     if ((persona.kind === "lead" || persona.kind === "member") && persona.departmentId) {
-      const additionalLeadAreas = persona.kind === "lead" && testMembership
-        ? (organizationConfiguration.data?.departments ?? [])
-            .filter((d) => d.leadMemberId === testMembership.membershipId)
-            .map((d) => normalizePersonaId(d.code))
-        : [];
+      const additionalLeadAreas =
+        persona.kind === "lead" && testMembership
+          ? (organizationConfiguration.data?.departments ?? [])
+              .filter((d) => d.leadMemberId === testMembership.membershipId)
+              .map((d) => normalizePersonaId(d.code))
+          : [];
       const allowedAreas = new Set([persona.departmentId, ...additionalLeadAreas]);
       if (!allowedAreas.has(area)) {
         announce(`Access restricted: ${areaById(area).name} is not assigned to your lead role.`);
@@ -2615,22 +4024,45 @@ function Portal() {
     setSignedOut(true);
     setLoginModalOpen(false);
   };
-  const resolveTestMembership = async (isCurrent:()=>boolean=()=>true) => {
+  const resolveTestMembership = async (isCurrent: () => boolean = () => true) => {
     const membership = await getTestMembershipFn();
-    const byDepartment = membership.departmentCode ? normalizePersonaId(membership.departmentCode) : "unrecognized";
-    const personaId = membership.role === "admin" ? "admin" : membership.isClient ? "client" : byDepartment;
+    const byDepartment = membership.departmentCode
+      ? normalizePersonaId(membership.departmentCode)
+      : "unrecognized";
+    const personaId =
+      membership.role === "admin" ? "admin" : membership.isClient ? "client" : byDepartment;
     const matched = personas.find((item) => item.id === personaId);
-    if (!matched) throw new Error("This TEST account does not have a supported active department membership.");
-    if(!isCurrent())return;
-    const authenticatedPersona:Persona=membership.role==="member"?{...matched,kind:"member",label:`${membership.departmentCode} Employee`,person:membership.displayName}:{...matched,person:membership.displayName};
-    setTestMembership(membership);setTestAuthError(null);setShowSharedTestWorkspace(false);setSignedOut(false);
+    if (!matched)
+      throw new Error("This TEST account does not have a supported active department membership.");
+    if (!isCurrent()) return;
+    const authenticatedPersona: Persona =
+      membership.role === "member"
+        ? {
+            ...matched,
+            kind: "member",
+            label: `${membership.departmentCode} Employee`,
+            person: membership.displayName,
+          }
+        : { ...matched, person: membership.displayName };
+    setTestMembership(membership);
+    setTestAuthError(null);
+    setShowSharedTestWorkspace(false);
+    setSignedOut(false);
     setPersona(authenticatedPersona);
-    setActiveArea((authenticatedPersona.kind==="lead"||authenticatedPersona.kind==="member")&&authenticatedPersona.departmentId?authenticatedPersona.departmentId:"home");
-    setDepartmentContext(null);setView("queue");setSelectedId(null);
-    const url=new URL(window.location.href);url.searchParams.delete("signedout");
-    if(authenticatedPersona.id==="admin")url.searchParams.delete("role");else url.searchParams.set("role",authenticatedPersona.id);
-    window.history.replaceState({},"",url.toString());
-
+    setActiveArea(
+      (authenticatedPersona.kind === "lead" || authenticatedPersona.kind === "member") &&
+        authenticatedPersona.departmentId
+        ? authenticatedPersona.departmentId
+        : "home",
+    );
+    setDepartmentContext(null);
+    setView("queue");
+    setSelectedId(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("signedout");
+    if (authenticatedPersona.id === "admin") url.searchParams.delete("role");
+    else url.searchParams.set("role", authenticatedPersona.id);
+    window.history.replaceState({}, "", url.toString());
   };
   const handleTestLogin = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -2646,15 +4078,35 @@ function Portal() {
     let active = true;
     const restore = async () => {
       const { data } = await supabase.auth.getSession();
-      if (!data.session || !active) { if (active) setTestAuthReady(true); return; }
-      try { await resolveTestMembership(()=>active); } catch (error) { if (active) {setTestMembership(null);setTestAuthError(error instanceof Error?error.message:"Session verification is unavailable. Retry without signing out.");} }
+      if (!data.session || !active) {
+        if (active) setTestAuthReady(true);
+        return;
+      }
+      try {
+        await resolveTestMembership(() => active);
+      } catch (error) {
+        if (active) {
+          setTestMembership(null);
+          setTestAuthError(
+            error instanceof Error
+              ? error.message
+              : "Session verification is unavailable. Retry without signing out.",
+          );
+        }
+      }
       if (active) setTestAuthReady(true);
     };
     void restore();
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") { setTestMembership(null); setSignedOut(true); }
+      if (event === "SIGNED_OUT") {
+        setTestMembership(null);
+        setSignedOut(true);
+      }
     });
-    return () => { active = false; listener.subscription.unsubscribe(); };
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
   if (!portal)
     return (
@@ -2663,30 +4115,59 @@ function Portal() {
       </main>
     );
   const handleDemoLogin = (personaId: string, leadInfo: DepartmentCredential) => {
-    const matched = personas.find(item => item.id === personaId);
+    const matched = personas.find((item) => item.id === personaId);
     if (!matched || !portal.demoLoaded) return;
     setSignedOut(false);
     switchPersona(matched);
-    window.localStorage.setItem("scms_auth_session", JSON.stringify({ personaId, leadEmail: leadInfo.email, leadName: leadInfo.leadName, timestamp: now() }));
+    window.localStorage.setItem(
+      "scms_auth_session",
+      JSON.stringify({
+        personaId,
+        leadEmail: leadInfo.email,
+        leadName: leadInfo.leadName,
+        timestamp: now(),
+      }),
+    );
   };
   const handleOpenCreate = (typeOrEvent?: unknown, initialValues?: Record<string, string>) => {
     const type = typeof typeOrEvent === "string" ? typeOrEvent : null;
     const catalogue = recordFormSpec(effectiveArea);
-    const genericEntry = type === areaById(effectiveArea).recordType && !catalogue?.types.includes(type || "");
+    const genericEntry =
+      type === areaById(effectiveArea).recordType && !catalogue?.types.includes(type || "");
     setCreateType(genericEntry ? catalogue?.types[0] || type : type);
-    setCreateInitialValues(initialValues ? { ...initialValues, ...(initialValues["projectCode"] ? { projectId: initialValues["projectCode"] } : {}) } : null);
+    setCreateInitialValues(
+      initialValues
+        ? {
+            ...initialValues,
+            ...(initialValues["projectCode"] ? { projectId: initialValues["projectCode"] } : {}),
+          }
+        : null,
+    );
     setModal("create");
   };
   const handleAdminDepartmentChange = (deptId: AreaId, nextView?: typeof view) => {
     setAdminDepartment(deptId);
     setActiveArea(deptId);
-    setDepartmentContext(findAreaDepartment(portal.departments, deptId)?.id ?? `demo-dept-${deptId}`);
+    setDepartmentContext(
+      findAreaDepartment(portal.departments, deptId)?.id ?? `demo-dept-${deptId}`,
+    );
     try {
       window.sessionStorage.setItem("scms_admin_department", deptId);
     } catch {}
     if (nextView) {
       setView(nextView);
-    } else if (!["project", "queue", "records", "deliverables", "assignee", "approvals", "vault", "analysis"].includes(view)) {
+    } else if (
+      ![
+        "project",
+        "queue",
+        "records",
+        "deliverables",
+        "assignee",
+        "approvals",
+        "vault",
+        "analysis",
+      ].includes(view)
+    ) {
       setView("project");
     }
     announce(`${areaById(deptId).name} department workspace active.`);
@@ -2708,13 +4189,22 @@ function Portal() {
     setPersona(next);
     if (next.kind === "admin") {
       const deptToUse = adminDepartment || "ehw";
-      setDepartmentContext(findAreaDepartment(portal.departments, deptToUse)?.id ?? `demo-dept-${deptToUse}`);
+      setDepartmentContext(
+        findAreaDepartment(portal.departments, deptToUse)?.id ?? `demo-dept-${deptToUse}`,
+      );
       setActiveArea(deptToUse);
       setView("project");
     } else {
-      const nextDepartment = (next.kind === "lead" || next.kind === "member") ? findAreaDepartment(portal.departments, next.departmentId ?? "home")?.id ?? null : null;
+      const nextDepartment =
+        next.kind === "lead" || next.kind === "member"
+          ? (findAreaDepartment(portal.departments, next.departmentId ?? "home")?.id ?? null)
+          : null;
       setDepartmentContext(nextDepartment);
-      setActiveArea((next.kind === "lead" || next.kind === "member") && next.departmentId ? next.departmentId : "home");
+      setActiveArea(
+        (next.kind === "lead" || next.kind === "member") && next.departmentId
+          ? next.departmentId
+          : "home",
+      );
       setView("queue");
     }
     if (typeof window !== "undefined") {
@@ -2731,35 +4221,76 @@ function Portal() {
     announce(`${next.label} context active.`);
   };
   const loadDemo = () => {
-    void update(state => ({ ...demoPortal(), demoSnapshot: state.demoLoaded ? state.demoSnapshot : state }));
+    void update((state) => ({
+      ...demoPortal(),
+      demoSnapshot: state.demoLoaded ? state.demoSnapshot : state,
+    }));
     setDepartmentContext(null);
     setModal(null);
     announce("Demo records loaded in this browser. They are not production records.");
   };
   const resetDemo = () => {
-    void update(state => state.demoSnapshot ?? emptyPortal());
+    void update((state) => state.demoSnapshot ?? emptyPortal());
     setDepartmentContext(null);
     setModal(null);
     announce("Demo removed; the saved setup has been restored.");
   };
   const loadRoleSamples = async () => {
-    setRoleSampleNotice('');
+    setRoleSampleNotice("");
     try {
-      if(testMembership || persona.kind!=='admin')throw new Error('Open the browser-local TEST administrator workspace to load this pack.');
-      const saved=await update(state=>{
-        if(!state.demoLoaded)throw new Error('Load the fictional browser-local TEST workspace first.');
-        if(state.roleLifecyclePack?.version===ROLE_LIFECYCLE_PACK){
-          const missing=state.roleLifecyclePack.records.filter(id=>!state.records.some(r=>r.id===id));
-          if(missing.length)throw new Error(`${missing.length} pack records are missing. Review the partial pack before restoring it.`);
+      if (testMembership || persona.kind !== "admin")
+        throw new Error("Open the browser-local TEST administrator workspace to load this pack.");
+      const saved = await update((state) => {
+        if (!state.demoLoaded)
+          throw new Error("Load the fictional browser-local TEST workspace first.");
+        if (state.roleLifecyclePack?.version === ROLE_LIFECYCLE_PACK) {
+          const missing = state.roleLifecyclePack.records.filter(
+            (id) => !state.records.some((r) => r.id === id),
+          );
+          if (missing.length)
+            throw new Error(
+              `${missing.length} pack records are missing. Review the partial pack before restoring it.`,
+            );
           return state;
         }
-        const pack=buildRoleLifecyclePack(state.lifecycleRevisions?.at(-1)??defaultLifecycleRevision(),state.departments,now());
-        if(pack.records.some(r=>state.records.some(existing=>existing.id===r.id||existing.reference===r.reference)))throw new Error('Sample IDs already exist without a matching manifest. Review the partial pack before loading.');
-        return {...state,roleLifecyclePack:pack.manifest,records:[...state.records,...pack.records],enquiriesOpportunities:[...(state.enquiriesOpportunities??[]),...pack.enquiries],audit:[{id:createId(),at:now(),action:'Role lifecycle demo pack loaded',detail:`${ROLE_LIFECYCLE_PACK}; ${pack.records.length} new fictional rows; existing records and settings preserved.`},...state.audit]};
+        const pack = buildRoleLifecyclePack(
+          state.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision(),
+          state.departments,
+          now(),
+        );
+        if (
+          pack.records.some((r) =>
+            state.records.some(
+              (existing) => existing.id === r.id || existing.reference === r.reference,
+            ),
+          )
+        )
+          throw new Error(
+            "Sample IDs already exist without a matching manifest. Review the partial pack before loading.",
+          );
+        return {
+          ...state,
+          roleLifecyclePack: pack.manifest,
+          records: [...state.records, ...pack.records],
+          enquiriesOpportunities: [...(state.enquiriesOpportunities ?? []), ...pack.enquiries],
+          audit: [
+            {
+              id: createId(),
+              at: now(),
+              action: "Role lifecycle demo pack loaded",
+              detail: `${ROLE_LIFECYCLE_PACK}; ${pack.records.length} new fictional rows; existing records and settings preserved.`,
+            },
+            ...state.audit,
+          ],
+        };
       });
-      if(saved===false)throw new Error('Sample pack was not saved. Please retry.');
-      setRoleSampleNotice('Pack is saved in this browser. Repeated loading preserves the same records.');
-    } catch(error){setRoleSampleNotice(error instanceof Error?error.message:'Sample load failed.');}
+      if (saved === false) throw new Error("Sample pack was not saved. Please retry.");
+      setRoleSampleNotice(
+        "Pack is saved in this browser. Repeated loading preserves the same records.",
+      );
+    } catch (error) {
+      setRoleSampleNotice(error instanceof Error ? error.message : "Sample load failed.");
+    }
   };
   const handleCustomerCreated = (customer: CustomerRecord) => {
     update((state) => {
@@ -2796,7 +4327,9 @@ function Portal() {
       const nextSuppliers = Array.from(new Set([...existing, supplier.name]));
       const newSupplierRecord: RecordItem = {
         id: supplier.id || createId(),
-        reference: supplier.operationId ? `HLPL-SUP-${supplier.operationId.slice(0, 8).toUpperCase()}` : `HLPL-SUP-${(supplier.id || createId()).slice(0, 8).toUpperCase()}`,
+        reference: supplier.operationId
+          ? `HLPL-SUP-${supplier.operationId.slice(0, 8).toUpperCase()}`
+          : `HLPL-SUP-${(supplier.id || createId()).slice(0, 8).toUpperCase()}`,
         title: supplier.name,
         type: "Supplier",
         area: "pur",
@@ -2847,7 +4380,9 @@ function Portal() {
       const nextParts = Array.from(new Set([...existing, part.mpn]));
       const newPartRecord: RecordItem = {
         id: part.id || createId(),
-        reference: part.operationId ? `HLPL-PRT-${part.operationId.slice(0, 8).toUpperCase()}` : `HLPL-PRT-${(part.id || createId()).slice(0, 8).toUpperCase()}`,
+        reference: part.operationId
+          ? `HLPL-PRT-${part.operationId.slice(0, 8).toUpperCase()}`
+          : `HLPL-PRT-${(part.id || createId()).slice(0, 8).toUpperCase()}`,
         title: `${part.mpn} · ${part.description}`,
         type: "Part",
         area: "rnd",
@@ -2902,36 +4437,99 @@ function Portal() {
       const existingEnqs = state.enquiriesOpportunities ?? defaultEnquiriesOpportunities;
       const target = existingEnqs.find((e) => e.id === enquiryId);
       if (!target) throw new Error("Enquiry not found.");
-      if(persona.kind !== "admin" && !(persona.kind === "lead" && persona.departmentId === "sales")) throw new Error("The Sales lead must dispatch cross-department feasibility.");
-      const intakeContext=feasibilityIntakeContext(state.records,target);
-      if (!["Pending Enquiry", "Internal Review"].includes(target.status)) throw new Error("This enquiry has already been dispatched.");
-      if (!departments.length || new Set(departments).size !== departments.length) throw new Error("Choose at least one distinct review department.");
-      const routing=planFeasibilityDispatch(state.lifecycleRevisions?.at(-1)??defaultLifecycleRevision(),state.departments,departments);
+      if (
+        persona.kind !== "admin" &&
+        !(persona.kind === "lead" && persona.departmentId === "sales")
+      )
+        throw new Error("The Sales lead must dispatch cross-department feasibility.");
+      const intakeContext = feasibilityIntakeContext(state.records, target);
+      if (!["Pending Enquiry", "Internal Review"].includes(target.status))
+        throw new Error("This enquiry has already been dispatched.");
+      if (!departments.length || new Set(departments).size !== departments.length)
+        throw new Error("Choose at least one distinct review department.");
+      const routing = planFeasibilityDispatch(
+        state.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision(),
+        state.departments,
+        departments,
+      );
       const contractRef = intakeContext.contractReference;
-      if (state.records.some(record => record.reference === contractRef)) throw new Error("A contract review already exists for this inquiry.");
+      if (state.records.some((record) => record.reference === contractRef))
+        throw new Error("A contract review already exists for this inquiry.");
       const at = now();
       const contract: RecordItem = {
-        id: createId(), reference: contractRef, area: "sales", departmentId: findAreaDepartment(state.departments,"sales")?.id, type: "Contract review",
-        title: "Contract Review · " + target.title, status: "In review", priority: "High", createdAt: at, updatedAt: at,
-        notes: "Participating department sign-offs are required; no engineering results are presumed.",
-        fields: { projectId: intakeContext.projectCode, enquiryId: target.id, revision: "01", formCode: "HLPL/F/MKT/01", requiredDepartments: departments.join(","), lifecycleBaseline:routing.baseline, recordStage:routing.stage.code, accountableDepartment:routing.accountable.code, dispatchInstructions:instructions??'' },
+        id: createId(),
+        reference: contractRef,
+        area: "sales",
+        departmentId: findAreaDepartment(state.departments, "sales")?.id,
+        type: "Contract review",
+        title: "Contract Review · " + target.title,
+        status: "In review",
+        priority: "High",
+        createdAt: at,
+        updatedAt: at,
+        notes:
+          "Participating department sign-offs are required; no engineering results are presumed.",
+        fields: {
+          projectId: intakeContext.projectCode,
+          enquiryId: target.id,
+          revision: "01",
+          formCode: "HLPL/F/MKT/01",
+          requiredDepartments: departments.join(","),
+          lifecycleBaseline: routing.baseline,
+          recordStage: routing.stage.code,
+          accountableDepartment: routing.accountable.code,
+          dispatchInstructions: instructions ?? "",
+        },
       };
       const requests: ApprovalRecord[] = [];
       const tasks: RecordItem[] = [];
       for (const code of departments) {
-        const area = areas.find(item => departmentCode(item.short) === departmentCode(code));
+        const area = areas.find((item) => departmentCode(item.short) === departmentCode(code));
         if (!area || area.id === "tst") throw new Error("Unsupported reviewer department: " + code);
         const requestId = createId();
-        requests.push({ id: requestId, title: code + " feasibility review · " + target.title, recordId: contractRef,
-          outcome: "Pending", updatedAt: at, department: "SAL", approverAuthority: code,
-          project: target.linkedProjectCode, requester: persona.label, riskLevel: "High", iatfClause: "Contract Review HLPL/F/MKT/01",
+        requests.push({
+          id: requestId,
+          title: code + " feasibility review · " + target.title,
+          recordId: contractRef,
+          outcome: "Pending",
+          updatedAt: at,
+          department: "SAL",
+          approverAuthority: code,
+          project: target.linkedProjectCode,
+          requester: persona.label,
+          riskLevel: "High",
+          iatfClause: "Contract Review HLPL/F/MKT/01",
           description: target.scopeSummary,
         });
       }
-      for(const [index,task] of routing.tasks.entries()){
-        const department=state.departments.find(d=>d.id===task.departmentId)!;
-        const review=requests.find(r=>r.approverAuthority===task.reviewDepartment);
-        tasks.push({id:`${contract.id}:${task.id}`,reference:`${contractRef}-T${index+1}`,area:areaForDepartment(department),departmentId:department.id,type:'Task',title:`${task.title} · ${target.title}`,status:review?'In review':'Open',priority:'High',createdAt:at,updatedAt:at,notes:[task.description,instructions??''].filter(Boolean).join('\n'),fields:{projectId:intakeContext.projectCode,enquiryId:target.id,linkedRecords:contractRef,dueDate:targetDate,stageCode:routing.stage.code,lifecycleStage:routing.stage.code,lifecycleRevision:(state.lifecycleRevisions?.at(-1)??defaultLifecycleRevision()).id,templateTaskKey:`${contract.id}:${routing.stage.code}:${task.id}`,assignee:task.assignee,...(review?{feasibilityApprovalId:review.id}:{})}});
+      for (const [index, task] of routing.tasks.entries()) {
+        const department = state.departments.find((d) => d.id === task.departmentId)!;
+        const review = requests.find((r) => r.approverAuthority === task.reviewDepartment);
+        tasks.push({
+          id: `${contract.id}:${task.id}`,
+          reference: `${contractRef}-T${index + 1}`,
+          area: areaForDepartment(department),
+          departmentId: department.id,
+          type: "Task",
+          title: `${task.title} · ${target.title}`,
+          status: review ? "In review" : "Open",
+          priority: "High",
+          createdAt: at,
+          updatedAt: at,
+          notes: [task.description, instructions ?? ""].filter(Boolean).join("\n"),
+          fields: {
+            projectId: intakeContext.projectCode,
+            enquiryId: target.id,
+            linkedRecords: contractRef,
+            dueDate: targetDate,
+            stageCode: routing.stage.code,
+            lifecycleStage: routing.stage.code,
+            lifecycleRevision: (state.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()).id,
+            templateTaskKey: `${contract.id}:${routing.stage.code}:${task.id}`,
+            assignee: task.assignee,
+            ...(review ? { feasibilityApprovalId: review.id } : {}),
+          },
+        });
       }
 
       const oppRef = target.reference.replace(/ENQ/g, "OPP").replace(/HLPL-\d+-/, "OPP-");
@@ -2958,7 +4556,7 @@ function Portal() {
           : (state.modularConfigs ?? defaultProjectModularConfigs);
 
       const newAlerts: DemoAlert[] = departments.map((deptCode) => {
-        const deptId = routing.reviewers.find(d=>d.code===deptCode)!.id;
+        const deptId = routing.reviewers.find((d) => d.code === deptCode)!.id;
         return {
           id: `ALERT_FEAS_${deptCode}_${Date.now()}`,
           severity: "Warning",
@@ -2992,11 +4590,19 @@ function Portal() {
       };
     });
     if (!committed) return false;
-    announce("Inquiry dispatched for multi-department feasibility. Its project link remains optional until a project is selected.");
+    announce(
+      "Inquiry dispatched for multi-department feasibility. Its project link remains optional until a project is selected.",
+    );
     return true;
   };
-  const addRecord = async (input: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">, originalFile?: File | null): Promise<boolean> => {
-    if (input.area === "tst") { announce("Legacy TST is read-only pending an approved ownership mapping."); return false; }
+  const addRecord = async (
+    input: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">,
+    originalFile?: File | null,
+  ): Promise<boolean> => {
+    if (input.area === "tst") {
+      announce("Legacy TST is read-only pending an approved ownership mapping.");
+      return false;
+    }
     const count = portal.records.filter((record) => record.area === input.area).length + 1;
     const prefix = areaById(input.area)
       .short.toUpperCase()
@@ -3014,11 +4620,29 @@ function Portal() {
         .toUpperCase()
         .replace(/[^A-Z0-9]+/g, "-")
         .slice(0, 12) || "REC";
-    const generatedNumber = documentNumber(projectId, departmentCode, docType, String(count).padStart(2, "0"), portal.templateSettings?.prefix ?? "HLPL");
+    const generatedNumber = documentNumber(
+      projectId,
+      departmentCode,
+      docType,
+      String(count).padStart(2, "0"),
+      portal.templateSettings?.prefix ?? "HLPL",
+    );
     const record: RecordItem = {
       ...input,
       departmentId,
-      fields: { ...input.fields, ...(input.type === "Project" ? { lifecycleBaseline: pinLifecycleRevision(portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()) } : {}), ...(input.type === "Project" && portal.responsibilityVersions?.length ? { responsibilityVersion: portal.responsibilityVersions.at(-1)!.id } : {}) },
+      fields: {
+        ...input.fields,
+        ...(input.type === "Project"
+          ? {
+              lifecycleBaseline: pinLifecycleRevision(
+                portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision(),
+              ),
+            }
+          : {}),
+        ...(input.type === "Project" && portal.responsibilityVersions?.length
+          ? { responsibilityVersion: portal.responsibilityVersions.at(-1)!.id }
+          : {}),
+      },
       id: createId(),
       reference: input.fields["controlledNumber"] || generatedNumber,
       createdAt: now(),
@@ -3027,11 +4651,18 @@ function Portal() {
     const attachmentId = originalFile ? createId() : undefined;
     let attachment: LocalControlledFile | undefined;
     if (originalFile) {
-      if (originalFile.size <= 0 || originalFile.size > 25 * 1024 * 1024) throw new Error("Choose a non-empty original file up to 25 MB.");
+      if (originalFile.size <= 0 || originalFile.size > 25 * 1024 * 1024)
+        throw new Error("Choose a non-empty original file up to 25 MB.");
       attachment = {
-        id: attachmentId!, name: originalFile.name, type: originalFile.type || "application/octet-stream", size: originalFile.size,
-        uploadedAt: new Date().toISOString(), uploader: `${persona?.person ?? "Current user"} · ${department?.name ?? "Department"}`,
-        revision: "01", storage: "indexeddb", checksum: await sha256(originalFile),
+        id: attachmentId!,
+        name: originalFile.name,
+        type: originalFile.type || "application/octet-stream",
+        size: originalFile.size,
+        uploadedAt: new Date().toISOString(),
+        uploader: `${persona?.person ?? "Current user"} · ${department?.name ?? "Department"}`,
+        revision: "01",
+        storage: "indexeddb",
+        checksum: await sha256(originalFile),
       };
       await saveLocalAttachment(attachment.id, originalFile);
     }
@@ -3040,67 +4671,222 @@ function Portal() {
     const nowStamp = new Date().toISOString();
     try {
       saved = await update((state) => {
-        if (state.records.some(existing => existing.reference.toUpperCase() === record.reference.toUpperCase())) throw new Error("This controlled number already exists.");
+        if (
+          state.records.some(
+            (existing) => existing.reference.toUpperCase() === record.reference.toUpperCase(),
+          )
+        )
+          throw new Error("This controlled number already exists.");
         if (input.type === "Project") {
           validateIntakeProject(state.records, "Project", record.reference);
-          const sourceEnquiry = input.fields['enquiryId'];
-          if (!sourceEnquiry) throw new Error('Select the source enquiry, including an internal enquiry, before starting a project.');
+          const sourceEnquiry = input.fields["enquiryId"];
+          if (!sourceEnquiry)
+            throw new Error(
+              "Select the source enquiry, including an internal enquiry, before starting a project.",
+            );
           if (sourceEnquiry) {
-            const contracts = state.records.filter(item => !item.archived && item.type === 'Contract review' && item.fields['enquiryId'] === sourceEnquiry);
+            const contracts = state.records.filter(
+              (item) =>
+                !item.archived &&
+                item.type === "Contract review" &&
+                item.fields["enquiryId"] === sourceEnquiry,
+            );
             const contract = contracts[0];
-            if (contracts.length !== 1 || !contract) throw new Error('Select one current feasibility review for the source enquiry before starting its project.');
+            if (contracts.length !== 1 || !contract)
+              throw new Error(
+                "Select one current feasibility review for the source enquiry before starting its project.",
+              );
             assertFeasibilityReviewsReady(contract, state.approvals, sourceEnquiry);
-            const baseline = readLifecycleBaseline(contract.fields['lifecycleBaseline']);
-            const accountableCode = baseline?.stages.find(stage=>stage.code==='CM_02')?.raci?.A;
-            const accountable = state.departments.find(item=>item.active && accountableCode?.length===1 && canonicalDepartmentCode(item.code.replace(/^DEMO-/,''))===accountableCode[0]);
-            if (!baseline || !accountable) throw new Error('The feasibility review needs a valid pinned Accountable department before project start.');
-            if (persona.kind !== 'admin' && !(persona.kind === 'lead' && persona.departmentId === areaForDepartment(accountable))) throw new Error('Only the configured Accountable lead or Admin can record the project-start decision.');
-            if (!Object.hasOwn(CANONICAL_TRACK_METADATA,input.fields['projectTrack']??'')) throw new Error('Select the engineering track after reviewing feasibility.');
-            if (!input.fields['startDecisionReason']?.trim()) throw new Error('Record the project-start decision reason.');
-            record.fields = {...record.fields,lifecycleBaseline:pinLifecycleRevision(baseline),startDecisionBy:persona.label,startDecisionAt:now(),feasibilityReviewId:contract.id};
-            if (state.records.some(item => item.type === 'Project' && item.fields['enquiryId'] === sourceEnquiry)) throw new Error('A project already exists for this enquiry.');
+            const baseline = readLifecycleBaseline(contract.fields["lifecycleBaseline"]);
+            const accountableCode = baseline?.stages.find((stage) => stage.code === "CM_02")?.raci
+              ?.A;
+            const accountable = state.departments.find(
+              (item) =>
+                item.active &&
+                accountableCode?.length === 1 &&
+                canonicalDepartmentCode(item.code.replace(/^DEMO-/, "")) === accountableCode[0],
+            );
+            if (!baseline || !accountable)
+              throw new Error(
+                "The feasibility review needs a valid pinned Accountable department before project start.",
+              );
+            if (
+              persona.kind !== "admin" &&
+              !(persona.kind === "lead" && persona.departmentId === areaForDepartment(accountable))
+            )
+              throw new Error(
+                "Only the configured Accountable lead or Admin can record the project-start decision.",
+              );
+            if (!Object.hasOwn(CANONICAL_TRACK_METADATA, input.fields["projectTrack"] ?? ""))
+              throw new Error("Select the engineering track after reviewing feasibility.");
+            if (!input.fields["startDecisionReason"]?.trim())
+              throw new Error("Record the project-start decision reason.");
+            record.fields = {
+              ...record.fields,
+              lifecycleBaseline: pinLifecycleRevision(baseline),
+              startDecisionBy: persona.label,
+              startDecisionAt: now(),
+              feasibilityReviewId: contract.id,
+            };
+            if (
+              state.records.some(
+                (item) => item.type === "Project" && item.fields["enquiryId"] === sourceEnquiry,
+              )
+            )
+              throw new Error("A project already exists for this enquiry.");
           }
         }
-        if (input.area === "sales" && isPreProjectIntake(input.type)) validateIntakeProject(state.records,input.type,input.fields["projectId"] ?? "");
-        const enquiry = input.area === "sales" && ["Enquiry", "Opportunity", "Enquiry & Opportunity"].includes(input.type);
-        const projectRef = input.type === "Project" ? record.reference : input.fields["projectId"] || "";
-        const project = input.type === "Project" ? record : state.records.find(item => item.type === "Project" && (item.id === projectRef || item.reference === projectRef));
-        if (attachment && projectRef && !project) throw new Error("The selected project is no longer available. Nothing was saved.");
+        if (input.area === "sales" && isPreProjectIntake(input.type))
+          validateIntakeProject(state.records, input.type, input.fields["projectId"] ?? "");
+        const enquiry =
+          input.area === "sales" &&
+          ["Enquiry", "Opportunity", "Enquiry & Opportunity"].includes(input.type);
+        const projectRef =
+          input.type === "Project" ? record.reference : input.fields["projectId"] || "";
+        const project =
+          input.type === "Project"
+            ? record
+            : state.records.find(
+                (item) =>
+                  item.type === "Project" &&
+                  (item.id === projectRef || item.reference === projectRef),
+              );
+        if (attachment && projectRef && !project)
+          throw new Error("The selected project is no longer available. Nothing was saved.");
         if (attachment) {
           const attachmentSpec = hardwareAttachmentForRecordType(input.type);
-          if (!attachmentSpec) throw new Error("This record type has no direct-original rule. Use its controlled Documents & Vault entry point instead.");
-          if (!project) throw new Error("Select the linked project before attaching this original.");
-          const projectStage = [project.fields["currentStage"], project.fields["lifecycleStage"], project.fields["stage"]].find(value => CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === value)) ?? "";
-          if (!recordAttachmentAllowedAtStage(input.type, projectStage, CANONICAL_STAGE_TEMPLATES)) {
-            throw new Error(`Original upload is enabled only at ${attachmentSpec.stageCode} or the immediately following project stage. Current stage: ${projectStage || "not recorded"}.`);
+          if (!attachmentSpec)
+            throw new Error(
+              "This record type has no direct-original rule. Use its controlled Documents & Vault entry point instead.",
+            );
+          if (!project)
+            throw new Error("Select the linked project before attaching this original.");
+          const projectStage =
+            [
+              project.fields["currentStage"],
+              project.fields["lifecycleStage"],
+              project.fields["stage"],
+            ].find((value) =>
+              CANONICAL_STAGE_TEMPLATES.some((stage) => stage.stageCode === value),
+            ) ?? "";
+          if (
+            !recordAttachmentAllowedAtStage(input.type, projectStage, CANONICAL_STAGE_TEMPLATES)
+          ) {
+            throw new Error(
+              `Original upload is enabled only at ${attachmentSpec.stageCode} or the immediately following project stage. Current stage: ${projectStage || "not recorded"}.`,
+            );
           }
           const extension = originalFile!.name.split(".").pop()?.toLowerCase() ?? "";
-          const accepted = attachmentSpec.accept.split(",").map(item => item.trim().replace(/^\./, "").toLowerCase());
-          if (!accepted.includes(extension)) throw new Error(`Choose a file type accepted for ${input.type}: ${attachmentSpec.accept}.`);
+          const accepted = attachmentSpec.accept
+            .split(",")
+            .map((item) => item.trim().replace(/^\./, "").toLowerCase());
+          if (!accepted.includes(extension))
+            throw new Error(
+              `Choose a file type accepted for ${input.type}: ${attachmentSpec.accept}.`,
+            );
           const projectContext = projectLifecycleContext(project.fields);
-          const recordStage = record.fields["hwStage"] || record.fields["qualityStage"] || record.fields["recordStage"] || record.fields["lifecycleStage"] || attachmentSpec.stageCode;
+          const recordStage =
+            record.fields["hwStage"] ||
+            record.fields["qualityStage"] ||
+            record.fields["recordStage"] ||
+            record.fields["lifecycleStage"] ||
+            attachmentSpec.stageCode;
           linkedDocument = {
-            id: createId(), title: `${input.title.trim()} · Original`, url: "", type: attachmentSpec.documentType, departmentId,
-            part: record.reference, revision: "01", lifecycle: "Draft", classification: "Internal",
+            id: createId(),
+            title: `${input.title.trim()} · Original`,
+            url: "",
+            type: attachmentSpec.documentType,
+            departmentId,
+            part: record.reference,
+            revision: "01",
+            lifecycle: "Draft",
+            classification: "Internal",
             phase: projectContext.phase,
             projectStage: projectContext.stage,
             lifecycleStage: recordStage,
-            linkedRecordRefs: [record.id, record.reference, ...(project ? [project.id, project.reference] : [])],
+            linkedRecordRefs: [
+              record.id,
+              record.reference,
+              ...(project ? [project.id, project.reference] : []),
+            ],
             projectId: project?.id,
             uploadScope: project ? "internal" : "department",
             localFiles: [attachment],
-            draftSnapshot: buildDocumentDraft(input.title.trim(), record.reference, { reference: record.reference, fields: record.fields, notes: record.notes }, { reference: project.reference, fields: project.fields }, input.type),
-            history: [`${nowStamp} · ${originalFile!.name} attached with ${record.reference} · Draft only · not approved or released`],
+            draftSnapshot: buildDocumentDraft(
+              input.title.trim(),
+              record.reference,
+              { reference: record.reference, fields: record.fields, notes: record.notes },
+              { reference: project.reference, fields: project.fields },
+              input.type,
+            ),
+            history: [
+              `${nowStamp} · ${originalFile!.name} attached with ${record.reference} · Draft only · not approved or released`,
+            ],
             releaseNotes: `Original supplied with record creation. Draft basis: selected project ${project.reference}; current project context ${projectContext.phase ?? "phase not recorded"} · ${projectContext.stage ?? "stage not recorded"}; record type ${input.type} maps to ${recordStage}. Missing source parameters remain TBD. Draft only; approval and release require their separate workflows.`,
           };
         }
-        const projectLinks = input.type === 'Project' ? linkIntakeProject([record,...state.records],state.enquiriesOpportunities??[],state.approvals,input.fields['enquiryId']??'',record.reference) : undefined;
-        return { ...state, records: [...(projectLinks?.records??[record,...state.records]), ...(input.type === "Project" ? localDefaultLifecycleTasks(state, record, "CM_01") : [])],
-          ...(projectLinks ? {approvals:projectLinks.approvals,enquiriesOpportunities:projectLinks.enquiries.map(item=>item.id===input.fields['enquiryId']?{...item,status:'Project Started' as const,projectTrack:input.fields['projectTrack'] as import('@/lib/canonical-lifecycle').CanonicalProjectTrack}:item)} : {}),
+        const projectLinks =
+          input.type === "Project"
+            ? linkIntakeProject(
+                [record, ...state.records],
+                state.enquiriesOpportunities ?? [],
+                state.approvals,
+                input.fields["enquiryId"] ?? "",
+                record.reference,
+              )
+            : undefined;
+        return {
+          ...state,
+          records: [
+            ...(projectLinks?.records ?? [record, ...state.records]),
+            ...(input.type === "Project" ? localDefaultLifecycleTasks(state, record, "CM_01") : []),
+          ],
+          ...(projectLinks
+            ? {
+                approvals: projectLinks.approvals,
+                enquiriesOpportunities: projectLinks.enquiries.map((item) =>
+                  item.id === input.fields["enquiryId"]
+                    ? {
+                        ...item,
+                        status: "Project Started" as const,
+                        projectTrack: input.fields[
+                          "projectTrack"
+                        ] as import("@/lib/canonical-lifecycle").CanonicalProjectTrack,
+                      }
+                    : item,
+                ),
+              }
+            : {}),
           ...(linkedDocument ? { documents: [linkedDocument, ...state.documents] } : {}),
-          ...(attachment ? { audit: [{ id: createId(), at: nowStamp, action: "Original attached to draft record", detail: `${record.reference} · ${attachment.name} · Browser-local · not approved/released` }, ...state.audit].slice(0, 100) } : {}),
-          ...(input.type === "Project" ? { masters: { ...state.masters, products: Array.from(new Set([...state.masters.products, record.reference])) } } : {}),
-          ...(enquiry ? { enquiriesOpportunities: [salesEnquiryFromRecord(record, state.customersRegistry ?? []), ...(state.enquiriesOpportunities ?? [])] } : {}),
+          ...(attachment
+            ? {
+                audit: [
+                  {
+                    id: createId(),
+                    at: nowStamp,
+                    action: "Original attached to draft record",
+                    detail: `${record.reference} · ${attachment.name} · Browser-local · not approved/released`,
+                  },
+                  ...state.audit,
+                ].slice(0, 100),
+              }
+            : {}),
+          ...(input.type === "Project"
+            ? {
+                masters: {
+                  ...state.masters,
+                  products: Array.from(new Set([...state.masters.products, record.reference])),
+                },
+              }
+            : {}),
+          ...(enquiry
+            ? {
+                enquiriesOpportunities: [
+                  salesEnquiryFromRecord(record, state.customersRegistry ?? []),
+                  ...(state.enquiriesOpportunities ?? []),
+                ],
+              }
+            : {}),
         };
       });
     } catch (error) {
@@ -3113,7 +4899,7 @@ function Portal() {
     }
     if (input.type === "Project") {
       setSelectedProjectId(record.reference);
-      setProjectScopes(current => ({ ...current, [input.area]: record.reference }));
+      setProjectScopes((current) => ({ ...current, [input.area]: record.reference }));
     }
     log("Record created", `${record.reference} created`);
     if (input.type !== "Task") {
@@ -3122,23 +4908,42 @@ function Portal() {
     }
     setModal(null);
     announce(`${record.reference} created.`);
-    if (linkedDocument) announce(`Draft ${record.reference} and original ${attachment?.name} saved together. Open Documents & Vault to view it; it is not approved or released.`);
+    if (linkedDocument)
+      announce(
+        `Draft ${record.reference} and original ${attachment?.name} saved together. Open Documents & Vault to view it; it is not approved or released.`,
+      );
     return true;
   };
-  const handleSalesIntake: NonNullable<React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onSubmitIntake"]> = async data => {
+  const handleSalesIntake: NonNullable<
+    React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onSubmitIntake"]
+  > = async (data) => {
     if (data.mode === "convert" && data.enquiryIdToConvert) {
-      const enquiry = portal.enquiriesOpportunities?.find(item => item.id === data.enquiryIdToConvert);
+      const enquiry = portal.enquiriesOpportunities?.find(
+        (item) => item.id === data.enquiryIdToConvert,
+      );
       if (!enquiry) throw new Error("The selected enquiry is no longer available.");
       setFeasibilityDispatchEnquiry(enquiry);
       return;
     }
     await addRecord({
-      area: "sales", type: data.mode === "enquiry" ? "Enquiry" : "Opportunity", title: data.title,
-      notes: data.scopeSummary, status: data.dispatchFeasibility ? "In review" : "Draft", priority: "High",
-      fields: { customer: data.customerName, customerCode: data.customerCode, contactPerson: data.spocName,
-        email: data.spocEmail, targetVolume: data.targetVolume, targetDate: data.targetClosureDate,
-        ...(data.track ? { projectTrack: data.track } : {}), feasibilityDepartments: data.feasibilityDepts.join(", "),
-        ...(data.parameterValues ? { smartParameters: JSON.stringify(data.parameterValues) } : {}) },
+      area: "sales",
+      type: data.mode === "enquiry" ? "Enquiry" : "Opportunity",
+      title: data.title,
+      notes: data.scopeSummary,
+      status: data.dispatchFeasibility ? "In review" : "Draft",
+      priority: "High",
+      fields: {
+        customer: data.customerName,
+        customerCode: data.customerCode,
+        ...(data.customerId ? { customerId: data.customerId, customer_id: data.customerId } : {}),
+        contactPerson: data.spocName,
+        email: data.spocEmail,
+        targetVolume: data.targetVolume,
+        targetDate: data.targetClosureDate,
+        ...(data.track ? { projectTrack: data.track } : {}),
+        feasibilityDepartments: data.feasibilityDepts.join(", "),
+        ...(data.parameterValues ? { smartParameters: JSON.stringify(data.parameterValues) } : {}),
+      },
     });
   };
   const updateTask = async (taskId: string, patch: Partial<RecordItem>, action: string) => {
@@ -3148,22 +4953,46 @@ function Portal() {
     }
     const task = portal.records.find((record) => record.id === taskId);
     if (!task) return false;
-    if (task.area === "tst") { announce("Legacy TST is read-only pending an approved ownership mapping."); return false; }
-    if ((persona.kind === "lead" || persona.kind === "member") && persona.departmentId && task.area !== persona.departmentId) {
+    if (task.area === "tst") {
+      announce("Legacy TST is read-only pending an approved ownership mapping.");
+      return false;
+    }
+    if (
+      (persona.kind === "lead" || persona.kind === "member") &&
+      persona.departmentId &&
+      task.area !== persona.departmentId
+    ) {
       announce("Department leads can only modify tasks in their own department.");
       return false;
     }
     const committed = await update((state) => {
-      const current = state.records.find(record => record.id === taskId);
-      if (!current || ((persona.kind === "lead" || persona.kind === "member") && current.area !== persona.departmentId)) throw new Error("This task is outside your department.");
-      if ((patch.status === "Approved" || patch.status === "Released") && current.status === "In review") throw new Error("Use the designated approval action for a task in review.");
-      if ((patch.status === "Approved" || patch.status === "Released") && state.approvals.some(approval => approval.outcome === "Pending" && [current.id, current.reference].includes(approval.recordId))) throw new Error("Wait for the designated approval before completing this task.");
-      return ({
-      ...state,
-      records: state.records.map((record) =>
-        record.id === taskId ? { ...patchRecord(record, patch), updatedAt: now() } : record,
-      ),
-    });
+      const current = state.records.find((record) => record.id === taskId);
+      if (
+        !current ||
+        ((persona.kind === "lead" || persona.kind === "member") &&
+          current.area !== persona.departmentId)
+      )
+        throw new Error("This task is outside your department.");
+      if (
+        (patch.status === "Approved" || patch.status === "Released") &&
+        current.status === "In review"
+      )
+        throw new Error("Use the designated approval action for a task in review.");
+      if (
+        (patch.status === "Approved" || patch.status === "Released") &&
+        state.approvals.some(
+          (approval) =>
+            approval.outcome === "Pending" &&
+            [current.id, current.reference].includes(approval.recordId),
+        )
+      )
+        throw new Error("Wait for the designated approval before completing this task.");
+      return {
+        ...state,
+        records: state.records.map((record) =>
+          record.id === taskId ? { ...patchRecord(record, patch), updatedAt: now() } : record,
+        ),
+      };
     });
     if (!committed) return false;
     log(action, `${task.reference} · ${task.title}`);
@@ -3186,7 +5015,13 @@ function Portal() {
       }
     }
 
-    const targetDeptId = portal.departments.find(department => departmentCode(department.code.replace(/^DEMO-/, "")) === departmentCode(appr.department))?.id ?? areas.find(area => departmentCode(area.short) === departmentCode(appr.department))?.id ?? "admin";
+    const targetDeptId =
+      portal.departments.find(
+        (department) =>
+          departmentCode(department.code.replace(/^DEMO-/, "")) === departmentCode(appr.department),
+      )?.id ??
+      areas.find((area) => departmentCode(area.short) === departmentCode(appr.department))?.id ??
+      "admin";
 
     const syncAlert: DemoAlert = {
       id: `ALT-APPR-${Date.now().toString().slice(-6)}`,
@@ -3198,46 +5033,76 @@ function Portal() {
     };
 
     const committed = await update((state) => {
-      assertApprovalDecision(state.approvals.find(approval => approval.id === id), persona);
-      return ({
-      ...state,
-      approvals: state.approvals.map((a) =>
-        a.id === id
-          ? {
-              ...a,
-              outcome: "Approved" as const,
-              updatedAt: now(),
-              signedBy: persona.label,
-              signedAt: now(),
-              comments: notes,
-            }
-          : a
-      ),
-      enquiriesOpportunities: (state.enquiriesOpportunities ?? []).map(enquiry => {
-        const contract = state.records.find(record => [record.id, record.reference].includes(appr.recordId) && record.fields["enquiryId"] === enquiry.id);
-        if (!contract) return enquiry;
-        const requests = state.approvals.filter(approval => [contract.id,contract.reference].includes(approval.recordId));
-        const signed = requests.filter(approval => approval.id === id || approval.outcome === "Approved").map(approval => approval.approverAuthority || "");
-        return { ...enquiry, feasibilitySignedDepts: Array.from(new Set(signed)),
-          status: requests.every(approval => approval.id === id || approval.outcome === "Approved") ? "Feasibility Complete" as const : enquiry.status,
-          updatedAt: now() };
-      }),
-      alerts: [syncAlert, ...state.alerts],
-      notifications: [`[APPROVED] ${appr?.title ?? id} signed by ${persona.label}`, ...state.notifications].slice(0, 50),
-      records: state.records.map((r) =>
-        r.reference === appr?.recordId || r.id === appr?.recordId || r.fields["feasibilityApprovalId"] === id
-          ? {
-              ...r,
-              status: state.approvals.filter(approval => [r.id,r.reference].includes(approval.recordId)).every(approval => approval.id === id || approval.outcome === "Approved") ? "Approved" as const : "In review" as const,
-              updatedAt: now(),
-              notes: `${r.notes ? r.notes + " · " : ""}Gate approved by ${persona.label} (${notes || "Designated review complete"})`,
-            }
-          : r
-      ),
-    });
+      assertApprovalDecision(
+        state.approvals.find((approval) => approval.id === id),
+        persona,
+      );
+      return {
+        ...state,
+        approvals: state.approvals.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                outcome: "Approved" as const,
+                updatedAt: now(),
+                signedBy: persona.label,
+                signedAt: now(),
+                comments: notes,
+              }
+            : a,
+        ),
+        enquiriesOpportunities: (state.enquiriesOpportunities ?? []).map((enquiry) => {
+          const contract = state.records.find(
+            (record) =>
+              [record.id, record.reference].includes(appr.recordId) &&
+              record.fields["enquiryId"] === enquiry.id,
+          );
+          if (!contract) return enquiry;
+          const requests = state.approvals.filter((approval) =>
+            [contract.id, contract.reference].includes(approval.recordId),
+          );
+          const signed = requests
+            .filter((approval) => approval.id === id || approval.outcome === "Approved")
+            .map((approval) => approval.approverAuthority || "");
+          return {
+            ...enquiry,
+            feasibilitySignedDepts: Array.from(new Set(signed)),
+            status: requests.every(
+              (approval) => approval.id === id || approval.outcome === "Approved",
+            )
+              ? ("Feasibility Complete" as const)
+              : enquiry.status,
+            updatedAt: now(),
+          };
+        }),
+        alerts: [syncAlert, ...state.alerts],
+        notifications: [
+          `[APPROVED] ${appr?.title ?? id} signed by ${persona.label}`,
+          ...state.notifications,
+        ].slice(0, 50),
+        records: state.records.map((r) =>
+          r.reference === appr?.recordId ||
+          r.id === appr?.recordId ||
+          r.fields["feasibilityApprovalId"] === id
+            ? {
+                ...r,
+                status: state.approvals
+                  .filter((approval) => [r.id, r.reference].includes(approval.recordId))
+                  .every((approval) => approval.id === id || approval.outcome === "Approved")
+                  ? ("Approved" as const)
+                  : ("In review" as const),
+                updatedAt: now(),
+                notes: `${r.notes ? r.notes + " · " : ""}Gate approved by ${persona.label} (${notes || "Designated review complete"})`,
+              }
+            : r,
+        ),
+      };
     });
     if (!committed) return false;
-    log("Human Approval Signed", `Approved gate ${id} by ${persona.label}. Note: ${notes ?? "Designated reviewer decision recorded."}`);
+    log(
+      "Human Approval Signed",
+      `Approved gate ${id} by ${persona.label}. Note: ${notes ?? "Designated reviewer decision recorded."}`,
+    );
     announce(`Approval ${id} signed and endorsed. Requester notified.`);
     return true;
   };
@@ -3258,7 +5123,13 @@ function Portal() {
       }
     }
 
-    const targetDeptId = portal.departments.find(department => departmentCode(department.code.replace(/^DEMO-/, "")) === departmentCode(appr.department))?.id ?? areas.find(area => departmentCode(area.short) === departmentCode(appr.department))?.id ?? "admin";
+    const targetDeptId =
+      portal.departments.find(
+        (department) =>
+          departmentCode(department.code.replace(/^DEMO-/, "")) === departmentCode(appr.department),
+      )?.id ??
+      areas.find((area) => departmentCode(area.short) === departmentCode(appr.department))?.id ??
+      "admin";
 
     const syncAlert: DemoAlert = {
       id: `ALT-REJ-${Date.now().toString().slice(-6)}`,
@@ -3270,33 +5141,39 @@ function Portal() {
     };
 
     const committed = await update((state) => {
-      assertApprovalDecision(state.approvals.find(approval => approval.id === id), persona);
-      return ({
-      ...state,
-      approvals: state.approvals.map((a) =>
-        a.id === id
-          ? {
-              ...a,
-              outcome: "Rejected" as const,
-              updatedAt: now(),
-              signedBy: persona.label,
-              signedAt: now(),
-              comments: reason,
-            }
-          : a
-      ),
-      alerts: [syncAlert, ...state.alerts],
-      notifications: [`[REJECTED] ${appr?.title ?? id} rejected by ${persona.label}`, ...state.notifications].slice(0, 50),
-      records: state.records.map((r) =>
-        r.reference === appr?.recordId || r.id === appr?.recordId
-          ? {
-              ...r,
-              updatedAt: now(),
-              notes: `${r.notes ? r.notes + " · " : ""}Gate rejected by ${persona.label}: ${reason}`,
-            }
-          : r
-      ),
-    });
+      assertApprovalDecision(
+        state.approvals.find((approval) => approval.id === id),
+        persona,
+      );
+      return {
+        ...state,
+        approvals: state.approvals.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                outcome: "Rejected" as const,
+                updatedAt: now(),
+                signedBy: persona.label,
+                signedAt: now(),
+                comments: reason,
+              }
+            : a,
+        ),
+        alerts: [syncAlert, ...state.alerts],
+        notifications: [
+          `[REJECTED] ${appr?.title ?? id} rejected by ${persona.label}`,
+          ...state.notifications,
+        ].slice(0, 50),
+        records: state.records.map((r) =>
+          r.reference === appr?.recordId || r.id === appr?.recordId
+            ? {
+                ...r,
+                updatedAt: now(),
+                notes: `${r.notes ? r.notes + " · " : ""}Gate rejected by ${persona.label}: ${reason}`,
+              }
+            : r,
+        ),
+      };
     });
     if (!committed) return false;
     log("Approval Rejected", `Rejected gate ${id} by ${persona.label}. Reason: ${reason}`);
@@ -3320,7 +5197,13 @@ function Portal() {
       }
     }
 
-    const targetDeptId = portal.departments.find(department => departmentCode(department.code.replace(/^DEMO-/, "")) === departmentCode(appr.department))?.id ?? areas.find(area => departmentCode(area.short) === departmentCode(appr.department))?.id ?? "admin";
+    const targetDeptId =
+      portal.departments.find(
+        (department) =>
+          departmentCode(department.code.replace(/^DEMO-/, "")) === departmentCode(appr.department),
+      )?.id ??
+      areas.find((area) => departmentCode(area.short) === departmentCode(appr.department))?.id ??
+      "admin";
 
     const syncAlert: DemoAlert = {
       id: `ALT-RET-${Date.now().toString().slice(-6)}`,
@@ -3332,56 +5215,124 @@ function Portal() {
     };
 
     const committed = await update((state) => {
-      assertApprovalDecision(state.approvals.find(approval => approval.id === id), persona);
-      return ({
-      ...state,
-      approvals: state.approvals.map((a) =>
-        a.id === id
-          ? {
-              ...a,
-              outcome: "Returned" as const,
-              updatedAt: now(),
-              signedBy: persona.label,
-              signedAt: now(),
-              comments: reworkNotes,
-            }
-          : a
-      ),
-      alerts: [syncAlert, ...state.alerts],
-      notifications: [`[RETURNED] ${appr?.title ?? id} returned by ${persona.label} for rework`, ...state.notifications].slice(0, 50),
-      records: state.records.map((r) =>
-        r.reference === appr?.recordId || r.id === appr?.recordId
-          ? {
-              ...r,
-              status: "Open" as const,
-              updatedAt: now(),
-              notes: `${r.notes ? r.notes + " · " : ""}Rework requested by ${persona.label}: ${reworkNotes}`,
-            }
-          : r
-      ),
-    });
+      assertApprovalDecision(
+        state.approvals.find((approval) => approval.id === id),
+        persona,
+      );
+      return {
+        ...state,
+        approvals: state.approvals.map((a) =>
+          a.id === id
+            ? {
+                ...a,
+                outcome: "Returned" as const,
+                updatedAt: now(),
+                signedBy: persona.label,
+                signedAt: now(),
+                comments: reworkNotes,
+              }
+            : a,
+        ),
+        alerts: [syncAlert, ...state.alerts],
+        notifications: [
+          `[RETURNED] ${appr?.title ?? id} returned by ${persona.label} for rework`,
+          ...state.notifications,
+        ].slice(0, 50),
+        records: state.records.map((r) =>
+          r.reference === appr?.recordId || r.id === appr?.recordId
+            ? {
+                ...r,
+                status: "Open" as const,
+                updatedAt: now(),
+                notes: `${r.notes ? r.notes + " · " : ""}Rework requested by ${persona.label}: ${reworkNotes}`,
+              }
+            : r,
+        ),
+      };
     });
     if (!committed) return false;
-    log("Approval Returned", `Returned gate ${id} by ${persona.label} for modifications: ${reworkNotes}`);
+    log(
+      "Approval Returned",
+      `Returned gate ${id} by ${persona.label} for modifications: ${reworkNotes}`,
+    );
     announce(`Approval ${id} returned for rework. Requester notified.`);
     return true;
   };
 
-  const handleCreateApprovalRequest = async (input: Omit<ApprovalRecord, "id" | "outcome" | "updatedAt">): Promise<boolean> => {
+  const handleCreateApprovalRequest = async (
+    input: Omit<ApprovalRecord, "id" | "outcome" | "updatedAt">,
+  ): Promise<boolean> => {
     if (persona.kind === "client") return false;
     const authority = departmentCode(input.approverAuthority);
-    if (!["ADMIN", ...personas.filter(item => item.kind === "lead").map(item => departmentCode(item.departmentId))].includes(authority)) { announce("Choose a valid designated approver."); return false; }
+    if (
+      ![
+        "ADMIN",
+        ...personas
+          .filter((item) => item.kind === "lead")
+          .map((item) => departmentCode(item.departmentId)),
+      ].includes(authority)
+    ) {
+      announce("Choose a valid designated approver.");
+      return false;
+    }
     const newId = createId();
-    const committed = await update(state => {
-      const source = state.records.find(record => !record.archived && (record.id === input.recordId || record.reference === input.recordId));
-      if (!source || ((persona.kind === "lead" || persona.kind === "member") && source.area !== persona.departmentId)) throw new Error("Choose an existing source record in your department.");
-      const project = state.records.find(record => record.type === "Project" && record.reference === input.project);
-      const refs = projectReferences(source);
-      if (input.project && !refs.includes(input.project) && !(project && refs.includes(project.id))) throw new Error("The selected project is not linked to this source record.");
-      if (state.approvals.some(approval => approval.outcome === "Pending" && [source.id, source.reference].includes(approval.recordId) && departmentCode(approvalScope(approval).approverAuthority) === authority)) throw new Error("An approval for this record is already pending with that authority.");
-      const request: ApprovalRecord = { ...input, id: newId, department: departmentCode(source.area), requester: persona.label, recordId: source.reference, approverAuthority: input.approverAuthority, outcome: "Pending", updatedAt: now() };
-      const target = state.departments.find(department => departmentCode(department.code.replace(/^DEMO-/, "")) === authority)?.id ?? areas.find(area => departmentCode(area.short) === authority)?.id ?? "admin";
-      return { ...state, approvals: [request, ...state.approvals], alerts: [{ id: createId(), severity: input.riskLevel === "Critical" ? "Critical" as const : "Warning" as const, title: "Pending Sign-off: " + input.title, detail: "Review requested by " + persona.label + " for " + source.reference, departmentId: target, resolved: false }, ...state.alerts] };
+    const committed = await update((state) => {
+      const source = state.records.find(
+        (record) =>
+          !record.archived && (record.id === input.recordId || record.reference === input.recordId),
+      );
+      if (
+        !source ||
+        ((persona.kind === "lead" || persona.kind === "member") &&
+          source.area !== persona.departmentId)
+      )
+        throw new Error("Choose an existing source record in your department.");
+      const approvalProject = validateApprovalProjectLink(
+        source.fields,
+        input.project || "",
+        state.records.filter(record => !record.archived && record.type === "Project" && isSelectableMasterStatus(record.status)),
+      );
+      if (
+        state.approvals.some(
+          (approval) =>
+            approval.outcome === "Pending" &&
+            [source.id, source.reference].includes(approval.recordId) &&
+            departmentCode(approvalScope(approval).approverAuthority) === authority,
+        )
+      )
+        throw new Error("An approval for this record is already pending with that authority.");
+      const request: ApprovalRecord = {
+        ...input,
+        id: newId,
+        project: approvalProject,
+        department: departmentCode(source.area),
+        requester: persona.label,
+        recordId: source.reference,
+        approverAuthority: input.approverAuthority,
+        outcome: "Pending",
+        updatedAt: now(),
+      };
+      const target =
+        state.departments.find(
+          (department) => departmentCode(department.code.replace(/^DEMO-/, "")) === authority,
+        )?.id ??
+        areas.find((area) => departmentCode(area.short) === authority)?.id ??
+        "admin";
+      return {
+        ...state,
+        approvals: [request, ...state.approvals],
+        alerts: [
+          {
+            id: createId(),
+            severity: input.riskLevel === "Critical" ? ("Critical" as const) : ("Warning" as const),
+            title: "Pending Sign-off: " + input.title,
+            detail: "Review requested by " + persona.label + " for " + source.reference,
+            departmentId: target,
+            resolved: false,
+          },
+          ...state.alerts,
+        ],
+      };
     });
     if (!committed) return false;
     log("Approval Requested", input.title + " · " + input.recordId + " · assigned to " + authority);
@@ -3397,7 +5348,7 @@ function Portal() {
     notes: string;
   }): Promise<boolean> => {
     if (persona.kind === "client") return false;
-    const nextRef = `LOCAL-TASK-${activeArea.toUpperCase()}-${createId().slice(0,8).toUpperCase()}`;
+    const nextRef = `LOCAL-TASK-${activeArea.toUpperCase()}-${createId().slice(0, 8).toUpperCase()}`;
     const newTask: RecordItem = {
       id: createId(),
       area: activeArea,
@@ -3420,22 +5371,45 @@ function Portal() {
     };
     const saved = await update((state) => {
       const members = [...(state.demoLoaded ? demoTeam : []), ...(state.teamMembers ?? [])];
-      if (!taskData.title.trim() || !members.some(member => member.area === activeArea && member.name === taskData.assignee)) throw new Error("Choose an assignee from this department team.");
-      if (taskData.projectId && !state.records.some(record => record.type === "Project" && [record.id, record.reference].includes(taskData.projectId))) throw new Error("Choose an existing project.");
-      return ({
-      ...state,
-      records: [newTask, ...state.records],
-    });
+      if (
+        !taskData.title.trim() ||
+        !members.some((member) => member.area === activeArea && member.name === taskData.assignee)
+      )
+        throw new Error("Choose an assignee from this department team.");
+      if (
+        taskData.projectId &&
+        !state.records.some(
+          (record) =>
+            record.type === "Project" && [record.id, record.reference].includes(taskData.projectId),
+        )
+      )
+        throw new Error("Choose an existing project.");
+      return {
+        ...state,
+        records: [newTask, ...state.records],
+      };
     });
     if (!saved) return false;
-    log("Task Created", `Created task ${newTask.reference}: ${newTask.title} assigned to ${taskData.assignee}`);
+    log(
+      "Task Created",
+      `Created task ${newTask.reference}: ${newTask.title} assigned to ${taskData.assignee}`,
+    );
     announce(`${newTask.reference} created and assigned.`);
     return true;
   };
   const handleAddTeamMember = (member: TeamMember) => {
-    if ((persona.kind === "lead" || persona.kind === "member") && member.area !== persona.departmentId) { announce("Team members must belong to your department."); return; }
-    update(state => ({ ...state, teamMembers: [...(state.teamMembers ?? []), member] }));
-    log("Team Member Added", `Added ${member.name} (${member.role}, ${member.level}) to ${member.area.toUpperCase()} department roster.`);
+    if (
+      (persona.kind === "lead" || persona.kind === "member") &&
+      member.area !== persona.departmentId
+    ) {
+      announce("Team members must belong to your department.");
+      return;
+    }
+    update((state) => ({ ...state, teamMembers: [...(state.teamMembers ?? []), member] }));
+    log(
+      "Team Member Added",
+      `Added ${member.name} (${member.role}, ${member.level}) to ${member.area.toUpperCase()} department roster.`,
+    );
     announce(`${member.name} added to ${member.area.toUpperCase()} roster.`);
   };
   const moveInventory = (itemId: string, change: number, reason: InventoryMovement["reason"]) => {
@@ -3443,59 +5417,157 @@ function Portal() {
     if (!item || (change < 0 && item.onHand - item.allocated < Math.abs(change))) return;
     update((state) => ({
       ...state,
-      inventory: (state.inventory ?? []).map((entry) => entry.id === itemId ? { ...entry, onHand: entry.onHand + change, updatedAt: now() } : entry),
-      inventoryMovements: [{ id: createId(), inventoryItemId: itemId, change, reason, at: now(), actor: persona.label, note: `${reason} via Live Inventory` }, ...(state.inventoryMovements ?? [])].slice(0, 100),
-      audit: [{ id: createId(), at: now(), action: `Inventory ${reason.toLowerCase()}`, detail: `${item.partNumber} · ${change > 0 ? "+" : ""}${change} ${item.unit}` }, ...state.audit].slice(0, 100),
+      inventory: (state.inventory ?? []).map((entry) =>
+        entry.id === itemId ? { ...entry, onHand: entry.onHand + change, updatedAt: now() } : entry,
+      ),
+      inventoryMovements: [
+        {
+          id: createId(),
+          inventoryItemId: itemId,
+          change,
+          reason,
+          at: now(),
+          actor: persona.label,
+          note: `${reason} via Live Inventory`,
+        },
+        ...(state.inventoryMovements ?? []),
+      ].slice(0, 100),
+      audit: [
+        {
+          id: createId(),
+          at: now(),
+          action: `Inventory ${reason.toLowerCase()}`,
+          detail: `${item.partNumber} · ${change > 0 ? "+" : ""}${change} ${item.unit}`,
+        },
+        ...state.audit,
+      ].slice(0, 100),
     }));
     announce(`${item.partNumber}: ${change > 0 ? "receipt" : "issue"} recorded.`);
   };
-  const assignInventory = (itemId: string, assignee: string, department: InventoryAssignment["department"], project: string, quantity: number, note: string) => {
+  const assignInventory = (
+    itemId: string,
+    assignee: string,
+    department: InventoryAssignment["department"],
+    project: string,
+    quantity: number,
+    note: string,
+  ) => {
     const item = portal.inventory?.find((entry) => entry.id === itemId);
     if (!item || quantity < 1 || quantity > item.onHand - item.allocated) return;
-    const assignment: InventoryAssignment = { id: createId(), inventoryItemId: itemId, assignee, department, project, quantity, assignedAt: now(), status: "Active", note: note || "Research allocation" };
+    const assignment: InventoryAssignment = {
+      id: createId(),
+      inventoryItemId: itemId,
+      assignee,
+      department,
+      project,
+      quantity,
+      assignedAt: now(),
+      status: "Active",
+      note: note || "Research allocation",
+    };
     update((state) => ({
       ...state,
-      inventory: (state.inventory ?? []).map((entry) => entry.id === itemId ? { ...entry, allocated: entry.allocated + quantity, updatedAt: now() } : entry),
+      inventory: (state.inventory ?? []).map((entry) =>
+        entry.id === itemId
+          ? { ...entry, allocated: entry.allocated + quantity, updatedAt: now() }
+          : entry,
+      ),
       inventoryAssignments: [assignment, ...(state.inventoryAssignments ?? [])].slice(0, 100),
-      inventoryMovements: [{ id: createId(), inventoryItemId: itemId, change: 0, reason: "Adjustment" as const, at: now(), actor: persona.label, note: `Allocated ${quantity} ${item.unit} to ${assignee} · ${department} · ${project}` }, ...(state.inventoryMovements ?? [])].slice(0, 100),
-      audit: [{ id: createId(), at: now(), action: "Inventory assigned to research", detail: `${item.partNumber} · ${quantity} ${item.unit} · ${assignee} · ${department} · ${project}` }, ...state.audit].slice(0, 100),
+      inventoryMovements: [
+        {
+          id: createId(),
+          inventoryItemId: itemId,
+          change: 0,
+          reason: "Adjustment" as const,
+          at: now(),
+          actor: persona.label,
+          note: `Allocated ${quantity} ${item.unit} to ${assignee} · ${department} · ${project}`,
+        },
+        ...(state.inventoryMovements ?? []),
+      ].slice(0, 100),
+      audit: [
+        {
+          id: createId(),
+          at: now(),
+          action: "Inventory assigned to research",
+          detail: `${item.partNumber} · ${quantity} ${item.unit} · ${assignee} · ${department} · ${project}`,
+        },
+        ...state.audit,
+      ].slice(0, 100),
     }));
     announce(`${item.partNumber}: ${quantity} ${item.unit} allocated to ${assignee}.`);
   };
   const activeRecords = portal.records.filter((record) => !record.archived);
+  const selectableProjects = activeRecords.filter(
+    (record) => record.type === "Project" && isSelectableMasterStatus(record.status),
+  );
   const effectiveArea: AreaId =
     persona.kind === "client"
       ? "home"
       : (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
-      ? persona.departmentId
-      : persona.kind === "admin"
-      ? (adminDepartment || (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw"))
-      : activeArea;
+        ? persona.departmentId
+        : persona.kind === "admin"
+          ? adminDepartment ||
+            (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw")
+          : activeArea;
   const configuredDepartments = organizationConfiguration.data?.departments ?? portal.departments;
   const baseActive = areaById(effectiveArea);
-  const configuredDepartment = configuredDepartments.find(d => departmentCode(d.code.replace(/^DEMO-/,'')) === departmentCode(baseActive.short));
-  const active = configuredDepartment ? {...baseActive, name: configuredDepartment.name} : baseActive;
+  const configuredDepartment = configuredDepartments.find(
+    (d) => departmentCode(d.code.replace(/^DEMO-/, "")) === departmentCode(baseActive.short),
+  );
+  const active = configuredDepartment
+    ? { ...baseActive, name: configuredDepartment.name }
+    : baseActive;
   const openCurrentProjectLifecycle = (projectCode = selectedProjectId) => {
     setSelectedProjectId(projectCode);
-    setProjectScopes(current=>({...current,[effectiveArea]:projectCode}));
-    setView('project');setModal(null);
+    setProjectScopes((current) => ({ ...current, [effectiveArea]: projectCode }));
+    setView("project");
+    setModal(null);
   };
-  const activeDepartmentScope = (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
-    ? persona.departmentId
-    : effectiveArea;
-  const leadRecords = activeRecords.filter(record => record.area === activeDepartmentScope);
-  const leadTasks = leadRecords.filter(record => record.type === "Task");
+  const activeDepartmentScope =
+    (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
+      ? persona.departmentId
+      : effectiveArea;
+  const leadRecords = activeRecords.filter((record) => record.area === activeDepartmentScope);
+  const leadTasks = leadRecords.filter((record) => record.type === "Task");
   const currentDeptObj = findAreaDepartment(portal.departments, activeDepartmentScope);
-  const leadName = persona.kind === "member"
-    ? currentDeptObj?.lead || "Lead not recorded"
-    : persona.kind === "admin"
-    ? currentDeptObj?.lead || "Department Lead"
-    : persona.person.split(" · ")[0] ?? "";
+  const leadName =
+    persona.kind === "member"
+      ? currentDeptObj?.lead || "Lead not recorded"
+      : persona.kind === "admin"
+        ? currentDeptObj?.lead || "Department Lead"
+        : (persona.person.split(" · ")[0] ?? "");
   const leadProjectCodes = new Set(leadRecords.flatMap(projectReferences));
-  const leadProjects = activeRecords.filter(record => record.type === "Project" && (leadProjectCodes.has(record.reference) || leadProjectCodes.has(record.id) || activeDepartmentScope === "sales" || persona.kind === "admin"));
-  const scopedAlerts = portal.alerts.filter(alert => persona.kind === "admin" || ((persona.kind === "lead" || persona.kind === "member") && [persona.departmentId, departmentContext].includes(alert.departmentId)));
-  const scopedDocuments = portal.documents.filter(document => canDepartmentAccessDocument(document, persona, departmentContext || `demo-dept-${activeDepartmentScope}`));
-  const scopedApprovalCounts = Object.fromEntries(areas.map(area => [area.id, portal.approvals.map(approvalScope).filter(approval => approval.outcome === "Pending" && approvalInDepartment(approval, area.id)).length]));
+  const leadProjects = selectableProjects.filter(
+    (record) =>
+      leadProjectCodes.has(record.reference) ||
+      leadProjectCodes.has(record.id) ||
+      activeDepartmentScope === "sales" ||
+      persona.kind === "admin",
+  );
+  const scopedAlerts = portal.alerts.filter(
+    (alert) =>
+      persona.kind === "admin" ||
+      ((persona.kind === "lead" || persona.kind === "member") &&
+        [persona.departmentId, departmentContext].includes(alert.departmentId)),
+  );
+  const scopedDocuments = portal.documents.filter((document) =>
+    canDepartmentAccessDocument(
+      document,
+      persona,
+      departmentContext || `demo-dept-${activeDepartmentScope}`,
+    ),
+  );
+  const scopedApprovalCounts = Object.fromEntries(
+    areas.map((area) => [
+      area.id,
+      portal.approvals
+        .map(approvalScope)
+        .filter(
+          (approval) => approval.outcome === "Pending" && approvalInDepartment(approval, area.id),
+        ).length,
+    ]),
+  );
   const selected = activeRecords.find((record) => record.id === selectedId);
   const selectedDocument = portal.documents.find((document) => document.id === selectedDocumentId);
   const selectedProjectProfile = activeRecords.find(
@@ -3506,7 +5578,11 @@ function Portal() {
       announce("Internal records require an explicit customer release and recipient grant.");
       return;
     }
-    if ((persona.kind === "lead" || persona.kind === "member") && persona.departmentId && record.area !== persona.departmentId) {
+    if (
+      (persona.kind === "lead" || persona.kind === "member") &&
+      persona.departmentId &&
+      record.area !== persona.departmentId
+    ) {
       announce(`Access restricted: record belongs to ${record.area.toUpperCase()} department.`);
       return;
     }
@@ -3518,35 +5594,117 @@ function Portal() {
     if (testMembership && persona.kind !== "client") {
       openDocuments();
       const canonicalId = document.cloudDocumentId || document.id;
-      setVaultDocumentId(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canonicalId) ? canonicalId : undefined);
+      setVaultDocumentId(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(canonicalId)
+          ? canonicalId
+          : undefined,
+      );
       setModal(null);
       return;
     }
-    if (!canDepartmentAccessDocument(document, persona, departmentContext)) { announce("This document is outside your department scope."); return; }
+    if (!canDepartmentAccessDocument(document, persona, departmentContext)) {
+      announce("This document is outside your department scope.");
+      return;
+    }
     if (persona.kind === "client") {
       const isAllowed = /sor|nda|quotation|quo|invoice|inv|pdi|tac|milestone/i.test(
-        `${document.type} ${document.title} ${document.url}`
+        `${document.type} ${document.title} ${document.url}`,
       );
       if (!isAllowed) {
-        announce("Access restricted: Internal engineering document is not released for OEM client inspection.");
+        announce(
+          "Access restricted: Internal engineering document is not released for OEM client inspection.",
+        );
         return;
       }
     }
     setSelectedDocumentId(document.id);
     setModal("document");
   };
-  if (!testAuthReady) return <main className="grid min-h-screen place-items-center bg-background text-foreground">Checking authenticated session…</main>;
-  if (testMembership && !testMembership.isClient && showSharedTestWorkspace) return <div className={darkMode ? "dark" : ""}>
-    <div className="border-b border-border bg-card px-4 py-2 text-foreground">
-      <button type="button" onClick={() => setShowSharedTestWorkspace(false)} className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-secondary">Back to portal</button>
-    </div>
-    <SharedTestWorkspace initialTab={sharedTestInitialTab} standaloneDocuments={sharedTestInitialTab === "Documents"} membership={testMembership} adminDepartment={effectiveArea} onLogout={handleLogout} darkMode={darkMode} />
-  </div>;
-  if(testAuthError)return <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground"><section className="max-w-lg rounded-xl border border-border bg-card p-6"><h1 className="text-lg font-semibold">Session verification unavailable</h1><p role="alert" className="my-3 text-sm">{testAuthError}</p><p className="text-xs text-muted-foreground">No local examples are used for this authenticated account.</p><button className="mt-4 rounded border border-border px-3 py-2 text-sm" onClick={()=>window.location.reload()}>Retry</button></section></main>;
-  if (signedOut) return <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground"><section className="max-w-lg rounded-xl border border-border bg-card p-6"><p className="text-[11px] font-bold uppercase text-primary">TEST ONLY</p><h1 className="mt-1 text-xl font-semibold">Signed out</h1><p className="mt-3 text-sm text-muted-foreground">Sign in with a provisioned TEST account. Browser-local demo records remain separate.</p><button type="button" disabled={!testAuthReady} onClick={() => setLoginModalOpen(true)} className="mt-5 rounded border border-border px-4 py-2 text-sm disabled:opacity-50">Sign in to TEST workspace</button></section><DepartmentLeadLoginModal isOpen={loginModalOpen} demoMode={false} testMode currentPersonaId="" onClose={() => setLoginModalOpen(false)} onLoginSuccess={handleDemoLogin} onTestLogin={handleTestLogin} onLogout={handleLogout} /></main>;
+  if (!testAuthReady)
+    return (
+      <main className="grid min-h-screen place-items-center bg-background text-foreground">
+        Checking authenticated session…
+      </main>
+    );
+  if (testMembership && !testMembership.isClient && showSharedTestWorkspace)
+    return (
+      <div className={darkMode ? "dark" : ""}>
+        <div className="border-b border-border bg-card px-4 py-2 text-foreground">
+          <button
+            type="button"
+            onClick={() => setShowSharedTestWorkspace(false)}
+            className="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-secondary"
+          >
+            Back to portal
+          </button>
+        </div>
+        <SharedTestWorkspace
+          initialTab={sharedTestInitialTab}
+          standaloneDocuments={sharedTestInitialTab === "Documents"}
+          membership={testMembership}
+          adminDepartment={effectiveArea}
+          onLogout={handleLogout}
+          darkMode={darkMode}
+        />
+      </div>
+    );
+  if (testAuthError)
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground">
+        <section className="max-w-lg rounded-xl border border-border bg-card p-6">
+          <h1 className="text-lg font-semibold">Session verification unavailable</h1>
+          <p role="alert" className="my-3 text-sm">
+            {testAuthError}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            No local examples are used for this authenticated account.
+          </p>
+          <button
+            className="mt-4 rounded border border-border px-3 py-2 text-sm"
+            onClick={() => window.location.reload()}
+          >
+            Retry
+          </button>
+        </section>
+      </main>
+    );
+  if (signedOut)
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground">
+        <section className="max-w-lg rounded-xl border border-border bg-card p-6">
+          <p className="text-[11px] font-bold uppercase text-primary">TEST ONLY</p>
+          <h1 className="mt-1 text-xl font-semibold">Signed out</h1>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Sign in with a provisioned TEST account. Browser-local demo records remain separate.
+          </p>
+          <button
+            type="button"
+            disabled={!testAuthReady}
+            onClick={() => setLoginModalOpen(true)}
+            className="mt-5 rounded border border-border px-4 py-2 text-sm disabled:opacity-50"
+          >
+            Sign in to TEST workspace
+          </button>
+        </section>
+        <DepartmentLeadLoginModal
+          isOpen={loginModalOpen}
+          demoMode={false}
+          testMode
+          currentPersonaId=""
+          onClose={() => setLoginModalOpen(false)}
+          onLoginSuccess={handleDemoLogin}
+          onTestLogin={handleTestLogin}
+          onLogout={handleLogout}
+        />
+      </main>
+    );
   return (
-    <main className={`${darkMode ? "dark" : ""} min-h-screen bg-background text-foreground transition-colors duration-200 motion-reduce:transition-none`}>
-      <aside className={`fixed inset-y-0 left-0 z-30 hidden border-r border-sidebar-border bg-sidebar p-3 transition-[width] duration-200 motion-reduce:transition-none lg:flex lg:flex-col ${sidebarExpanded ? "w-64" : "w-16"}`}>
+    <main
+      className={`${darkMode ? "dark" : ""} min-h-screen bg-background text-foreground transition-colors duration-200 motion-reduce:transition-none`}
+    >
+      <aside
+        className={`fixed inset-y-0 left-0 z-30 hidden border-r border-sidebar-border bg-sidebar p-3 transition-[width] duration-200 motion-reduce:transition-none lg:flex lg:flex-col ${sidebarExpanded ? "w-64" : "w-16"}`}
+      >
         <RoleAwareSidebar
           persona={persona}
           adminDepartment={effectiveArea}
@@ -3576,7 +5734,7 @@ function Portal() {
           onOpenLegalHub={() => setLegalHubOpen(true)}
           onOpenDecisionLog={() => setDecisionLogOpen(true)}
           onOpenAdminSettings={() => {
-            setAdminTab("lifecycle");
+            setAdminTab(testMembership && persona.kind !== "admin" ? "lifecycle" : "company");
             setModal("admin");
           }}
           onOpenWizard={() => setModal("wizard")}
@@ -3596,16 +5754,49 @@ function Portal() {
             areas.map((area) => [
               area.id,
               portal.records.filter(
-                (r) => r.area === area.id && r.type === "Task" && r.fields["assignee"] === personas.find(persona => persona.departmentId === area.id)?.person.split(" · ")[0] && !r.archived && !["Approved", "Released", "Archived"].includes(r.status)
+                (r) =>
+                  r.area === area.id &&
+                  r.type === "Task" &&
+                  r.fields["assignee"] ===
+                    personas
+                      .find((persona) => persona.departmentId === area.id)
+                      ?.person.split(" · ")[0] &&
+                  !r.archived &&
+                  !["Approved", "Released", "Archived"].includes(r.status),
               ).length,
-            ])
+            ]),
           )}
         />
         <div className="mt-2 pt-2 border-t border-sidebar-border/60">
-          <ThemeToggle darkMode={darkMode} onToggle={() => setDarkMode((value) => !value)} expanded={sidebarExpanded} />
+          {(persona.id === "admin" || !!testMembership) && (
+            <button
+              type="button"
+              aria-label="Settings"
+              title="Settings"
+              onClick={() => {
+                setAdminTab(testMembership && persona.kind !== "admin" ? "lifecycle" : "company");
+                setModal("admin");
+              }}
+              className={
+                sidebarExpanded
+                  ? "mb-2 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                  : "mx-auto mb-2 grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"
+              }
+            >
+              <Settings2 className="size-4" />
+              {sidebarExpanded && <span>Settings</span>}
+            </button>
+          )}
+          <ThemeToggle
+            darkMode={darkMode}
+            onToggle={() => setDarkMode((value) => !value)}
+            expanded={sidebarExpanded}
+          />
         </div>
       </aside>
-      <section className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarExpanded ? "lg:pl-64" : "lg:pl-16"}`}>
+      <section
+        className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarExpanded ? "lg:pl-64" : "lg:pl-16"}`}
+      >
         <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
           <div className="flex h-16 items-center gap-3 px-4 md:px-8">
             <button
@@ -3619,7 +5810,10 @@ function Portal() {
               onClick={() => {
                 if (persona.kind === "client") {
                   navigate("home");
-                } else if ((persona.kind === "lead" || persona.kind === "member") && persona.departmentId) {
+                } else if (
+                  (persona.kind === "lead" || persona.kind === "member") &&
+                  persona.departmentId
+                ) {
                   navigate(persona.departmentId);
                 } else {
                   navigate("home");
@@ -3630,24 +5824,53 @@ function Portal() {
               <p className="truncate text-sm font-semibold md:text-base">
                 {persona.kind === "client"
                   ? "Northstar Mobility Systems · Fleet Test Portal"
-                  : (persona.kind === "lead" || persona.kind === "member")
-                  ? active.name.replace(/^DEMO · /, "")
-                  : (view === "index" ? "Unified index" : active.name.replace(/^DEMO · /, ""))}
+                  : persona.kind === "lead" || persona.kind === "member"
+                    ? active.name.replace(/^DEMO · /, "")
+                    : view === "index"
+                      ? "Unified index"
+                      : active.name.replace(/^DEMO · /, "")}
               </p>
               <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                 {persona.kind === "client"
                   ? "Rohan Verma · Client Representative"
-                  : (persona.kind === "lead" || persona.kind === "member")
-                  ? `${persona.label}`
-                  : `Executive Admin · ${active.short} Department Access`}
+                  : persona.kind === "lead" || persona.kind === "member"
+                    ? `${persona.label}`
+                    : `Executive Admin · ${active.short} Department Access`}
               </p>
             </button>
-            {testMembership && !testMembership.isClient && <Action label="Shared TEST data" onClick={() => {setSharedTestInitialTab("Tasks"); setShowSharedTestWorkspace(true);}} />}
+            {testMembership && !testMembership.isClient && (
+              <Action
+                label="Shared TEST data"
+                onClick={() => {
+                  setSharedTestInitialTab("Tasks");
+                  setShowSharedTestWorkspace(true);
+                }}
+              />
+            )}
             {portal?.demoLoaded && !testMembership && (
               <>
-                <span className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-warning" title="Fictional sample records stored only in this browser; no shared or production records are represented.">TEST DATA</span>
-                {persona.kind === "admin" && <Action label="Reset sample" onClick={() => { if (window.confirm("Reset the fictional sample data in this browser and restore the saved setup?")) resetDemo(); }} />}
-                {persona.kind === "admin" && <Action label="Lifecycle demos" onClick={()=>setRoleSamplesOpen(true)} />}
+                <span
+                  className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-warning"
+                  title="Fictional sample records stored only in this browser; no shared or production records are represented."
+                >
+                  TEST DATA
+                </span>
+                {persona.kind === "admin" && (
+                  <Action
+                    label="Reset sample"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Reset the fictional sample data in this browser and restore the saved setup?",
+                        )
+                      )
+                        resetDemo();
+                    }}
+                  />
+                )}
+                {persona.kind === "admin" && (
+                  <Action label="Lifecycle demos" onClick={() => setRoleSamplesOpen(true)} />
+                )}
               </>
             )}
             <PersonaSwitcher
@@ -3660,32 +5883,54 @@ function Portal() {
               onAdminDepartmentChange={handleAdminDepartmentChange}
               onOpenDepartmentsDirectory={() => setView("departments")}
             />
-            {persona.kind !== "client" && <>
-              <div className="relative hidden w-44 shrink xl:block 2xl:w-56"><Search className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" /><input aria-label="Search portal" placeholder="Search…" value={globalSearchQuery} onFocus={() => setSearchOpen(true)} onChange={event => { setGlobalSearchQuery(event.target.value); setSearchOpen(true); }} className="h-9 w-full rounded-lg border border-border bg-card pl-8 pr-2 text-xs" /></div>
-              <button type="button" aria-label="Search portal" title="Search" onClick={() => { setSearchOpen(true); setMobileMenu(false); }} className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-secondary xl:hidden"><Search className="size-4" /></button>
-            </>}
+            {persona.kind !== "client" && (
+              <>
+                <div className="relative hidden w-44 shrink xl:block 2xl:w-56">
+                  <Search className="pointer-events-none absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+                  <input
+                    aria-label="Search portal"
+                    placeholder="Search…"
+                    value={globalSearchQuery}
+                    onFocus={() => setSearchOpen(true)}
+                    onChange={(event) => {
+                      setGlobalSearchQuery(event.target.value);
+                      setSearchOpen(true);
+                    }}
+                    className="h-9 w-full rounded-lg border border-border bg-card pl-8 pr-2 text-xs"
+                  />
+                </div>
+                <button
+                  type="button"
+                  aria-label="Search portal"
+                  title="Search"
+                  onClick={() => {
+                    setSearchOpen(true);
+                    setMobileMenu(false);
+                  }}
+                  className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-secondary xl:hidden"
+                >
+                  <Search className="size-4" />
+                </button>
+              </>
+            )}
             {persona.kind === "client" ? (
-              <HeaderAction
-                label="Released Deliverables"
-                icon={Award}
-                onClick={openDocuments}
-              />
+              <HeaderAction label="Released Deliverables" icon={Award} onClick={openDocuments} />
             ) : (
-              <HeaderAction
-                label="Documents"
-                icon={FileText}
-                onClick={openDocuments}
-              />
+              <HeaderAction label="Documents" icon={FileText} onClick={openDocuments} />
             )}
             {persona.kind !== "client" && (
-              <HeaderAction label="Directory" icon={Users} onClick={() => setDirectoryOpen(true)} />
+              <HeaderAction
+                label="My Profile"
+                icon={UserRoundCog}
+                onClick={() => setView("profile")}
+              />
             )}
-            {persona.id === "admin" && (
+            {(persona.id === "admin" || !!testMembership) && (
               <HeaderAction
                 label="Settings"
                 icon={Settings2}
                 onClick={() => {
-                  setAdminTab("company");
+                  setAdminTab(testMembership && persona.kind !== "admin" ? "lifecycle" : "company");
                   setModal("admin");
                 }}
               />
@@ -3696,115 +5941,375 @@ function Portal() {
               badge={scopedAlerts.filter((alert) => !alert.resolved).length}
               onClick={() => setAlertsOpen(true)}
             />
-
           </div>
         </header>
         <div className="mx-auto max-w-[1600px] space-y-6 px-6 py-6 pb-28 lg:pb-10">
-          {persona.kind!=='client'&&configuredDepartment&&(()=>{const rootId=configuredDepartment.workspaceDepartmentId||configuredDepartment.id;const root=configuredDepartments.find(d=>d.id===rootId);const members=configuredDepartments.filter(d=>d.active&&(d.id===rootId||d.workspaceDepartmentId===rootId));return members.length>1?<nav aria-label="Shared department workspace" className="rounded-lg border border-border bg-card p-3"><p className="mb-2 text-sm font-semibold">{root?.name||active.name} workspace</p><div className="flex flex-wrap gap-2">{members.filter(d=>persona.kind==='admin'||d.id===configuredDepartment.id).map(d=><button type="button" key={d.id} aria-current={d.id===configuredDepartment.id?'page':undefined} className={`rounded-md border border-border px-3 py-1.5 text-sm ${d.id===configuredDepartment.id?'bg-primary text-primary-foreground':'hover:bg-muted'}`} onClick={()=>navigate((DEPARTMENT_MODULES[departmentCode(d.code.replace(/^DEMO-/,''))]||effectiveArea) as AreaId,'queue')}>{d.name}</button>)}</div></nav>:null;})()}
+          {persona.kind !== "client" &&
+            configuredDepartment &&
+            (() => {
+              const rootId = configuredDepartment.workspaceDepartmentId || configuredDepartment.id;
+              const root = configuredDepartments.find((d) => d.id === rootId);
+              const members = configuredDepartments.filter(
+                (d) => d.active && (d.id === rootId || d.workspaceDepartmentId === rootId),
+              );
+              return members.length > 1 ? (
+                <nav
+                  aria-label="Shared department workspace"
+                  className="rounded-lg border border-border bg-card p-3"
+                >
+                  <p className="mb-2 text-sm font-semibold">
+                    {root?.name || active.name} workspace
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {members
+                      .filter((d) => persona.kind === "admin" || d.id === configuredDepartment.id)
+                      .map((d) => (
+                        <button
+                          type="button"
+                          key={d.id}
+                          aria-current={d.id === configuredDepartment.id ? "page" : undefined}
+                          className={`rounded-md border border-border px-3 py-1.5 text-sm ${d.id === configuredDepartment.id ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                          onClick={() =>
+                            navigate(
+                              (DEPARTMENT_MODULES[departmentCode(d.code.replace(/^DEMO-/, ""))] ||
+                                effectiveArea) as AreaId,
+                              "queue",
+                            )
+                          }
+                        >
+                          {d.name}
+                        </button>
+                      ))}
+                  </div>
+                </nav>
+              ) : null;
+            })()}
           {persona.kind === "client" ? (
-            <>{testMembership && <div className="flex gap-2"><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("queue")}>Deliverables</button><button className="rounded-lg border border-border px-3 py-2 text-sm" onClick={()=>setView("tickets")}>Tickets</button></div>}{testMembership && view==="tickets" ? <SharedBusinessWorkspace key={testMembership.membershipId} view="tickets" membership={testMembership}/> : <ClientOEMPortal demoMode={!testMembership && portal.demoLoaded} focusDeliverables={clientDeliverablesFocus}/>}</>
-          ) : testMembership && ["queue","project","summary","records","deliverables","assignee","approvals","index","pmss"].includes(view) ? (
- <SharedOperationalWorkspace key={`${testMembership.membershipId}:${effectiveArea}:${view}`} membership={testMembership} view={view === 'pmss' ? 'project' : view} adminDepartment={effectiveArea} initialProjectScope={view === "project" || view === 'pmss' ? selectedProjectId : undefined} recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)} onOpenTasks={() => setView("assignee")} onOpenInputs={sourceId => {setAnalysisSourceId(sourceId);setView("analysis");}} onOpenVault={(documentId,projectId)=>{setShowSharedTestWorkspace(false);setVaultDocumentId(documentId);setVaultProjectId(projectId);setView("vault");}} darkMode={darkMode} onLogout={handleLogout}/>
-          ) : view === 'departments' && testMembership ? <SharedOrganizationDepartments membership={testMembership} onOpen={(area,tab)=>handleAdminDepartmentChange(area as AreaId,(tab as typeof view)||'project')}/> : view === "departments" ? (
+            <>
+              {testMembership && (
+                <div className="flex gap-2">
+                  <button
+                    className="rounded-lg border border-border px-3 py-2 text-sm"
+                    onClick={() => setView("queue")}
+                  >
+                    Deliverables
+                  </button>
+                  <button
+                    className="rounded-lg border border-border px-3 py-2 text-sm"
+                    onClick={() => setView("tickets")}
+                  >
+                    Tickets
+                  </button>
+                </div>
+              )}
+              {testMembership && view === "tickets" ? (
+                <SharedBusinessWorkspace
+                  key={testMembership.membershipId}
+                  view="tickets"
+                  membership={testMembership}
+                />
+              ) : (
+                <ClientOEMPortal
+                  demoMode={!testMembership && portal.demoLoaded}
+                  focusDeliverables={clientDeliverablesFocus}
+                />
+              )}
+            </>
+          ) : testMembership &&
+            [
+              "queue",
+              "project",
+              "summary",
+              "records",
+              "deliverables",
+              "assignee",
+              "approvals",
+              "index",
+              "pmss",
+            ].includes(view) ? (
+            <SharedOperationalWorkspace
+              key={`${testMembership.membershipId}:${effectiveArea}:${view}`}
+              membership={testMembership}
+              view={view === "pmss" ? "project" : view}
+              adminDepartment={effectiveArea}
+              initialProjectScope={
+                view === "project" || view === "pmss" ? selectedProjectId : undefined
+              }
+              recordTypeFilter={recordTypeFilter}
+              onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
+              onOpenTasks={() => setView("assignee")}
+              onOpenInputs={(sourceId) => {
+                setAnalysisSourceId(sourceId);
+                setView("analysis");
+              }}
+              onOpenVault={(documentId, projectId) => {
+                setShowSharedTestWorkspace(false);
+                setVaultDocumentId(documentId);
+                setVaultProjectId(projectId);
+                setView("vault");
+              }}
+              darkMode={darkMode}
+              onLogout={handleLogout}
+            />
+          ) : view === "departments" && testMembership ? (
+            <SharedOrganizationDepartments
+              membership={testMembership}
+              onOpen={(area, tab) =>
+                handleAdminDepartmentChange(area as AreaId, (tab as typeof view) || "project")
+              }
+            />
+          ) : view === "departments" ? (
             <CommonDepartmentSearchView
-              departments={DEPARTMENTS_METADATA.flatMap(meta=>{const department=portal.departments.find(d=>d.active&&areaForDepartment(d)===meta.id);return department?[{...meta,name:department.name.replace(/^DEMO · /,''),lead:department.lead||'Unassigned',leadRole:'Department lead'}]:[];})}
+              departments={buildDepartmentDirectoryMetadata(portal.departments)}
               currentDepartment={adminDepartment}
               onSelectDepartment={(deptId, viewTab) => {
                 handleAdminDepartmentChange(deptId, (viewTab as typeof view) || "project");
               }}
               openTaskCounts={Object.fromEntries(
-                areas.map((area) => [
-                  area.id,
-                  portal.records.filter(
-                    (r) => r.area === area.id && r.type === "Task" && !r.archived && !["Approved", "Released", "Archived"].includes(r.status)
-                  ).length,
-                ])
+                DEPARTMENTS_METADATA.map((department) => {
+                  const configuredDepartment = portal.departments.find(
+                    (item) =>
+                      item.active &&
+                      departmentCode(item.code.replace(/^DEMO-/, "")) === department.code,
+                  );
+                  return [
+                    department.id,
+                    portal.records.filter(
+                      (record) =>
+                        record.type === "Task" &&
+                        !record.archived &&
+                        !["Approved", "Released", "Archived"].includes(record.status) &&
+                        (record.departmentId === configuredDepartment?.id ||
+                          record.area === department.id),
+                    ).length,
+                  ] as const;
+                }),
               )}
               approvalCounts={scopedApprovalCounts}
+              projectCounts={Object.fromEntries(
+                DEPARTMENTS_METADATA.map((department) => {
+                  const configuredDepartment = portal.departments.find(
+                    (item) =>
+                      item.active &&
+                      departmentCode(item.code.replace(/^DEMO-/, "")) === department.code,
+                  );
+                  const linkedProjects = new Set(
+                    portal.records
+                      .filter(
+                        (record) =>
+                          record.type === "Task" &&
+                          !record.archived &&
+                          (record.departmentId === configuredDepartment?.id ||
+                            record.area === department.id),
+                      )
+                      .flatMap((record) => projectReferences(record)),
+                  );
+                  return [
+                    department.id,
+                    portal.records.filter(
+                      (record) =>
+                        record.type === "Project" &&
+                        !record.archived &&
+                        (record.departmentId === configuredDepartment?.id ||
+                          record.area === department.id ||
+                          linkedProjects.has(record.id) ||
+                          linkedProjects.has(record.reference)),
+                    ).length,
+                  ] as const;
+                }),
+              )}
             />
-          ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") && view === "assignee" ? (
+          ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") &&
+            view === "assignee" ? (
             <section className="space-y-4">
               <h1 className="text-xl font-semibold">{active.name} — My Tasks & Action Queue</h1>
-              <DepartmentLeadCoordinationCenter key={`${persona.id}:${activeDepartmentScope}`}
+              <DepartmentLeadCoordinationCenter
+                key={`${persona.id}:${activeDepartmentScope}`}
                 hideHeader
                 hideProjectsAndTeam
-                departmentCode={active.short} departmentName={active.name} departmentLead={leadName}
-                records={leadRecords} teamMembers={allTeamMembers.filter(member => member.area === activeDepartmentScope)}
+                departmentCode={active.short}
+                departmentName={active.name}
+                departmentLead={leadName}
+                records={leadRecords}
+                teamMembers={allTeamMembers.filter(
+                  (member) => member.area === activeDepartmentScope,
+                )}
                 initialAssignee={leadName}
-                projects={leadProjects.map(project => ({ id: project.reference, name: project.title, customer: project.fields["customer"] || "Not provided", currentStage: project.fields["lifecycleStage"] || "Not provided", targetDate: project.fields["targetDate"] || "Not provided", volume: project.fields["quantity"] || "Not provided" }))}
+                projects={leadProjects.map((project) => ({
+                  id: project.reference,
+                  name: project.title,
+                  customer: project.fields["customer"] || "Not provided",
+                  currentStage: project.fields["lifecycleStage"] || "Not provided",
+                  targetDate: project.fields["targetDate"] || "Not provided",
+                  volume: project.fields["quantity"] || "Not provided",
+                }))}
                 projectScope={projectScopes[active.id] ?? "all"}
-                onProjectScopeChange={scope => setProjectScopes(current => ({ ...current, [active.id]: scope as ProjectScope }))}
-                onUpdateTaskAssignee={(id, assignee) => { void updateTask(id, { fields: { assignee } }, "Task reassigned"); }}
-                onUpdateTaskStatus={(id, status) => { const s = status === "Cancelled" ? "Archived" : status; void updateTask(id, { status: s, ...(status === "Open" ? { fields: { workStatus: "To do" } } : status === "Cancelled" ? { fields: { workStatus: "Cancelled" } } : {}) }, "Task status updated"); }}
-                onStartTask={id => { void updateTask(id, { status: "Open", fields: { workStatus: "In progress" } }, "Task started"); }}
-                onOpenTask={task => { const source = leadRecords.find(record => record.id === task.id); if (source) openRecord(source); }}
+                onProjectScopeChange={(scope) =>
+                  setProjectScopes((current) => ({
+                    ...current,
+                    [active.id]: scope as ProjectScope,
+                  }))
+                }
+                onUpdateTaskAssignee={(id, assignee) => {
+                  void updateTask(id, { fields: { assignee } }, "Task reassigned");
+                }}
+                onUpdateTaskStatus={(id, status) => {
+                  const s = status === "Cancelled" ? "Archived" : status;
+                  void updateTask(
+                    id,
+                    {
+                      status: s,
+                      ...(status === "Open"
+                        ? { fields: { workStatus: "To do" } }
+                        : status === "Cancelled"
+                          ? { fields: { workStatus: "Cancelled" } }
+                          : {}),
+                    },
+                    "Task status updated",
+                  );
+                }}
+                onStartTask={(id) => {
+                  void updateTask(
+                    id,
+                    { status: "Open", fields: { workStatus: "In progress" } },
+                    "Task started",
+                  );
+                }}
+                onOpenTask={(task) => {
+                  const source = leadRecords.find((record) => record.id === task.id);
+                  if (source) openRecord(source);
+                }}
                 onCreateTask={handleCreateCustomTask}
-                onAddTeamMember={member => handleAddTeamMember({ ...member, area: activeDepartmentScope as TeamMember["area"] })}
+                onAddTeamMember={(member) =>
+                  handleAddTeamMember({
+                    ...member,
+                    area: activeDepartmentScope as TeamMember["area"],
+                  })
+                }
               />
             </section>
-          ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") && (view === "project" || view === "queue" || view === "summary" || view === "records" || view === "deliverables") ? (
-            <DepartmentProjectWorkspace key={`${persona.id}:${activeDepartmentScope}:${view}`}
+          ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") &&
+            (view === "project" ||
+              view === "queue" ||
+              view === "summary" ||
+              view === "records" ||
+              view === "deliverables") ? (
+            <DepartmentProjectWorkspace
+              key={`${persona.id}:${activeDepartmentScope}:${view}`}
               salesPipeline={{
                 customers: portal.customersRegistry ?? defaultCustomers,
                 enquiries: portal.enquiriesOpportunities ?? defaultEnquiriesOpportunities,
                 onOpenNewEnquiry: () => handleOpenCreate("Enquiry"),
                 onOpenCustomerRegister: () => setCustomerRegisterOpen(true),
-                onOpenFeasibilityGate: projectCode => { setSelectedProjectId(projectCode); setView('analysis'); },
-                onOpenSourceInputs: sourceId => { setAnalysisSourceId(sourceId); setView('analysis'); },
-                onSendForFeasibility: enquiry => setFeasibilityDispatchEnquiry(enquiry),
+                onOpenFeasibilityGate: (projectCode) => {
+                  setSelectedProjectId(projectCode);
+                  setView("analysis");
+                },
+                onOpenSourceInputs: (sourceId) => {
+                  setAnalysisSourceId(sourceId);
+                  setView("analysis");
+                },
+                onSendForFeasibility: (enquiry) => setFeasibilityDispatchEnquiry(enquiry),
                 onSubmitIntake: handleSalesIntake,
                 onAddCustomer: handleCustomerCreated,
               }}
-              initialTab={view === "records" ? "records" : view === "deliverables" ? "deliverables" : undefined}
-              recordTypeFilter={recordTypeFilter} onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
-              onOpenInputs={sourceId=>{setAnalysisSourceId(sourceId);setView("analysis");}}
-              onOpenAssetCatalog={()=>setAssetCatalogOpen(true)}
-              onOpenApprovals={()=>setView('approvals')}
-              departmentCode={active.short} departmentName={active.name} lead={leadName}
-              records={leadRecords} projects={leadProjects} documents={scopedDocuments} sharedTestMembership={testMembership ?? undefined}
-              approvals={portal.approvals.map(approvalScope).filter(approval => approvalInDepartment(approval, activeDepartmentScope))}
-              team={allTeamMembers.filter(member => member.area === activeDepartmentScope)}
+              initialTab={
+                view === "records"
+                  ? "records"
+                  : view === "deliverables"
+                    ? "deliverables"
+                    : undefined
+              }
+              recordTypeFilter={recordTypeFilter}
+              onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
+              onOpenInputs={(sourceId) => {
+                setAnalysisSourceId(sourceId);
+                setView("analysis");
+              }}
+              onOpenAssetCatalog={() => setAssetCatalogOpen(true)}
+              onOpenApprovals={() => setView("approvals")}
+              onOpenRecords={() => setView("records")}
+              departmentCode={active.short}
+              departmentName={active.name}
+              lead={leadName}
+              records={leadRecords}
+              projects={leadProjects}
+              documents={scopedDocuments}
+              sharedTestMembership={testMembership ?? undefined}
+              approvals={portal.approvals
+                .map(approvalScope)
+                .filter((approval) => approvalInDepartment(approval, activeDepartmentScope))}
+              team={allTeamMembers.filter((member) => member.area === activeDepartmentScope)}
               projectScope={projectScopes[active.id] ?? "all"}
-              onProjectChange={scope => setProjectScopes(current => ({ ...current, [active.id]: scope as ProjectScope }))}
-              onCreateProject={(activeDepartmentScope === "sales") ? () => handleOpenCreate("Project") : undefined}
-              onCreateRecord={() => handleOpenCreate(active.recordType, (projectScopes[active.id] ?? "all") === "all" ? undefined : { projectCode: projectScopes[active.id] as string, projectId: projectScopes[active.id] as string })}
+              onProjectChange={(scope) =>
+                setProjectScopes((current) => ({ ...current, [active.id]: scope as ProjectScope }))
+              }
+              onCreateProject={
+                activeDepartmentScope === "sales" ? () => handleOpenCreate("Project") : undefined
+              }
+              onCreateRecord={() =>
+                handleOpenCreate(
+                  active.recordType,
+                  (projectScopes[active.id] ?? "all") === "all"
+                    ? undefined
+                    : {
+                        projectCode: projectScopes[active.id] as string,
+                        projectId: projectScopes[active.id] as string,
+                      },
+                )
+              }
               onCreateDeliverable={() => {
                 const scope = projectScopes[effectiveArea];
-                const project = portal.records.find(record => record.type === "Project" && !record.archived && (record.id === scope || record.reference === scope));
+                const project = portal.records.find(
+                  (record) =>
+                    record.type === "Project" &&
+                    !record.archived &&
+                    (record.id === scope || record.reference === scope),
+                );
                 setDocumentUploadProjectId(project?.id);
                 setDocumentUploadRequested(true);
                 setModal("documents");
               }}
-              onOpenRecord={id => { const record = leadRecords.find(item => item.id === id); if (record) openRecord(record); }}
-              onOpenDocument={id => { const document = scopedDocuments.find(item => item.id === id) || portal.documents.find(item => item.id === id); if (document) openDocument(document); }}
-              onUpdateTask={(id,patch,action) => { const s = patch.status === "Cancelled" ? "Archived" : (patch.status as any); void updateTask(id, { ...(patch.fields ? { fields: patch.fields } : {}), ...(s ? { status: s } : {}) }, action); }}
-              onCreateTask={handleCreateCustomTask}
-              onAdvanceStage={async (projectId: string, targetStage: string) => {
-                return await update(state => {
-                  const project = state.records.find(r=>r.id===projectId && r.type==='Project');
-                  if(!project) throw new Error('Project unavailable.');
-                  const track=getRecordedProjectTrack(project.fields);
-                  const baseline=readLifecycleBaseline(project.fields['lifecycleBaseline']);
-                  if(!track || !baseline) throw new Error('This legacy project needs a reviewed lifecycle baseline before changing stages.');
-                  const completed=JSON.parse(project.fields['completedStages'] || '[]') as string[];
-                  const plan=computeProgressiveStageAndTaskState({projectId:project.id,track,completedStageCodes:completed,stageDefinitions:projectLifecycleStages(baseline,track)});
-                  if(!plan.stages.some(s=>s.stageCode===targetStage && s.status==='ready')) throw new Error('Stage prerequisites and the recorded gate completion must be satisfied first.');
-                  const phase=baseline.stages.find(s=>s.code===targetStage)?.phase || '';
-                  return {...state,records:[...state.records.map(r=>r.id===projectId?{...r,stage:targetStage,fields:{...r.fields,currentStage:targetStage,lifecycleStage:targetStage,companyPhase:phase},updatedAt:now()}:r),...localDefaultLifecycleTasks(state,project,targetStage)]};
-                });
+              onOpenRecord={(id) => {
+                const record = leadRecords.find((item) => item.id === id);
+                if (record) openRecord(record);
               }}
+              onOpenDocument={(id) => {
+                const document =
+                  scopedDocuments.find((item) => item.id === id) ||
+                  portal.documents.find((item) => item.id === id);
+                if (document) openDocument(document);
+              }}
+              onUpdateTask={(id, patch, action) => {
+                const s = patch.status === "Cancelled" ? "Archived" : (patch.status as any);
+                void updateTask(
+                  id,
+                  {
+                    ...(patch.fields ? { fields: patch.fields } : {}),
+                    ...(s ? { status: s } : {}),
+                  },
+                  action,
+                );
+              }}
+              onCreateTask={handleCreateCustomTask}
             />
           ) : view === "pmss" ? (
-              <PMSSWorkspace
+            <PMSSWorkspace
               portal={portal}
               project={selectedProjectProfile}
-              projects={activeRecords.filter((record) => record.type === "Project")}
+              projects={selectableProjects}
               selectedProjectId={selectedProjectId}
               onSelectProject={setSelectedProjectId}
               onBack={() => navigate(activeArea)}
-              onOpenInputs={()=>setView("analysis")}
-              onOpenRecord={id=>{const r=portal.records.find(r=>r.id===id);if(r)openRecord(r);}}
-              onOpenDocument={id=>{const d=portal.documents.find(d=>d.id===id);if(d)openDocument(d);}}
+              onOpenInputs={() => setView("analysis")}
+              onOpenRecord={(id) => {
+                const r = portal.records.find((r) => r.id === id);
+                if (r) openRecord(r);
+              }}
+              onOpenDocument={(id) => {
+                const d = portal.documents.find((d) => d.id === id);
+                if (d) openDocument(d);
+              }}
               onOpenDecisionLog={() => setDecisionLogOpen(true)}
               onUpdate={(patch) =>
                 update((state) => ({
@@ -3818,22 +6323,83 @@ function Portal() {
               onLog={log}
             />
           ) : view === "analysis" ? (
-            testMembership ? <SharedProjectAnalysis membership={testMembership} initialSourceId={analysisSourceId} onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}} /> : <ProjectAnalysisOverview
-                key={`${persona.id}:${analysisSourceId??''}`}
-                projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")}
-                records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords}
+            testMembership ? (
+              <SharedProjectAnalysis
+                membership={testMembership}
+                initialSourceId={analysisSourceId}
+                onOpenProject={(project) => {
+                  setSelectedProjectId(project.reference);
+                  if (persona.kind === "admin") setSelectedId(project.id);
+                  else
+                    setProjectScopes((current) => ({
+                      ...current,
+                      [effectiveArea]: project.reference,
+                    }));
+                  setView("project");
+                }}
+              />
+            ) : (
+              <ProjectAnalysisOverview
+                key={`${persona.id}:${analysisSourceId ?? ""}`}
+                projects={
+                  persona.kind === "lead" || persona.kind === "member"
+                    ? leadProjects
+                    : selectableProjects
+                }
+                records={
+                  persona.kind === "lead" || persona.kind === "member" ? leadRecords : activeRecords
+                }
                 documents={scopedDocuments}
-                renderProjectInputs={projectId => (
+                renderProjectInputs={(projectId) => (
                   <ProjectInputsWorkspace
-                    key={projectId==='all' ? analysisSourceId??projectId : projectId}
-                    sources={((persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords) as any}
-                    initialSourceId={projectId==='all' ? analysisSourceId??projectId : projectId}
+                    key={projectId === "all" ? (analysisSourceId ?? projectId) : projectId}
+                    sources={
+                      (persona.kind === "lead" || persona.kind === "member"
+                        ? leadRecords
+                        : activeRecords) as any
+                    }
+                    initialSourceId={
+                      projectId === "all" ? (analysisSourceId ?? projectId) : projectId
+                    }
                   />
                 )}
-                onOpenProject={project => {setSelectedProjectId(project.reference); if(persona.kind === "admin") setSelectedId(project.id); else setProjectScopes(current=>({...current,[effectiveArea]:project.reference})); setView("project");}}
+                onOpenProject={(project) => {
+                  setSelectedProjectId(project.reference);
+                  if (persona.kind === "admin") setSelectedId(project.id);
+                  else
+                    setProjectScopes((current) => ({
+                      ...current,
+                      [effectiveArea]: project.reference,
+                    }));
+                  setView("project");
+                }}
               />
+            )
           ) : view === "vault" && testMembership ? (
-            <SharedDocumentVault key={`${testMembership.membershipId}:${vaultDocumentId || ""}:${vaultProjectId || ""}`} membership={testMembership} departmentCode={departmentCode(active.short)} initialDocumentId={vaultDocumentId} initialProjectId={vaultProjectId} onBack={()=>navigate(effectiveArea)} renderLibrary={library=><HardwareDeliverablesDrive documents={library.documents} departments={portal.departments} departmentContext={library.departmentContext} persona={persona} onSelectDocument={document=>library.onSelectDocument(document as typeof library.documents[number])} onExternalUpload={library.onUploadFile} uploadReadOnlyReason={library.readOnlyReason} sharedStorage hideProjectFilter/>}/>
+            <SharedDocumentVault
+              key={`${testMembership.membershipId}:${vaultDocumentId || ""}:${vaultProjectId || ""}`}
+              membership={testMembership}
+              departmentCode={departmentCode(active.short)}
+              initialDocumentId={vaultDocumentId}
+              initialProjectId={vaultProjectId}
+              templateSettings={portal.templateSettings ?? defaultTemplateSettings()}
+              onBack={() => navigate(effectiveArea)}
+              renderLibrary={(library) => (
+                <HardwareDeliverablesDrive
+                  documents={library.documents}
+                  departments={portal.departments}
+                  departmentContext={library.departmentContext}
+                  persona={persona}
+                  onSelectDocument={(document) =>
+                    library.onSelectDocument(document as (typeof library.documents)[number])
+                  }
+                  onExternalUpload={library.onUploadFile}
+                  uploadReadOnlyReason={library.readOnlyReason}
+                  sharedStorage
+                  hideProjectFilter
+                />
+              )}
+            />
           ) : view === "vault" ? (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -3854,31 +6420,109 @@ function Portal() {
                       }}
                     />
                   )}
-                  <Action label="Back to workspace" onClick={() => navigate(effectiveArea)} />
                 </div>
               </div>
-              <HardwareDeliverablesDrive documents={scopedDocuments} departments={portal.departments} departmentContext={departmentContext} persona={persona} portal={portal} onSelectDocument={openDocument} onOpenCustomerRegister={() => setCustomerRegisterOpen(true)} uploadReadOnlyReason={testMembership ? "This view is browser-local. Shared TEST uploads remain in Shared TEST records until the shared document contract is verified." : undefined} onDocumentCreated={async document => update(state => { const ownWork = state.records.filter(r=>!r.archived && r.area === persona.departmentId); const keys = new Set([...ownWork.flatMap(projectReferences),...state.documents.filter(d=>canDepartmentAccessDocument(d,persona,departmentContext)).flatMap(d=>d.linkedRecordRefs ?? [])]); const projects = state.records.filter(r => r.type === "Project" && (persona.kind === "admin" || keys.has(r.id) || keys.has(r.reference))); const selected = projects.find(p => p.id === document.projectId); assertUploadContextCurrent(document, projects, state.departments, sourceGerberPackages(state.documents.filter(d => canDepartmentAccessDocument(d, persona, departmentContext)), selected)); return { ...state, documents:[document,...state.documents], audit:[{id:createId(),at:now(),action:"Draft document uploaded",detail:`${document.title} · Browser-local`},...state.audit].slice(0,100) }; })} />
+              <HardwareDeliverablesDrive
+                documents={scopedDocuments}
+                departments={portal.departments}
+                departmentContext={departmentContext}
+                persona={persona}
+                portal={portal}
+                onSelectDocument={openDocument}
+                onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
+                uploadReadOnlyReason={
+                  testMembership
+                    ? "This view is browser-local. Shared TEST uploads remain in Shared TEST records until the shared document contract is verified."
+                    : undefined
+                }
+                onDocumentCreated={async (document) =>
+                  update((state) => {
+                    const ownWork = state.records.filter(
+                      (r) => !r.archived && r.area === persona.departmentId,
+                    );
+                    const keys = new Set([
+                      ...ownWork.flatMap(projectReferences),
+                      ...state.documents
+                        .filter((d) => canDepartmentAccessDocument(d, persona, departmentContext))
+                        .flatMap((d) => d.linkedRecordRefs ?? []),
+                    ]);
+                    const projects = state.records.filter(
+                      (r) =>
+                        r.type === "Project" &&
+                        (persona.kind === "admin" || keys.has(r.id) || keys.has(r.reference)),
+                    );
+                    const selected = projects.find((p) => p.id === document.projectId);
+                    assertUploadContextCurrent(
+                      document,
+                      projects,
+                      state.departments,
+                      sourceGerberPackages(
+                        state.documents.filter((d) =>
+                          canDepartmentAccessDocument(d, persona, departmentContext),
+                        ),
+                        selected,
+                      ),
+                    );
+                    return {
+                      ...state,
+                      documents: [document, ...state.documents],
+                      audit: [
+                        {
+                          id: createId(),
+                          at: now(),
+                          action: "Draft document uploaded",
+                          detail: `${document.title} · Browser-local`,
+                        },
+                        ...state.audit,
+                      ].slice(0, 100),
+                    };
+                  })
+                }
+              />
             </>
           ) : view === "index" ? (
             <>
-            {persona.kind === "admin" && activeArea === "rnd" && <div className="mb-4 flex items-center justify-between"><h1 className="text-xl font-semibold">Manage Projects</h1><Action label="New Project" primary onClick={() => handleOpenCreate("Project")} /></div>}
-            <IndexWorkspace projectsOnly={activeArea === "rnd"}
-              records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeArea === "rnd" ? activeRecords.filter(record => record.type === "Project") : activeRecords}
-              documents={activeArea === "rnd" ? [] : scopedDocuments}
-              allowedProjectIds={(persona.kind === "lead" || persona.kind === "member") ? leadProjects.map(project => project.id) : []}
-              departments={portal.departments}
-              departmentContext={departmentContext}
-              onBack={() => navigate(activeArea)}
-              onSelect={record => {
-                if (record.type === "Project" && persona.kind === "admin") { setSelectedId(record.id); setSelectedProjectId(record.reference); setView("project"); }
-                else openRecord(record);
-              }}
-              onSelectDocument={openDocument}
-            />
+              {persona.kind === "admin" && activeArea === "rnd" && (
+                <div className="mb-4 flex items-center justify-between">
+                  <h1 className="text-xl font-semibold">Manage Projects</h1>
+                  <Action label="New Project" primary onClick={() => handleOpenCreate("Project")} />
+                </div>
+              )}
+              <IndexWorkspace
+                projectsOnly={activeArea === "rnd"}
+                records={
+                  persona.kind === "lead" || persona.kind === "member"
+                    ? [...leadRecords, ...leadProjects]
+                    : activeArea === "rnd"
+                      ? activeRecords.filter((record) => record.type === "Project")
+                      : activeRecords
+                }
+                documents={activeArea === "rnd" ? [] : scopedDocuments}
+                allowedProjectIds={
+                  persona.kind === "lead" || persona.kind === "member"
+                    ? leadProjects.map((project) => project.id)
+                    : []
+                }
+                departments={portal.departments}
+                departmentContext={departmentContext}
+                onBack={() => navigate(activeArea)}
+                onSelect={(record) => {
+                  if (record.type === "Project" && persona.kind === "admin") {
+                    setSelectedId(record.id);
+                    setSelectedProjectId(record.reference);
+                    setView("project");
+                  } else openRecord(record);
+                }}
+                onSelectDocument={openDocument}
+              />
             </>
           ) : view === "project" ? (
             <ProjectDetail
-              project={selectedProjectProfile ?? selected ?? fallbackProjectRecord(selectedProjectId, activeRecords)}
+              project={
+                selectedProjectProfile ??
+                selected ??
+                fallbackProjectRecord(selectedProjectId, activeRecords)
+              }
               records={activeRecords}
               documents={portal.documents}
               portal={portal}
@@ -3925,7 +6569,29 @@ function Portal() {
               isFullPage={true}
               onBack={() => setView("queue")}
             />
-          ) : view === "orders" || view === "quotations" || view === "suppliers" || view === "smart_bom" || view === "ingestion_gate" ? (
+          ) : testMembership && (view === "orders" || view === "quotations") ? (
+            <SharedProcurementWorkspace
+              key={`${testMembership.membershipId}:${view}`}
+              membership={testMembership}
+              view={view}
+              onOpenRecords={(type) => {
+                setRecordTypeFilter(type);
+                setView("records");
+              }}
+            />
+          ) : testMembership && view === "suppliers" ? (
+            <SharedSupplierDirectoryWorkspace
+              membership={testMembership}
+              onOpenDocument={(documentId) => {
+                setVaultDocumentId(documentId);
+                setView("vault");
+              }}
+            />
+          ) : view === "orders" ||
+            view === "quotations" ||
+            view === "suppliers" ||
+            view === "smart_bom" ||
+            view === "ingestion_gate" ? (
             <PurchasingCommandCenter
               items={portal.inventory ?? []}
               movements={portal.inventoryMovements ?? []}
@@ -3949,7 +6615,11 @@ function Portal() {
               readOnly={false}
               onMove={moveInventory}
               onAssign={assignInventory}
-              projectScope={projectScopes[activeArea] === "all" ? "HLPL-AI4T-01" : (projectScopes[activeArea] ?? "HLPL-AI4T-01")}
+              projectScope={
+                projectScopes[activeArea] === "all"
+                  ? "HLPL-AI4T-01"
+                  : (projectScopes[activeArea] ?? "HLPL-AI4T-01")
+              }
               activeSubView={view as PurchasingSubView}
               onSelectSubView={(sub) => {
                 setPurchasingSubView(sub);
@@ -3960,9 +6630,16 @@ function Portal() {
               onReleaseToManufacturing={() => {
                 handleOpenCreate("Task", {
                   title: "BOM Procurement Lock Released to EMF Box-Build",
-                  scope: "All critical line items approved with dual-sourcing and long-lead modem buffer PO issued.",
+                  scope:
+                    "All critical line items approved with dual-sourcing and long-lead modem buffer PO issued.",
                 });
               }}
+            />
+          ) : testMembership && view === "customers" ? (
+            <SharedCustomerDirectoryWorkspace
+              key={testMembership.membershipId}
+              membership={testMembership}
+              onBack={() => setView("queue")}
             />
           ) : view === "customers" ? (
             <CustomerManagementFullPageView
@@ -3972,27 +6649,58 @@ function Portal() {
               departmentRole={activeArea}
             />
           ) : view === "approvals" ? (
-            <ApprovalsFullPageView key={persona.id}
+            <ApprovalsFullPageView
+              key={persona.id}
               approvals={portal.approvals}
               departmentScope={activeDepartmentScope}
-              projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(record => record.type === "Project")}
-              records={(persona.kind === "lead" || persona.kind === "member") ? leadRecords : activeRecords}
+              departments={portal.departments
+                .filter((department) => department.active)
+                .map((department) => ({
+                  id: department.id,
+                  code: department.code,
+                  name: department.name,
+                }))}
+              projects={
+                persona.kind === "lead" || persona.kind === "member"
+                  ? leadProjects
+                  : selectableProjects
+              }
+              records={
+                persona.kind === "lead" || persona.kind === "member" ? leadRecords : activeRecords
+              }
               onApprove={handleApproveGate}
               onReject={handleRejectGate}
               onReturn={handleReturnGate}
-              onBack={() => setView("queue")}
               currentUser={persona.label}
-              userRole={persona.kind === "admin" ? "Executive Admin" : persona.kind === "member" ? "Employee" : persona.kind === "lead" ? "Department Lead" : "Client"}
+              userRole={
+                persona.kind === "admin"
+                  ? "Executive Admin"
+                  : persona.kind === "member"
+                    ? "Employee"
+                    : persona.kind === "lead"
+                      ? "Department Lead"
+                      : "Client"
+              }
               persona={persona}
               onRequestApproval={handleCreateApprovalRequest}
             />
-          ) : testMembership && ["budgets", "tickets", "profile", "hr_admin", "communication"].includes(view) ? (
-            <SharedBusinessWorkspace key={`${testMembership.membershipId}:${view}`} view={view} membership={testMembership} />
+          ) : testMembership &&
+            ["budgets", "tickets", "profile", "hr_admin", "communication"].includes(view) ? (
+            <SharedBusinessWorkspace
+              key={`${testMembership.membershipId}:${view}`}
+              view={view}
+              membership={testMembership}
+            />
           ) : view === "budgets" ? (
             <DepartmentBudgetsWorkspace
               persona={persona}
               departmentScope={activeDepartmentScope}
               selectedProjectId={selectedProjectId}
+              projects={selectableProjects.map((record) => ({
+                id: record.id,
+                reference: record.reference,
+                title: record.title,
+              }))}
               allocations={portal.departmentAllocations ?? DEFAULT_DEPARTMENT_ALLOCATIONS}
               expenseRequests={portal.expenseRequests ?? DEFAULT_EXPENSE_REQUESTS}
               testMembership={testMembership}
@@ -4009,8 +6717,14 @@ function Portal() {
             />
           ) : view === "tickets" ? (
             <ServiceTicketsWorkspace
-              departmentOptions={portal.departments.filter(d=>d.active).map(d=>({code:departmentCode(d.code),name:d.name}))}
-              ticketGroups={configuredTicketGroups(portal.departments.find(d=>departmentCode(d.code)==='SIT')?.settings.ticketGroups,'SIT')}
+              departmentOptions={portal.departments
+                .filter((d) => d.active)
+                .map((d) => ({ code: departmentCode(d.code), name: d.name }))}
+              ticketGroups={configuredTicketGroups(
+                portal.departments.find((d) => departmentCode(d.code) === "SIT")?.settings
+                  .ticketGroups,
+                "SIT",
+              )}
               tickets={portal.serviceTickets ?? INITIAL_SERVICE_TICKETS}
               currentUser={{
                 role: persona.kind === "admin" ? "admin" : (persona.departmentId ?? "staff"),
@@ -4022,13 +6736,17 @@ function Portal() {
               onUpdateTickets={(tickets: ServiceTicket[]) => {
                 void update((state) => ({ ...state, serviceTickets: tickets }));
               }}
-              onCreateLinkedRecord={(ticket) => handleOpenCreate("Service case follow-up", {
-                title: `Service case follow-up · ${ticket.reference}`,
-                projectId: ticket.projectId ?? "",
-                service: ticket.assetId ? `Ticket ${ticket.reference} · Asset ${ticket.assetId}` : `Ticket ${ticket.reference}`,
-                sourceTicketReference: ticket.reference,
-                scope: `Source ticket: ${ticket.reference}\nTicket type: ${ticket.category}\nReported subject: ${ticket.subject}\nReported details (review/edit before saving): ${ticket.description}\n\nDraft only. Confirm evidence, project, ownership, and next actions before using this as a controlled record. No findings, customer acceptance, or approval are inferred.`,
-              })}
+              onCreateLinkedRecord={(ticket) =>
+                handleOpenCreate("Service case follow-up", {
+                  title: `Service case follow-up · ${ticket.reference}`,
+                  projectId: ticket.projectId ?? "",
+                  service: ticket.assetId
+                    ? `Ticket ${ticket.reference} · Asset ${ticket.assetId}`
+                    : `Ticket ${ticket.reference}`,
+                  sourceTicketReference: ticket.reference,
+                  scope: `Source ticket: ${ticket.reference}\nTicket type: ${ticket.category}\nReported subject: ${ticket.subject}\nReported details (review/edit before saving): ${ticket.description}\n\nDraft only. Confirm evidence, project, ownership, and next actions before using this as a controlled record. No findings, customer acceptance, or approval are inferred.`,
+                })
+              }
               onOpenProjectDetail={(pId: string) => {
                 setSelectedProjectId(pId);
                 setView("project");
@@ -4084,12 +6802,11 @@ function Portal() {
               }}
               onOpenDocument={(docId: string) => {
                 const doc = portal.documents.find(
-                  (d) => d.id === docId || d.title === docId || d.part === docId
+                  (d) => d.id === docId || d.title === docId || d.part === docId,
                 );
                 if (doc) openDocument(doc);
               }}
             />
-
           ) : effectiveArea === "home" && view === "assignee" && selectedAssignee ? (
             <AssigneeWorkload
               assignee={selectedAssignee}
@@ -4125,18 +6842,18 @@ function Portal() {
                 log("Administrator context returned", "Returned to global command center");
                 navigate("home");
               }}
-              onOpenAnalysis={()=>setView("analysis")}
+              onOpenAnalysis={() => setView("analysis")}
               onRunRfq={() => {
                 openCurrentProjectLifecycle();
               }}
               onOpenSyncHub={() => setSyncHubOpen(true)}
-               onOpenDraftHub={() => setDraftHubOpen(true)}
+              onOpenDraftHub={() => setDraftHubOpen(true)}
               onOpenAi4t={() => {
                 openCurrentProjectLifecycle();
               }}
               onOpenFeasibilityGate={(projectCode) => {
                 setSelectedProjectId(projectCode);
-                setView('analysis');
+                setView("analysis");
               }}
               onOpenDecisionLog={() => setDecisionLogOpen(true)}
               onOpenLegalHub={() => setLegalHubOpen(true)}
@@ -4151,25 +6868,101 @@ function Portal() {
           ) : view === "detail" && selected ? (
             <RecordDetail
               record={selected}
-              projects={activeRecords.filter(record=>record.type === "Project")}
-              onSendForFeasibility={(persona.kind === "admin" || (persona.kind === "lead" && persona.departmentId === "sales")) && (portal.enquiriesOpportunities ?? []).some(enquiry=>enquiry.id === selected.id && ["Pending Enquiry","Internal Review"].includes(enquiry.status)) ? ()=>{const enquiry=(portal.enquiriesOpportunities ?? []).find(item=>item.id===selected.id);if(enquiry)setFeasibilityDispatchEnquiry(enquiry);} : undefined}
+              projects={selectableProjects}
+              onSendForFeasibility={
+                (persona.kind === "admin" ||
+                  (persona.kind === "lead" && persona.departmentId === "sales")) &&
+                (portal.enquiriesOpportunities ?? []).some(
+                  (enquiry) =>
+                    enquiry.id === selected.id &&
+                    ["Pending Enquiry", "Internal Review"].includes(enquiry.status),
+                )
+                  ? () => {
+                      const enquiry = (portal.enquiriesOpportunities ?? []).find(
+                        (item) => item.id === selected.id,
+                      );
+                      if (enquiry) setFeasibilityDispatchEnquiry(enquiry);
+                    }
+                  : undefined
+              }
               onBack={() => setView("queue")}
-              onSave={async patch => {
-                if(selected.type === "Task") return updateTask(selected.id, patch, "Task updated");
-                return update(state=>{
-                  const current=state.records.find(r=>r.id === selected.id && !r.archived);
-                  if(!current || current.updatedAt !== selected.updatedAt) throw new Error("This record changed. Reopen it before saving.");
-                  if(current.area === "tst") throw new Error("Legacy TST is read-only pending ownership review.");
-                  if(persona.kind === "client" || (persona.kind !== "admin" && current.area !== persona.departmentId)) throw new Error("Record is outside your department scope.");
-                  if(current.status === "Approved" || current.status === "Released") throw new Error("Create a revised draft before changing an approved record.");
-                  if(patch.status && patch.status !== current.status && !["Draft","Open","In review"].includes(patch.status)) throw new Error("Use the designated approval workflow for final approval.");
-                  if(patch.fields && (patch.fields["projectId"] ?? "") !== (current.fields["projectId"] ?? "") && state.records.some(record=>record.fields["enquiryId"] === current.id) && persona.kind !== "admin" && persona.kind !== "lead") throw new Error("A department lead must associate a dispatched inquiry with its project.");
-                  const related=isPreProjectIntake(current.type) && patch.fields ? linkIntakeProject(state.records,state.enquiriesOpportunities ?? [],state.approvals,current.id,patch.fields["projectId"] ?? "") : {records:state.records,enquiries:state.enquiriesOpportunities ?? [],approvals:state.approvals};
-                  return {...state,records:related.records.map(r=>r.id===current.id ? {...r,...patch,updatedAt:now()} : r),enquiriesOpportunities:related.enquiries.map(enquiry=>enquiry.id===current.id ? {...enquiry,...(patch.title ? {title:patch.title} : {}),...(patch.notes !== undefined ? {scopeSummary:patch.notes} : {})} : enquiry),approvals:related.approvals,audit:[{id:createId(),at:now(),action:"Record updated locally",detail:`${current.reference} · ${persona.person}`},...state.audit].slice(0,100)};
+              onSave={async (patch) => {
+                if (selected.type === "Task") return updateTask(selected.id, patch, "Task updated");
+                return update((state) => {
+                  const current = state.records.find((r) => r.id === selected.id && !r.archived);
+                  if (!current || current.updatedAt !== selected.updatedAt)
+                    throw new Error("This record changed. Reopen it before saving.");
+                  if (current.area === "tst")
+                    throw new Error("Legacy TST is read-only pending ownership review.");
+                  if (
+                    persona.kind === "client" ||
+                    (persona.kind !== "admin" && current.area !== persona.departmentId)
+                  )
+                    throw new Error("Record is outside your department scope.");
+                  if (current.status === "Approved" || current.status === "Released")
+                    throw new Error("Create a revised draft before changing an approved record.");
+                  if (
+                    patch.status &&
+                    patch.status !== current.status &&
+                    !["Draft", "Open", "In review"].includes(patch.status)
+                  )
+                    throw new Error("Use the designated approval workflow for final approval.");
+                  if (
+                    patch.fields &&
+                    (patch.fields["projectId"] ?? "") !== (current.fields["projectId"] ?? "") &&
+                    state.records.some((record) => record.fields["enquiryId"] === current.id) &&
+                    persona.kind !== "admin" &&
+                    persona.kind !== "lead"
+                  )
+                    throw new Error(
+                      "A department lead must associate a dispatched inquiry with its project.",
+                    );
+                  const related =
+                    isPreProjectIntake(current.type) && patch.fields
+                      ? linkIntakeProject(
+                          state.records,
+                          state.enquiriesOpportunities ?? [],
+                          state.approvals,
+                          current.id,
+                          patch.fields["projectId"] ?? "",
+                        )
+                      : {
+                          records: state.records,
+                          enquiries: state.enquiriesOpportunities ?? [],
+                          approvals: state.approvals,
+                        };
+                  return {
+                    ...state,
+                    records: related.records.map((r) =>
+                      r.id === current.id ? { ...r, ...patch, updatedAt: now() } : r,
+                    ),
+                    enquiriesOpportunities: related.enquiries.map((enquiry) =>
+                      enquiry.id === current.id
+                        ? {
+                            ...enquiry,
+                            ...(patch.title ? { title: patch.title } : {}),
+                            ...(patch.notes !== undefined ? { scopeSummary: patch.notes } : {}),
+                          }
+                        : enquiry,
+                    ),
+                    approvals: related.approvals,
+                    audit: [
+                      {
+                        id: createId(),
+                        at: now(),
+                        action: "Record updated locally",
+                        detail: `${current.reference} · ${persona.person}`,
+                      },
+                      ...state.audit,
+                    ].slice(0, 100),
+                  };
                 });
               }}
               onArchive={() => {
-                if (selected.area === "tst") { announce("Preserve legacy TST records until ownership review is complete."); return; }
+                if (selected.area === "tst") {
+                  announce("Preserve legacy TST records until ownership review is complete.");
+                  return;
+                }
                 update((state) => ({
                   ...state,
                   records: state.records.map((record) =>
@@ -4199,13 +6992,23 @@ function Portal() {
               )}
               allRecords={activeRecords}
               projectScope={projectScopes[activeArea] ?? "all"}
-              onProjectScopeChange={(scope) => setProjectScopes((current) => ({ ...current, [activeArea]: scope }))}
+              onProjectScopeChange={(scope) =>
+                setProjectScopes((current) => ({ ...current, [activeArea]: scope }))
+              }
               department={
                 portal.departments.find((item) => item.id === departmentContext) ??
                 findAreaDepartment(portal.departments, activeArea)
               }
               approvals={portal.approvals}
-              contextName={persona.kind === "member" ? "Employee" : persona.kind === "lead" ? "Department Lead" : departmentContext ? "Administrator" : "Workspace"}
+              contextName={
+                persona.kind === "member"
+                  ? "Employee"
+                  : persona.kind === "lead"
+                    ? "Department Lead"
+                    : departmentContext
+                      ? "Administrator"
+                      : "Workspace"
+              }
               view={view === "summary" ? "summary" : "queue"}
               onView={setView}
               onCreate={handleOpenCreate}
@@ -4224,7 +7027,7 @@ function Portal() {
               onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
               onOpenFeasibilityGate={(projectCode) => {
                 setSelectedProjectId(projectCode);
-                setView('analysis');
+                setView("analysis");
               }}
               onSendForFeasibility={(enquiry) => setFeasibilityDispatchEnquiry(enquiry)}
               onOpenAssetCatalog={() => setAssetCatalogOpen(true)}
@@ -4308,7 +7111,8 @@ function Portal() {
       </nav>
       {mobileMenu && (
         <MobileMenu
-          recordTypeFilter={recordTypeFilter} onRecordTypeFilterChange={setRecordTypeFilter}
+          recordTypeFilter={recordTypeFilter}
+          onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
           onOpenSmartSor={() => setGlobalSorOpen(true)}
           onClose={() => setMobileMenu(false)}
@@ -4324,6 +7128,7 @@ function Portal() {
           purchasingSubView={purchasingSubView}
           onSelectPurchasingSubView={setPurchasingSubView}
           persona={persona}
+          canOpenSettings={persona.id === "admin" || !!testMembership}
           activeArea={activeArea}
           view={view}
           onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
@@ -4335,7 +7140,7 @@ function Portal() {
           onOpenLegalHub={() => setLegalHubOpen(true)}
           onOpenDecisionLog={() => setDecisionLogOpen(true)}
           onOpenAdminSettings={() => {
-            setAdminTab("lifecycle");
+            setAdminTab(testMembership && persona.kind !== "admin" ? "lifecycle" : "company");
             setModal("admin");
           }}
           onOpenWizard={() => setModal("wizard")}
@@ -4353,12 +7158,20 @@ function Portal() {
             areas.map((area) => [
               area.id,
               portal.records.filter(
-                (r) => r.area === area.id && r.type === "Task" && r.fields["assignee"] === personas.find(persona => persona.departmentId === area.id)?.person.split(" · ")[0] && !r.archived && !["Approved", "Released", "Archived"].includes(r.status)
+                (r) =>
+                  r.area === area.id &&
+                  r.type === "Task" &&
+                  r.fields["assignee"] ===
+                    personas
+                      .find((persona) => persona.departmentId === area.id)
+                      ?.person.split(" · ")[0] &&
+                  !r.archived &&
+                  !["Approved", "Released", "Archived"].includes(r.status),
               ).length,
-            ])
+            ]),
           )}
         />
-      )} 
+      )}
       {modal === "create" && (
         <RecordForm
           area={effectiveArea}
@@ -4367,7 +7180,11 @@ function Portal() {
           initialType={createType}
           initialValues={createInitialValues}
           defaultAssignee={persona.person.split(" · ")[0] ?? ""}
-          onClose={() => { setCreateType(null); setCreateInitialValues(null); setModal(null); }}
+          onClose={() => {
+            setCreateType(null);
+            setCreateInitialValues(null);
+            setModal(null);
+          }}
           onSave={addRecord}
           onAddCustomer={handleCustomerCreated}
           onAddSupplier={handleSupplierCreated}
@@ -4379,7 +7196,11 @@ function Portal() {
           portal={portal}
           onClose={() => setModal(null)}
           onSave={(next) => {
-            void update(current => ({ ...current, setup: next.setup, setupStep: next.setupStep }));
+            void update((current) => ({
+              ...current,
+              setup: next.setup,
+              setupStep: next.setupStep,
+            }));
             log("Setup saved", "Portal setup progress saved");
           }}
           onOpenAdministration={() => setModal("admin")}
@@ -4387,7 +7208,12 @@ function Portal() {
         />
       )}{" "}
       {modal === "history" && <HistoryPanel audit={portal.audit} onClose={() => setModal(null)} />}{" "}
-      {modal === "approvals" && (() => { setView("approvals"); setModal(null); return null; })()}{" "}
+      {modal === "approvals" &&
+        (() => {
+          setView("approvals");
+          setModal(null);
+          return null;
+        })()}{" "}
       {modal === "documents" && persona.kind !== "client" && (
         <DocumentsPanel
           documents={scopedDocuments}
@@ -4400,18 +7226,39 @@ function Portal() {
             setSelectedDocumentId(document.id);
             setModal("document");
           }}
-          uploadReadOnlyReason={testMembership ? "This view is browser-local. Use Shared TEST records for account-backed uploads; this pilot does not synchronize with Android." : undefined}
-          onDocumentCreated={async (document) => update((state) => {
-            const projects = state.records.filter(r => r.type === "Project");
-            const project = projects.find(p => p.id === document.projectId);
-            const accessibleDocuments = state.documents.filter(d => canDepartmentAccessDocument(d, persona, departmentContext));
-            assertUploadContextCurrent(document, projects, state.departments, sourceGerberPackages(accessibleDocuments, project));
-            return {
-              ...state,
-              documents: [document, ...state.documents],
-              audit: [{ id: createId(), at: now(), action: "Draft document uploaded", detail: `${document.title} · ${document.part ?? document.type} · Browser-local` }, ...state.audit].slice(0, 100),
-            };
-          })}
+          uploadReadOnlyReason={
+            testMembership
+              ? "This view is browser-local. Use Shared TEST records for account-backed uploads; this pilot does not synchronize with Android."
+              : undefined
+          }
+          onDocumentCreated={async (document) =>
+            update((state) => {
+              const projects = state.records.filter((r) => r.type === "Project");
+              const project = projects.find((p) => p.id === document.projectId);
+              const accessibleDocuments = state.documents.filter((d) =>
+                canDepartmentAccessDocument(d, persona, departmentContext),
+              );
+              assertUploadContextCurrent(
+                document,
+                projects,
+                state.departments,
+                sourceGerberPackages(accessibleDocuments, project),
+              );
+              return {
+                ...state,
+                documents: [document, ...state.documents],
+                audit: [
+                  {
+                    id: createId(),
+                    at: now(),
+                    action: "Draft document uploaded",
+                    detail: `${document.title} · ${document.part ?? document.type} · Browser-local`,
+                  },
+                  ...state.audit,
+                ].slice(0, 100),
+              };
+            })
+          }
           onDocumentUpdated={(document, event) => {
             update((state) => ({
               ...state,
@@ -4424,7 +7271,9 @@ function Portal() {
           initialProjectId={documentUploadProjectId}
           onUploadOpenConsumed={() => setDocumentUploadRequested(false)}
           templateBodies={portal.templateBodies ?? defaultTemplateBodies()}
-          onTemplateBodiesChange={(templateBodies) => update((state) => ({ ...state, templateBodies }))}
+          onTemplateBodiesChange={(templateBodies) =>
+            update((state) => ({ ...state, templateBodies }))
+          }
           onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
           portal={portal}
         />
@@ -4452,7 +7301,7 @@ function Portal() {
           previewOnly={false}
         />
       )}{" "}
-      {modal === "admin" && persona.kind === "admin" && (
+      {modal === "admin" && (persona.kind === "admin" || !!testMembership) && (
         <AdminCommandCenter
           sharedMembership={testMembership ?? undefined}
           portal={portal}
@@ -4480,8 +7329,92 @@ function Portal() {
           onLoadDemo={loadDemo}
         />
       )}{" "}
-      {searchOpen && persona.kind !== "client" && <Dialog open onOpenChange={setSearchOpen}><DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Search</DialogTitle><DialogDescription>Search permitted documents, projects, tasks and process records. Your workspace stays open behind this popup.</DialogDescription></DialogHeader>{testMembership ? <SharedPortalSearch membership={testMembership} query={globalSearchQuery} onQueryChange={setGlobalSearchQuery} onOpen={(destination,id,title)=>{setSearchOpen(false);setShowSharedTestWorkspace(false);if(destination==="Documents"){openDocuments();setVaultDocumentId(id);}else if(destination==="Projects"){setSelectedProjectId(id);setView("project");}else if(destination==="decisions"){setDecisionInitialQuery(title);setDecisionLogOpen(true);}else if(destination==="Records"){setView("records");}else if(destination==="Tasks"){setView("assignee");}else if(destination==="Approvals"){setView("approvals");}else setView(destination as "budgets"|"tickets"|"communication");}}/> : <SharedIndex compact queryValue={globalSearchQuery} onQueryChange={setGlobalSearchQuery} records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeRecords} documents={scopedDocuments} allowedProjectIds={(persona.kind === "lead" || persona.kind === "member") ? leadProjects.map(project => project.id) : []} departments={portal.departments} departmentContext={departmentContext} onSelect={record => { setSearchOpen(false); if (record.type === "Project") { setSelectedProjectId(record.reference); if (persona.kind === "admin") setSelectedId(record.id); else setProjectScopes(current => ({ ...current, [effectiveArea]: record.reference })); setView("project"); } else openRecord(record); }} onSelectDocument={document => { setSearchOpen(false); openDocument(document); }} />}</DialogContent></Dialog>}
-      <DepartmentLeadLoginModal isOpen={loginModalOpen} demoMode={false} testMode onClose={() => setLoginModalOpen(false)} currentPersonaId={testMembership?.role === "member" ? "" : persona.id} onLoginSuccess={handleDemoLogin} onTestLogin={handleTestLogin} onLogout={handleLogout} />
+      {searchOpen && persona.kind !== "client" && (
+        <Dialog open onOpenChange={setSearchOpen}>
+          <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Search</DialogTitle>
+              <DialogDescription>
+                Search permitted documents, projects, tasks and process records. Your workspace
+                stays open behind this popup.
+              </DialogDescription>
+            </DialogHeader>
+            {testMembership ? (
+              <SharedPortalSearch
+                membership={testMembership}
+                query={globalSearchQuery}
+                onQueryChange={setGlobalSearchQuery}
+                onOpen={(destination, id, title) => {
+                  setSearchOpen(false);
+                  setShowSharedTestWorkspace(false);
+                  if (destination === "Documents") {
+                    openDocuments();
+                    setVaultDocumentId(id);
+                  } else if (destination === "Projects") {
+                    setSelectedProjectId(id);
+                    setView("project");
+                  } else if (destination === "decisions") {
+                    setDecisionInitialQuery(title);
+                    setDecisionLogOpen(true);
+                  } else if (destination === "Records") {
+                    setView("records");
+                  } else if (destination === "Tasks") {
+                    setView("assignee");
+                  } else if (destination === "Approvals") {
+                    setView("approvals");
+                  } else setView(destination as "budgets" | "tickets" | "communication");
+                }}
+              />
+            ) : (
+              <SharedIndex
+                compact
+                queryValue={globalSearchQuery}
+                onQueryChange={setGlobalSearchQuery}
+                records={
+                  persona.kind === "lead" || persona.kind === "member"
+                    ? [...leadRecords, ...leadProjects]
+                    : activeRecords
+                }
+                documents={scopedDocuments}
+                allowedProjectIds={
+                  persona.kind === "lead" || persona.kind === "member"
+                    ? leadProjects.map((project) => project.id)
+                    : []
+                }
+                departments={portal.departments}
+                departmentContext={departmentContext}
+                onSelect={(record) => {
+                  setSearchOpen(false);
+                  if (record.type === "Project") {
+                    setSelectedProjectId(record.reference);
+                    if (persona.kind === "admin") setSelectedId(record.id);
+                    else
+                      setProjectScopes((current) => ({
+                        ...current,
+                        [effectiveArea]: record.reference,
+                      }));
+                    setView("project");
+                  } else openRecord(record);
+                }}
+                onSelectDocument={(document) => {
+                  setSearchOpen(false);
+                  openDocument(document);
+                }}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
+      <DepartmentLeadLoginModal
+        isOpen={loginModalOpen}
+        demoMode={false}
+        testMode
+        onClose={() => setLoginModalOpen(false)}
+        currentPersonaId={testMembership?.role === "member" ? "" : persona.id}
+        onLoginSuccess={handleDemoLogin}
+        onTestLogin={handleTestLogin}
+        onLogout={handleLogout}
+      />
       {customerRegisterOpen && (
         <CustomerRegisterModal
           customers={portal.customersRegistry ?? defaultCustomers}
@@ -4496,7 +7429,7 @@ function Portal() {
       {feasibilityDispatchEnquiry && (
         <SendForFeasibilityModal
           enquiry={feasibilityDispatchEnquiry}
-          revision={portal.lifecycleRevisions?.at(-1)??defaultLifecycleRevision()}
+          revision={portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()}
           departments={portal.departments}
           onClose={() => setFeasibilityDispatchEnquiry(null)}
           onDispatch={handleDispatchFeasibility}
@@ -4505,29 +7438,68 @@ function Portal() {
       {globalSorOpen && (
         <SmartSorImporterModal
           isOpen={globalSorOpen}
-          onClose={() => {setGlobalSorOpen(false); sorRun.current = null;}}
+          onClose={() => {
+            setGlobalSorOpen(false);
+            sorRun.current = null;
+          }}
           onImportSor={async (parsedSor) => {
             if (testMembership) {
-              if (testMembership.isClient || (testMembership.role !== "admin" && (testMembership.role !== "department_lead" || testMembership.departmentCode !== "SAL"))) throw new Error("Sales or Admin must create opportunities. Use Inputs & Feasibility to review your department's existing projects.");
+              if (
+                testMembership.isClient ||
+                (testMembership.role !== "admin" &&
+                  (testMembership.role !== "department_lead" ||
+                    testMembership.departmentCode !== "SAL"))
+              )
+                throw new Error(
+                  "Sales or Admin must create opportunities. Use Inputs & Feasibility to review your department's existing projects.",
+                );
               const workspace = await loadSorWorkspace();
-              const departmentIds = Object.fromEntries(workspace.departments.map(d => [d.code, d.id]));
-              sorRun.current ||= { signature: JSON.stringify(parsedSor), recordRequest: crypto.randomUUID(), approvalRequests: {} };
-              const sourceId = await importSharedSor(parsedSor, sorRun.current, departmentIds["SAL"] || "", departmentIds, new Set(PROJECT_INPUT_PARAMETERS.map(p => p.id)), {
-                createRecord: async (payload, requestId) => await writeSorRecord({data: {action: "create_record", payload, requestId}}) as {id?: string},
-                createSheet: sourceId => writeSorInputs({data: {action: "create", payload: {sourceId, scope: "Client"}}}),
-                saveInput: payload => writeSorInputs({data: {action: "input", payload}}),
-                requestReview: (recordId, departmentId, requestId) => writeSorRecord({data: {action: "request_approval", requestId, payload: {record_id: recordId, reviewer_department_id: departmentId}}}),
-              });
+              const departmentIds = Object.fromEntries(
+                workspace.departments.map((d) => [d.code, d.id]),
+              );
+              sorRun.current ||= {
+                signature: JSON.stringify(parsedSor),
+                recordRequest: crypto.randomUUID(),
+                approvalRequests: {},
+              };
+              const sourceId = await importSharedSor(
+                parsedSor,
+                sorRun.current,
+                departmentIds["SAL"] || "",
+                departmentIds,
+                new Set(PROJECT_INPUT_PARAMETERS.map((p) => p.id)),
+                {
+                  createRecord: async (payload, requestId) =>
+                    (await writeSorRecord({
+                      data: { action: "create_record", payload, requestId },
+                    })) as { id?: string },
+                  createSheet: (sourceId) =>
+                    writeSorInputs({
+                      data: { action: "create", payload: { sourceId, scope: "Client" } },
+                    }),
+                  saveInput: (payload) => writeSorInputs({ data: { action: "input", payload } }),
+                  requestReview: (recordId, departmentId, requestId) =>
+                    writeSorRecord({
+                      data: {
+                        action: "request_approval",
+                        requestId,
+                        payload: { record_id: recordId, reviewer_department_id: departmentId },
+                      },
+                    }),
+                },
+              );
               sorRun.current = null;
               setAnalysisSourceId(sourceId);
-              announce("Opportunity, draft inputs and selected department review requests saved to your shared account. No project was created.");
+              announce(
+                "Opportunity, draft inputs and selected department review requests saved to your shared account. No project was created.",
+              );
               setView("analysis");
               return;
             }
             const at = now();
             const newOpp: RecordItem = {
               id: createId(),
-              reference: "OPP-SOR-" + createId().slice(0,8),
+              reference: "OPP-SOR-" + createId().slice(0, 8),
               area: "sales",
               departmentId: findAreaDepartment(portal.departments, "sales")?.id,
               type: "Opportunity",
@@ -4578,29 +7550,93 @@ function Portal() {
           }}
         />
       )}
-      {syncHubOpen && (persona.kind === "admin" || persona.id === "sales" || persona.id === "pur") && (
-        <CrossDepartmentSyncHub onClose={() => setSyncHubOpen(false)} />
-      )}
+      {syncHubOpen &&
+        (persona.kind === "admin" || persona.id === "sales" || persona.id === "pur") && (
+          <CrossDepartmentSyncHub onClose={() => setSyncHubOpen(false)} />
+        )}
       {draftHubOpen && persona.kind !== "client" && (
         <AutoDraftHub
           onClose={() => setDraftHubOpen(false)}
-          departmentScope={(persona.kind === "lead" || persona.kind === "member") ? departmentCode(persona.departmentId) : undefined}
-          projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(record => record.type === "Project")}
-          initialProject={(projectScopes[effectiveArea] ?? "all") !== "all" ? projectScopes[effectiveArea] : view === "project" ? selectedProjectId : undefined}
-          readOnlyReason={testMembership ? "Save drafts through the authenticated shared document workflow. This template preview does not write into TEST storage." : undefined}
+          departmentScope={
+            persona.kind === "lead" || persona.kind === "member"
+              ? departmentCode(persona.departmentId)
+              : undefined
+          }
+          projects={
+            persona.kind === "lead" || persona.kind === "member" ? leadProjects : selectableProjects
+          }
+          initialProject={
+            (projectScopes[effectiveArea] ?? "all") !== "all"
+              ? projectScopes[effectiveArea]
+              : view === "project"
+                ? selectedProjectId
+                : undefined
+          }
+          readOnlyReason={
+            testMembership
+              ? "Save drafts through the authenticated shared document workflow. This template preview does not write into TEST storage."
+              : undefined
+          }
           onSaveDraft={(draft, body) => {
-            return update(state => {
-              const draftOwner = (persona.kind === "lead" || persona.kind === "member") ? departmentContext || persona.departmentId || "" : state.departments.find(department => departmentCode(department.code.replace(/^DEMO-/, "")) === departmentCode(draft.department))?.id || "";
-              const existing = state.documents.find(document => document.part === draft.documentId && document.lifecycle === "Draft" && document.departmentId === draftOwner);
-              const saved: ControlledDocument = { ...(existing ?? {}), id: existing?.id ?? createId(), title: draft.title, type: draft.title, url: existing?.url ?? "", part: draft.documentId, revision: "00", draftSnapshot: buildDocumentDraft(draft.title, draft.documentId, { reference: draft.documentId, fields: {}, notes: body }, state.records.find(record => record.type === "Project" && record.reference === draft.project), draft.templateType), departmentId: draftOwner, lifecycle: "Draft", classification: "Internal", linkedRecordRefs: draft.project ? [draft.project] : [], releaseNotes: body, history: [...(existing?.history ?? []), now() + " · Browser-local draft saved by " + persona.label] };
-              return { ...state, documents: existing ? state.documents.map(document => document.id === existing.id ? saved : document) : [saved, ...state.documents] };
+            return update((state) => {
+              const draftOwner =
+                persona.kind === "lead" || persona.kind === "member"
+                  ? departmentContext || persona.departmentId || ""
+                  : state.departments.find(
+                      (department) =>
+                        departmentCode(department.code.replace(/^DEMO-/, "")) ===
+                        departmentCode(draft.department),
+                    )?.id || "";
+              const existing = state.documents.find(
+                (document) =>
+                  document.part === draft.documentId &&
+                  document.lifecycle === "Draft" &&
+                  document.departmentId === draftOwner,
+              );
+              const saved: ControlledDocument = {
+                ...(existing ?? {}),
+                id: existing?.id ?? createId(),
+                title: draft.title,
+                type: draft.title,
+                url: existing?.url ?? "",
+                part: draft.documentId,
+                revision: "00",
+                draftSnapshot: buildDocumentDraft(
+                  draft.title,
+                  draft.documentId,
+                  { reference: draft.documentId, fields: {}, notes: body },
+                  state.records.find(
+                    (record) => record.type === "Project" && record.reference === draft.project,
+                  ),
+                  draft.templateType,
+                ),
+                departmentId: draftOwner,
+                lifecycle: "Draft",
+                classification: "Internal",
+                linkedRecordRefs: draft.project ? [draft.project] : [],
+                releaseNotes: body,
+                history: [
+                  ...(existing?.history ?? []),
+                  now() + " · Browser-local draft saved by " + persona.label,
+                ],
+              };
+              return {
+                ...state,
+                documents: existing
+                  ? state.documents.map((document) =>
+                      document.id === existing.id ? saved : document,
+                    )
+                  : [saved, ...state.documents],
+              };
             });
           }}
           settings={portal.templateSettings ?? defaultTemplateSettings()}
           onOpenPrintable={setPrintTemplate}
           onOpenSettings={() => setTemplateSettingsOpen(true)}
           templateBodies={portal.templateBodies ?? defaultTemplateBodies()}
-          onTemplateBodiesChange={(templateBodies) => update((state) => ({ ...state, templateBodies }))}
+          onTemplateBodiesChange={(templateBodies) =>
+            update((state) => ({ ...state, templateBodies }))
+          }
         />
       )}
       {templateSettingsOpen && persona.kind === "admin" && (
@@ -4609,13 +7645,23 @@ function Portal() {
           onClose={() => setTemplateSettingsOpen(false)}
           onChange={(settings) => update((state) => ({ ...state, templateSettings: settings }))}
           templateBodies={portal.templateBodies ?? defaultTemplateBodies()}
-          onTemplateBodiesChange={(templateBodies) => update((state) => ({ ...state, templateBodies }))}
+          onTemplateBodiesChange={(templateBodies) =>
+            update((state) => ({ ...state, templateBodies }))
+          }
         />
       )}
       {printTemplate && (
         <PrintableTemplateView
-          document={portal.demoLoaded && !testMembership ? { ...printTemplate, testOnly: true } : printTemplate}
-          records={(persona.kind === "lead" || persona.kind === "member") ? [...leadRecords, ...leadProjects] : activeRecords}
+          document={
+            portal.demoLoaded && !testMembership
+              ? { ...printTemplate, testOnly: true }
+              : printTemplate
+          }
+          records={
+            persona.kind === "lead" || persona.kind === "member"
+              ? [...leadRecords, ...leadProjects]
+              : activeRecords
+          }
           settings={portal.templateSettings ?? defaultTemplateSettings()}
           onClose={() => setPrintTemplate(null)}
           onOpenSettings={() => setTemplateSettingsOpen(true)}
@@ -4628,127 +7674,142 @@ function Portal() {
           initialTab={ai4tInitialTab}
           projectId={selectedProjectId}
           onSelectProject={(id) => setSelectedProjectId(id)}
-          modularConfig={(portal?.modularConfigs ?? defaultProjectModularConfigs)[selectedProjectId || "HLPL-AI4T-01"]}
+          modularConfig={
+            (portal?.modularConfigs ?? defaultProjectModularConfigs)[
+              selectedProjectId || "HLPL-AI4T-01"
+            ]
+          }
           onKickoffComplete={(path, deliverables) => {
-            if (!portal.demoLoaded) { announce("Lifecycle walkthrough is available only in DEMO. Production gate progression requires the verified authenticated workflow contract."); return; }
+            if (!portal.demoLoaded) {
+              announce(
+                "Lifecycle walkthrough is available only in DEMO. Production gate progression requires the verified authenticated workflow contract.",
+              );
+              return;
+            }
             const today = businessDate();
-            const kickoffTasks: RecordItem[] = path === "poc" ? [
-              {
-                id: createId(),
-                reference: "TASK-EHW-SCH01",
-                area: "ehw",
-                type: "Task",
-                title: "Schematics SCH-01 draft & MCU bring-up",
-                priority: "Critical",
-                status: "Open",
-                createdAt: now(),
-                updatedAt: now(),
-                notes: "Stage 4 Hardware PoC task",
-                fields: {
-                  dueDate: today,
-                  assignee: "Avery Vale",
-                  project: selectedProjectId,
-                  stage: "Stage 4 · PoC Bring-up",
-                  scope: "STM32F405VG MCU circuit, ISO 7637-2 power path, 4G modem integration",
-                },
-              },
-              {
-                id: createId(),
-                reference: "TASK-EFW-CAN01",
-                area: "fw",
-                type: "Task",
-                title: "CAN J1939 telemetry firmware parser & FreeRTOS bring-up",
-                priority: "High",
-                status: "Open",
-                createdAt: now(),
-                updatedAt: now(),
-                notes: "Stage 4 Firmware PoC task",
-                fields: {
-                  dueDate: today,
-                  assignee: "Devon Lane",
-                  project: selectedProjectId,
-                  stage: "Stage 4 · PoC Bring-up",
-                  scope: "FreeRTOS v10.4 kernel, J1939 250/500kbps packet telemetry",
-                },
-              },
-              {
-                id: createId(),
-                reference: "TASK-PUR-SAMPLES",
-                area: "pur",
-                type: "Task",
-                title: "Procure Quectel EC200U modem & STM32F405 engineering samples",
-                priority: "High",
-                status: "Open",
-                createdAt: now(),
-                updatedAt: now(),
-                notes: "Stage 4 Purchasing task",
-                fields: {
-                  dueDate: today,
-                  assignee: "Morgan Reed",
-                  project: selectedProjectId,
-                  stage: "Stage 4 · PoC Bring-up",
-                  scope: "Tier-1 ASL engineering samples for bench prototype",
-                },
-              },
-            ] : [
-              {
-                id: createId(),
-                reference: "TASK-EMF-LINE2",
-                area: "emf",
-                type: "Task",
-                title: "Verify accepted outsourced PCBA lot traceability and box-build readiness for BATCH-04",
-                priority: "Critical",
-                status: "Open",
-                createdAt: now(),
-                updatedAt: now(),
-                notes: "Stage 5 pilot integration task",
-                fields: {
-                  dueDate: today,
-                  assignee: "Casey Rowan",
-                  project: selectedProjectId,
-                  stage: "Stage 5 · Pilot Integration",
-                  scope: "Accepted outsourced PCBA lot traceability and functional fixture readiness",
-                },
-              },
-              {
-                id: createId(),
-                reference: "TASK-PUR-TOOLING",
-                area: "pur",
-                type: "Task",
-                title: "Release advance soft-tooling PO for IP67 enclosure & Molex connector",
-                priority: "High",
-                status: "Open",
-                createdAt: now(),
-                updatedAt: now(),
-                notes: "Stage 5 Tooling procurement task",
-                fields: {
-                  dueDate: today,
-                  assignee: "Morgan Reed",
-                  project: selectedProjectId,
-                  stage: "Stage 5 · Pilot Integration",
-                  scope: "Polycarbonate UV-stabilized enclosure soft tooling",
-                },
-              },
-              {
-                id: createId(),
-                reference: "TASK-QA-DVP01",
-                area: "qa",
-                type: "Task",
-                title: "Establish 18-test DVP&R pre-compliance verification matrix",
-                priority: "High",
-                status: "Open",
-                createdAt: now(),
-                updatedAt: now(),
-                notes: "Stage 5 Quality DVP&R task",
-                fields: {
-                  dueDate: today,
-                  assignee: "Jordan Blake",
-                  project: selectedProjectId,
-                  stage: "Stage 5 · Pilot Integration",
-                  scope: "AIS-140 Annexure 8, ISO 7637-2 electrical transients DVP&R",
-                },
-              },
-            ];
+            const kickoffTasks: RecordItem[] =
+              path === "poc"
+                ? [
+                    {
+                      id: createId(),
+                      reference: "TASK-EHW-SCH01",
+                      area: "ehw",
+                      type: "Task",
+                      title: "Schematics SCH-01 draft & MCU bring-up",
+                      priority: "Critical",
+                      status: "Open",
+                      createdAt: now(),
+                      updatedAt: now(),
+                      notes: "Stage 4 Hardware PoC task",
+                      fields: {
+                        dueDate: today,
+                        assignee: "Avery Vale",
+                        project: selectedProjectId,
+                        stage: "Stage 4 · PoC Bring-up",
+                        scope:
+                          "STM32F405VG MCU circuit, ISO 7637-2 power path, 4G modem integration",
+                      },
+                    },
+                    {
+                      id: createId(),
+                      reference: "TASK-EFW-CAN01",
+                      area: "fw",
+                      type: "Task",
+                      title: "CAN J1939 telemetry firmware parser & FreeRTOS bring-up",
+                      priority: "High",
+                      status: "Open",
+                      createdAt: now(),
+                      updatedAt: now(),
+                      notes: "Stage 4 Firmware PoC task",
+                      fields: {
+                        dueDate: today,
+                        assignee: "Devon Lane",
+                        project: selectedProjectId,
+                        stage: "Stage 4 · PoC Bring-up",
+                        scope: "FreeRTOS v10.4 kernel, J1939 250/500kbps packet telemetry",
+                      },
+                    },
+                    {
+                      id: createId(),
+                      reference: "TASK-PUR-SAMPLES",
+                      area: "pur",
+                      type: "Task",
+                      title: "Procure Quectel EC200U modem & STM32F405 engineering samples",
+                      priority: "High",
+                      status: "Open",
+                      createdAt: now(),
+                      updatedAt: now(),
+                      notes: "Stage 4 Purchasing task",
+                      fields: {
+                        dueDate: today,
+                        assignee: "Morgan Reed",
+                        project: selectedProjectId,
+                        stage: "Stage 4 · PoC Bring-up",
+                        scope: "Tier-1 ASL engineering samples for bench prototype",
+                      },
+                    },
+                  ]
+                : [
+                    {
+                      id: createId(),
+                      reference: "TASK-EMF-LINE2",
+                      area: "emf",
+                      type: "Task",
+                      title:
+                        "Verify accepted outsourced PCBA lot traceability and box-build readiness for BATCH-04",
+                      priority: "Critical",
+                      status: "Open",
+                      createdAt: now(),
+                      updatedAt: now(),
+                      notes: "Stage 5 pilot integration task",
+                      fields: {
+                        dueDate: today,
+                        assignee: "Casey Rowan",
+                        project: selectedProjectId,
+                        stage: "Stage 5 · Pilot Integration",
+                        scope:
+                          "Accepted outsourced PCBA lot traceability and functional fixture readiness",
+                      },
+                    },
+                    {
+                      id: createId(),
+                      reference: "TASK-PUR-TOOLING",
+                      area: "pur",
+                      type: "Task",
+                      title: "Release advance soft-tooling PO for IP67 enclosure & Molex connector",
+                      priority: "High",
+                      status: "Open",
+                      createdAt: now(),
+                      updatedAt: now(),
+                      notes: "Stage 5 Tooling procurement task",
+                      fields: {
+                        dueDate: today,
+                        assignee: "Morgan Reed",
+                        project: selectedProjectId,
+                        stage: "Stage 5 · Pilot Integration",
+                        scope: "Polycarbonate UV-stabilized enclosure soft tooling",
+                      },
+                    },
+                    {
+                      id: createId(),
+                      reference: "TASK-QA-DVP01",
+                      area: "qa",
+                      type: "Task",
+                      title: "Establish 18-test DVP&R pre-compliance verification matrix",
+                      priority: "High",
+                      status: "Open",
+                      createdAt: now(),
+                      updatedAt: now(),
+                      notes: "Stage 5 Quality DVP&R task",
+                      fields: {
+                        dueDate: today,
+                        assignee: "Jordan Blake",
+                        project: selectedProjectId,
+                        stage: "Stage 5 · Pilot Integration",
+                        scope: "AIS-140 Annexure 8, ISO 7637-2 electrical transients DVP&R",
+                      },
+                    },
+                  ];
             update((currentPortal) => ({
               ...currentPortal,
               records: [...kickoffTasks, ...currentPortal.records],
@@ -4757,12 +7818,22 @@ function Portal() {
                 ...currentPortal.notifications,
               ],
             }));
-            announce(`Hardware kick-off active: ${path === "poc" ? "PoC bench bring-up squad deployed" : "Direct box-build pilot planning initiated"}.`);
-            log("Hardware Kick-off launched", `${selectedProjectId} · ${path.toUpperCase()} Track · ${deliverables.join(", ")}`);
+            announce(
+              `Hardware kick-off active: ${path === "poc" ? "PoC bench bring-up squad deployed" : "Direct box-build pilot planning initiated"}.`,
+            );
+            log(
+              "Hardware Kick-off launched",
+              `${selectedProjectId} · ${path.toUpperCase()} Track · ${deliverables.join(", ")}`,
+            );
           }}
           onClose={() => setAi4tOpen(false)}
           onAdvance={() => {
-            if (!portal.demoLoaded) { announce("Lifecycle walkthrough is available only in DEMO. Production gate progression requires the verified authenticated workflow contract."); return; }
+            if (!portal.demoLoaded) {
+              announce(
+                "Lifecycle walkthrough is available only in DEMO. Production gate progression requires the verified authenticated workflow contract.",
+              );
+              return;
+            }
             const targetStage = Math.min(ai4tSimulation.stage + 1, ai4tStages.length - 1);
             const gateCheck = verifyStageTransition({
               targetStageIndex: targetStage,
@@ -4773,24 +7844,62 @@ function Portal() {
               isDemo: portal.demoLoaded,
             });
             if (!gateCheck.allowed) {
-              announce(gateCheck.reason ?? "Stage advancement blocked by automotive stage gate freeze.");
-              log("Automotive Gate Interlock blocked advance", gateCheck.reason ?? gateCheck.gateName);
+              announce(
+                gateCheck.reason ?? "Stage advancement blocked by automotive stage gate freeze.",
+              );
+              log(
+                "Automotive Gate Interlock blocked advance",
+                gateCheck.reason ?? gateCheck.gateName,
+              );
               return;
             }
             setAi4tSimulation((state) => {
               const stage = targetStage;
               const entry = ai4tStages[stage] ?? ai4tStages[0];
               if (!entry) return state;
-              const pinnedChronicles = resolveProjectChronicles(portal.responsibilityVersions, portal.records.find(record => record.type === "Project" && record.reference === selectedProjectId)?.fields["responsibilityVersion"], portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES);
-              const matrix = deriveRaciMatrixFromChronicles(pinnedChronicles, ai4tStages, raciDepartments);
-              const recipients = Object.entries(matrix[entry[0]] ?? {}).filter(([, role]) => role && role !== "I").map(([department]) => department);
-              update((currentPortal) => ({ ...currentPortal, alerts: [...currentPortal.alerts, ...recipients.map((department) => ({ id: createId(), severity: "Warning" as const, title: `${entry[0]} handoff ready`, detail: `${entry[1]} — review the stage handoff and proceed with the assigned controlled work.`, departmentId: currentPortal.departments.find((item) => item.code.replace(/^DEMO-/, "") === department)?.id ?? "sales", resolved: false }))].slice(-100) }));
+              const pinnedChronicles = resolveProjectChronicles(
+                portal.responsibilityVersions,
+                portal.records.find(
+                  (record) => record.type === "Project" && record.reference === selectedProjectId,
+                )?.fields["responsibilityVersion"],
+                portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES,
+              );
+              const matrix = deriveRaciMatrixFromChronicles(
+                pinnedChronicles,
+                ai4tStages,
+                raciDepartments,
+              );
+              const recipients = Object.entries(matrix[entry[0]] ?? {})
+                .filter(([, role]) => role && role !== "I")
+                .map(([department]) => department);
+              update((currentPortal) => ({
+                ...currentPortal,
+                alerts: [
+                  ...currentPortal.alerts,
+                  ...recipients.map((department) => ({
+                    id: createId(),
+                    severity: "Warning" as const,
+                    title: `${entry[0]} handoff ready`,
+                    detail: `${entry[1]} — review the stage handoff and proceed with the assigned controlled work.`,
+                    departmentId:
+                      currentPortal.departments.find(
+                        (item) => item.code.replace(/^DEMO-/, "") === department,
+                      )?.id ?? "sales",
+                    resolved: false,
+                  })),
+                ].slice(-100),
+              }));
               log("AI4T lifecycle simulation advanced", `${entry[0]} · ${entry[1]}`);
               return { stage, history: [`${now()} · ${entry[0]} · ${entry[1]}`, ...state.history] };
             });
           }}
           onJump={(stage) => {
-            if (!portal.demoLoaded) { announce("Lifecycle walkthrough is available only in DEMO. Production gate progression requires the verified authenticated workflow contract."); return; }
+            if (!portal.demoLoaded) {
+              announce(
+                "Lifecycle walkthrough is available only in DEMO. Production gate progression requires the verified authenticated workflow contract.",
+              );
+              return;
+            }
             const gateCheck = verifyStageTransition({
               targetStageIndex: stage,
               currentStageIndex: ai4tSimulation.stage,
@@ -4800,19 +7909,38 @@ function Portal() {
               isDemo: portal.demoLoaded,
             });
             if (!gateCheck.allowed) {
-              announce(gateCheck.reason ?? "Stage transition blocked by automotive stage gate freeze.");
+              announce(
+                gateCheck.reason ?? "Stage transition blocked by automotive stage gate freeze.",
+              );
               log("Automotive Gate Interlock blocked jump", gateCheck.reason ?? gateCheck.gateName);
               return;
             }
             const entry = ai4tStages[stage] ?? ai4tStages[0];
             if (!entry) return;
-            setAi4tSimulation((state) => ({ stage, history: [`${now()} · Jumped to ${entry[0]}`, ...state.history] }));
+            setAi4tSimulation((state) => ({
+              stage,
+              history: [`${now()} · Jumped to ${entry[0]}`, ...state.history],
+            }));
             log("AI4T lifecycle simulation jumped", entry[0]);
           }}
           onRun={() => {
-            if (!portal.demoLoaded) { announce("Lifecycle walkthrough is available only in DEMO. Production gate progression requires the verified authenticated workflow contract."); return; }
-            setAi4tSimulation({ stage: ai4tStages.length - 1, history: [`${now()} · Full DEMO lifecycle run completed`, ...ai4tStages.map(([stage, title]) => `${stage} · ${title}`)] });
-            log("AI4T lifecycle simulation completed", "DEMO walkthrough reached its final screen; production gates and backend synchronization were not verified.");
+            if (!portal.demoLoaded) {
+              announce(
+                "Lifecycle walkthrough is available only in DEMO. Production gate progression requires the verified authenticated workflow contract.",
+              );
+              return;
+            }
+            setAi4tSimulation({
+              stage: ai4tStages.length - 1,
+              history: [
+                `${now()} · Full DEMO lifecycle run completed`,
+                ...ai4tStages.map(([stage, title]) => `${stage} · ${title}`),
+              ],
+            });
+            log(
+              "AI4T lifecycle simulation completed",
+              "DEMO walkthrough reached its final screen; production gates and backend synchronization were not verified.",
+            );
           }}
           onReset={() => {
             setAi4tSimulation({ stage: 0, history: [] });
@@ -4821,7 +7949,13 @@ function Portal() {
           onOpenPrintable={setPrintTemplate}
           documents={portal.documents}
           onOpenDocument={openDocument}
-          chronicles={resolveProjectChronicles(portal.responsibilityVersions, portal.records.find(record => record.type === "Project" && record.reference === selectedProjectId)?.fields["responsibilityVersion"], portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES)}
+          chronicles={resolveProjectChronicles(
+            portal.responsibilityVersions,
+            portal.records.find(
+              (record) => record.type === "Project" && record.reference === selectedProjectId,
+            )?.fields["responsibilityVersion"],
+            portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES,
+          )}
           onOpenChroniclesManager={() => {
             setAdminTab("lifecycle");
             setModal("admin");
@@ -4843,69 +7977,356 @@ function Portal() {
           onReset={() => setRfqStep(0)}
         />
       )}
-      {directoryOpen && testMembership && !testMembership.isClient && <SharedCompanyDirectory membership={testMembership} onClose={()=>setDirectoryOpen(false)}/>}
-      {directoryOpen && !testMembership && persona.kind !== "client" && (
-        <CompanyDirectoryModal key={persona.id} onClose={() => setDirectoryOpen(false)} initialDepartment={(persona.kind === "lead" || persona.kind === "member") ? departmentCode(persona.departmentId) : undefined} lockedDepartment={(persona.kind === "lead" || persona.kind === "member") ? departmentCode(persona.departmentId) : undefined} contacts={(persona.kind === "lead" || persona.kind === "member") ? allTeamMembers.filter(member => member.area === persona.departmentId).map((member, index) => ({ id: String(index), name: member.name, departmentCode: departmentCode(member.area), departmentName: areaById(member.area).name, designation: member.role, reportingManager: "Department lead", workEmail: "", deskExtension: "Not provided", facilityLocation: "Not provided", primarySkills: member.skills, avatarInitial: member.name.split(" ").map(part => part[0]).join("").slice(0,2) })) : undefined} />
+      {directoryOpen && testMembership && !testMembership.isClient && (
+        <SharedCompanyDirectory
+          membership={testMembership}
+          onClose={() => setDirectoryOpen(false)}
+        />
       )}
-      {decisionLogOpen && persona.kind !== "client" && testMembership && <SharedDecisionLog membership={testMembership} departmentCode={effectiveArea} activeProject={view === "project" ? selectedProjectId : undefined} initialQuery={decisionInitialQuery} onClose={()=>{setDecisionLogOpen(false);setDecisionInitialQuery("");}}/>}
+      {directoryOpen && !testMembership && persona.kind !== "client" && (
+        <CompanyDirectoryModal
+          key={persona.id}
+          onClose={() => setDirectoryOpen(false)}
+          initialDepartment={
+            persona.kind === "lead" || persona.kind === "member"
+              ? departmentCode(persona.departmentId)
+              : undefined
+          }
+          lockedDepartment={
+            persona.kind === "lead" || persona.kind === "member"
+              ? departmentCode(persona.departmentId)
+              : undefined
+          }
+          contacts={
+            persona.kind === "lead" || persona.kind === "member"
+              ? allTeamMembers
+                  .filter((member) => member.area === persona.departmentId)
+                  .map((member, index) => {
+                    const sample = DEMO_ORGANIZATION_ROSTER.find(
+                      (profile) => profile.name === member.name,
+                    );
+                    const manager =
+                      sample &&
+                      DEMO_ORGANIZATION_ROSTER.find(
+                        (profile) => profile.fixtureKey === sample.reportsToFixtureKey,
+                      );
+                    return {
+                      id: sample?.employeeCode ?? `DEMO-MEMBER-${index + 1}`,
+                      name: member.name,
+                      departmentCode: sample?.departmentCode ?? departmentCode(member.area),
+                      departmentName: sample?.departmentName ?? areaById(member.area).name,
+                      designation: sample?.roleTitle ?? member.role,
+                      reportingManager: manager?.name ?? "Not recorded",
+                      workEmail: sample?.workEmail ?? "Not recorded",
+                      deskExtension: "DEMO ONLY · no direct extension",
+                      facilityLocation: sample?.facilityLocation ?? "Not recorded",
+                      primarySkills: sample?.skills ?? member.skills,
+                      avatarInitial: member.name
+                        .split(" ")
+                        .map((part) => part[0])
+                        .join("")
+                        .slice(0, 2),
+                    };
+                  })
+              : undefined
+          }
+        />
+      )}
+      {decisionLogOpen && persona.kind !== "client" && testMembership && (
+        <SharedDecisionLog
+          membership={testMembership}
+          departmentCode={effectiveArea}
+          activeProject={view === "project" ? selectedProjectId : undefined}
+          initialQuery={decisionInitialQuery}
+          onClose={() => {
+            setDecisionLogOpen(false);
+            setDecisionInitialQuery("");
+          }}
+        />
+      )}
       {decisionLogOpen && persona.kind !== "client" && !testMembership && (
-        <OfficialDecisionLogModal key={persona.id} onClose={() => setDecisionLogOpen(false)} activeProject={view === "project" ? selectedProjectId : undefined} persona={persona} authorId={persona.id} decisions={portal.decisionLogs ?? (portal.demoLoaded ? defaultDecisionLogs : [])} projects={(persona.kind === "lead" || persona.kind === "member") ? leadProjects : activeRecords.filter(r=>r.type === "Project")} stageOptions={Array.from(new Set((portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES).filter(c=>persona.kind === "admin" || departmentCode(c.departmentCode) === departmentCode(persona.departmentId)).sort((a,b)=>a.stageIndex-b.stageIndex).map(c=>c.stageName)))} onSave={async entry => update(state => {
-          const actorId=persona.id;
-          const permittedProjects = state.records.filter(r=>r.type === "Project" && !r.archived && (persona.kind === "admin" || leadProjects.some(p=>p.id === r.id))).map(r=>r.reference);
-          const decisionProject = entry.scope === "common"
-            ? undefined
-            : state.records.find(record => record.type === "Project" && record.reference === entry.projectCode);
-          const decisionBaseline = readLifecycleBaseline(decisionProject?.fields["lifecycleBaseline"]);
-          const decisionTrack = decisionProject ? getRecordedProjectTrack(decisionProject.fields) : undefined;
-          const stages = decisionBaseline
-            ? (decisionTrack
-                ? projectLifecycleStages(decisionBaseline, decisionTrack, decisionProject?.fields["certificationRequired"] === "true")
-                : decisionBaseline.stages
-              ).map(stage => stage.code)
-            : [];
-          assertDecisionSubmission(entry, {id:actorId,kind:persona.kind,name:persona.person,role:persona.label,department:departmentCode(persona.departmentId) || "ADMIN"}, permittedProjects, stages);
-          const entries=state.decisionLogs ?? (state.demoLoaded ? defaultDecisionLogs : []);
-          if(entries.some(d=>d.id === entry.id)) throw new Error("This decision has already been recorded.");
-          return {...state,decisionLogs:[entry,...entries],audit:[{id:createId(),at:now(),action:"Decision recorded locally",detail:`${entry.title} · ${persona.person}`},...state.audit].slice(0,100)};
-        })} onApprove={async id => update(state => {
-          if(persona.kind !== "admin" && persona.kind !== "lead") throw new Error("A designated department lead must review this submission.");
-          const entries=state.decisionLogs ?? (state.demoLoaded ? defaultDecisionLogs : []);
-          const entry=entries.find(d=>d.id === id);
-          if(!entry || entry.status !== "Pending lead review" || (persona.kind !== "admin" && departmentCode(entry.departmentCode) !== departmentCode(persona.departmentId))) throw new Error("This submission is unavailable for your department review.");
-          return {...state,decisionLogs:entries.map(d=>d.id === id ? {...d,status:"Approved" as const,approvedBy:persona.person,approvedAt:new Date().toISOString()} : d),audit:[{id:createId(),at:now(),action:"Decision reviewed locally",detail:`${entry.title} · ${persona.person}`},...state.audit].slice(0,100)};
-        })} />
+        <OfficialDecisionLogModal
+          key={persona.id}
+          onClose={() => setDecisionLogOpen(false)}
+          activeProject={view === "project" ? selectedProjectId : undefined}
+          persona={persona}
+          authorId={persona.id}
+          decisions={portal.decisionLogs ?? (portal.demoLoaded ? defaultDecisionLogs : [])}
+          projects={
+            persona.kind === "lead" || persona.kind === "member" ? leadProjects : selectableProjects
+          }
+          stageOptions={Array.from(
+            new Set(
+              (portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES)
+                .filter(
+                  (c) =>
+                    persona.kind === "admin" ||
+                    departmentCode(c.departmentCode) === departmentCode(persona.departmentId),
+                )
+                .sort((a, b) => a.stageIndex - b.stageIndex)
+                .map((c) => c.stageName),
+            ),
+          )}
+          onSave={async (entry) =>
+            update((state) => {
+              const actorId = persona.id;
+              const permittedProjects = state.records
+                .filter(
+                  (r) =>
+                    r.type === "Project" &&
+                    !r.archived &&
+                    (persona.kind === "admin" || leadProjects.some((p) => p.id === r.id)),
+                )
+                .map((r) => r.reference);
+              const decisionProject =
+                entry.scope === "common"
+                  ? undefined
+                  : state.records.find(
+                      (record) =>
+                        record.type === "Project" && record.reference === entry.projectCode,
+                    );
+              const decisionBaseline = readLifecycleBaseline(
+                decisionProject?.fields["lifecycleBaseline"],
+              );
+              const decisionTrack = decisionProject
+                ? getRecordedProjectTrack(decisionProject.fields)
+                : undefined;
+              const stages = decisionBaseline
+                ? (decisionTrack
+                    ? projectLifecycleStages(
+                        decisionBaseline,
+                        decisionTrack,
+                        decisionProject?.fields["certificationRequired"] === "true",
+                      )
+                    : decisionBaseline.stages
+                  ).map((stage) => stage.code)
+                : [];
+              assertDecisionSubmission(
+                entry,
+                {
+                  id: actorId,
+                  kind: persona.kind,
+                  name: persona.person,
+                  role: persona.label,
+                  department: departmentCode(persona.departmentId) || "ADMIN",
+                },
+                permittedProjects,
+                stages,
+              );
+              const entries = state.decisionLogs ?? (state.demoLoaded ? defaultDecisionLogs : []);
+              if (entries.some((d) => d.id === entry.id))
+                throw new Error("This decision has already been recorded.");
+              return {
+                ...state,
+                decisionLogs: [entry, ...entries],
+                audit: [
+                  {
+                    id: createId(),
+                    at: now(),
+                    action: "Decision recorded locally",
+                    detail: `${entry.title} · ${persona.person}`,
+                  },
+                  ...state.audit,
+                ].slice(0, 100),
+              };
+            })
+          }
+          onApprove={async (id) =>
+            update((state) => {
+              if (persona.kind !== "admin" && persona.kind !== "lead")
+                throw new Error("A designated department lead must review this submission.");
+              const entries = state.decisionLogs ?? (state.demoLoaded ? defaultDecisionLogs : []);
+              const entry = entries.find((d) => d.id === id);
+              if (
+                !entry ||
+                entry.status !== "Pending lead review" ||
+                (persona.kind !== "admin" &&
+                  departmentCode(entry.departmentCode) !== departmentCode(persona.departmentId))
+              )
+                throw new Error("This submission is unavailable for your department review.");
+              return {
+                ...state,
+                decisionLogs: entries.map((d) =>
+                  d.id === id
+                    ? {
+                        ...d,
+                        status: "Approved" as const,
+                        approvedBy: persona.person,
+                        approvedAt: new Date().toISOString(),
+                      }
+                    : d,
+                ),
+                audit: [
+                  {
+                    id: createId(),
+                    at: now(),
+                    action: "Decision reviewed locally",
+                    detail: `${entry.title} · ${persona.person}`,
+                  },
+                  ...state.audit,
+                ].slice(0, 100),
+              };
+            })
+          }
+        />
       )}
       {legalHubOpen && persona.kind === "admin" && (
         <OperationsLegalAndLetterheadModal onClose={() => setLegalHubOpen(false)} />
       )}
-      {roleSamplesOpen && !testMembership && persona.kind==='admin' && <Modal title="Lifecycle demo pack" onClose={()=>setRoleSamplesOpen(false)}>
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Browser-local fictional TEST data. Adds seven fresh requests, seven track checkpoints and configured department review tasks using your saved lifecycle Settings.</p>
-          <Action label={portal.roleLifecyclePack?'Verify loaded pack':'Load updated lifecycle pack'} primary onClick={()=>void loadRoleSamples()}/>
-          {roleSampleNotice&&<p role="status" className="text-sm">{roleSampleNotice}</p>}
-          {portal.roleLifecyclePack&&<>
-            <p className="text-xs text-muted-foreground">{portal.roleLifecyclePack.version} · {portal.roleLifecyclePack.records.length} pack records · {portal.roleLifecyclePack.configuration.phaseCount} fixed phases · {portal.roleLifecyclePack.configuration.departments.length} configured departments</p>
-            <p className="text-xs">Pinned lifecycle: {portal.roleLifecyclePack.lifecycleRevision}. Current settings changes do not overwrite this loaded pack.</p>
-            <div className="overflow-auto rounded border border-border"><table className="w-full text-left text-xs"><thead><tr><th className="p-2">Track checkpoint</th><th>Stages / planned tasks</th><th>Actions</th></tr></thead><tbody>{portal.roleLifecyclePack.checkpoints.map(sample=><tr key={sample.projectId} className="border-t border-border"><td className="p-2">{sample.title}<small className="block text-muted-foreground">{sample.track.replaceAll('_',' ')}</small></td><td>{sample.applicableStages} / {sample.plannedTasks}</td><td className="p-2"><button className="text-primary underline" onClick={()=>{setRoleSamplesOpen(false);handleAdminDepartmentChange('sales','project');setSelectedProjectId(sample.projectReference);setSelectedId(sample.projectId);setProjectScopes(current=>({...current,sales:sample.projectReference}));}}>Open project</button></td></tr>)}</tbody></table></div>
-            <button className="text-sm text-primary underline" onClick={()=>{setRoleSamplesOpen(false);handleAdminDepartmentChange('sales','project');setProjectScopes(current=>({...current,sales:'all'}));}}>Open fresh requests in Sales</button>
-            <p className="text-xs text-muted-foreground">Walkthrough enquiries have no Project or selected track. Checkpoint projects have explicitly simulated prior feasibility, no completed gate and only their entry-stage tasks active. Later tasks remain planned from the pinned revision.</p>
-            <details className="text-xs"><summary className="cursor-pointer">Pending verification and source gaps</summary><ul className="mt-2 list-disc space-y-1 pl-4">{portal.roleLifecyclePack.gaps.map(gap=><li key={gap}>{gap}</li>)}</ul></details>
-          </>}
-        </div>
-      </Modal>}
-      {assetCatalogOpen && testMembership && !testMembership.isClient && <SharedLifecycleWorkspace scopeKey={testMembership.membershipId} mode="assets" onClose={()=>setAssetCatalogOpen(false)}/>}
-      {assetCatalogOpen && !testMembership && (persona.kind === "admin" || persona.kind === "lead" || persona.kind === "member") && (
-        <ReusableAssetsWorkspace
-          assets={(portal.reusableAssetRevisions ?? []).filter(asset => persona.kind === "admin" || leadProjects.some(p => [p.id,p.reference].includes(asset.originProject)))}
-          uses={portal.projectAssetUses ?? []}
-          projects={(persona.kind === "admin" ? activeRecords.filter(r=>r.type === "Project") : leadProjects).map(p=>({id:p.reference,title:p.title}))}
-          documents={scopedDocuments.map(d=>({id:d.id,title:d.title,revision:d.revision || "00"}))}
-          inventory={(portal.inventory ?? []).map(i=>({id:i.id,title:`${i.partNumber} · ${i.description}`}))}
-          actor={persona.person}
-          onPublish={async asset=>{const saved=await update(state=>({...state,reusableAssetRevisions:[...(state.reusableAssetRevisions ?? []),asset]}));if(!saved)throw new Error("Asset revision was not saved.");}}
-          onLink={async use=>{const saved=await update(state=>({...state,projectAssetUses:linkReusableAsset(state.projectAssetUses ?? [],use,state.reusableAssetRevisions ?? [],state.records.filter(r=>r.type === "Project").map(p=>p.reference))}));if(!saved)throw new Error("Asset use was not saved.");}}
-          onClose={() => setAssetCatalogOpen(false)}/>
+      {roleSamplesOpen && !testMembership && persona.kind === "admin" && (
+        <Modal title="Lifecycle demo pack" onClose={() => setRoleSamplesOpen(false)}>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Browser-local fictional TEST data. Adds seven fresh requests, seven track checkpoints
+              and configured department review tasks using your saved lifecycle Settings.
+            </p>
+            <Action
+              label={
+                portal.roleLifecyclePack ? "Verify loaded pack" : "Load updated lifecycle pack"
+              }
+              primary
+              onClick={() => void loadRoleSamples()}
+            />
+            {roleSampleNotice && (
+              <p role="status" className="text-sm">
+                {roleSampleNotice}
+              </p>
+            )}
+            {portal.roleLifecyclePack && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  {portal.roleLifecyclePack.version} · {portal.roleLifecyclePack.records.length}{" "}
+                  pack records · {portal.roleLifecyclePack.configuration.phaseCount} fixed phases ·{" "}
+                  {portal.roleLifecyclePack.configuration.departments.length} configured departments
+                </p>
+                <p className="text-xs">
+                  Pinned lifecycle: {portal.roleLifecyclePack.lifecycleRevision}. Current settings
+                  changes do not overwrite this loaded pack.
+                </p>
+                <div className="overflow-auto rounded border border-border">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr>
+                        <th className="p-2">Track checkpoint</th>
+                        <th>Stages / planned tasks</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portal.roleLifecyclePack.checkpoints.map((sample) => (
+                        <tr key={sample.projectId} className="border-t border-border">
+                          <td className="p-2">
+                            {sample.title}
+                            <small className="block text-muted-foreground">
+                              {sample.track.replaceAll("_", " ")}
+                            </small>
+                          </td>
+                          <td>
+                            {sample.applicableStages} / {sample.plannedTasks}
+                          </td>
+                          <td className="p-2">
+                            <button
+                              className="text-primary underline"
+                              onClick={() => {
+                                setRoleSamplesOpen(false);
+                                handleAdminDepartmentChange("sales", "project");
+                                setSelectedProjectId(sample.projectReference);
+                                setSelectedId(sample.projectId);
+                                setProjectScopes((current) => ({
+                                  ...current,
+                                  sales: sample.projectReference,
+                                }));
+                              }}
+                            >
+                              Open project
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button
+                  className="text-sm text-primary underline"
+                  onClick={() => {
+                    setRoleSamplesOpen(false);
+                    handleAdminDepartmentChange("sales", "project");
+                    setProjectScopes((current) => ({ ...current, sales: "all" }));
+                  }}
+                >
+                  Open fresh requests in Sales
+                </button>
+                <p className="text-xs text-muted-foreground">
+                  Walkthrough enquiries have no Project or selected track. Checkpoint projects have
+                  explicitly simulated prior feasibility, no completed gate and only their
+                  entry-stage tasks active. Later tasks remain planned from the pinned revision.
+                </p>
+                <details className="text-xs">
+                  <summary className="cursor-pointer">Pending verification and source gaps</summary>
+                  <ul className="mt-2 list-disc space-y-1 pl-4">
+                    {portal.roleLifecyclePack.gaps.map((gap) => (
+                      <li key={gap}>{gap}</li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            )}
+          </div>
+        </Modal>
       )}
+      {assetCatalogOpen && testMembership && !testMembership.isClient && (
+        <SharedLifecycleWorkspace
+          scopeKey={testMembership.membershipId}
+          mode="assets"
+          onClose={() => setAssetCatalogOpen(false)}
+        />
+      )}
+      {assetCatalogOpen &&
+        !testMembership &&
+        (persona.kind === "admin" || persona.kind === "lead" || persona.kind === "member") && (
+          <ReusableAssetsWorkspace
+            assets={(portal.reusableAssetRevisions ?? []).filter(
+              (asset) =>
+                persona.kind === "admin" ||
+                leadProjects.some((p) => [p.id, p.reference].includes(asset.originProject)),
+            )}
+            uses={portal.projectAssetUses ?? []}
+            projects={(persona.kind === "admin" ? selectableProjects : leadProjects).map((p) => ({
+              id: p.reference,
+              title: p.title,
+            }))}
+            documents={scopedDocuments.map((d) => ({
+              id: d.id,
+              title: d.title,
+              revision: d.revision || "00",
+            }))}
+            inventory={(portal.inventory ?? []).map((i) => ({
+              id: i.id,
+              title: `${i.partNumber} · ${i.description}`,
+            }))}
+            actor={persona.person}
+            onPublish={async (asset) => {
+              const saved = await update((state) => ({
+                ...state,
+                reusableAssetRevisions: [...(state.reusableAssetRevisions ?? []), asset],
+              }));
+              if (!saved) throw new Error("Asset revision was not saved.");
+            }}
+            onLink={async (use) => {
+              const saved = await update((state) => ({
+                ...state,
+                projectAssetUses: linkReusableAsset(
+                  state.projectAssetUses ?? [],
+                  use,
+                  state.reusableAssetRevisions ?? [],
+                  state.records.filter((r) => r.type === "Project").map((p) => p.reference),
+                ),
+              }));
+              if (!saved) throw new Error("Asset use was not saved.");
+            }}
+            onClose={() => setAssetCatalogOpen(false)}
+          />
+        )}
       {assetLinkerProjectId && (
         <ProjectAssetLinkerModal
           projectId={assetLinkerProjectId}
@@ -5014,7 +8435,13 @@ function CommandCenter({
       {portal.demoLoaded && <DemoMarker />}
 
       <PageHeader
-        eyebrow={persona.kind === "admin" ? (departmentContext ? "Administrator context" : "Operational workspace") : `${persona.label} · active persona`}
+        eyebrow={
+          persona.kind === "admin"
+            ? departmentContext
+              ? "Administrator context"
+              : "Operational workspace"
+            : `${persona.label} · active persona`
+        }
         title="Command Center"
         description={
           departmentContext
@@ -5031,13 +8458,8 @@ function CommandCenter({
             {onOpenDecisionLog && (
               <Action onClick={onOpenDecisionLog} label="Official Decision Log" />
             )}
-            {onOpenLegalHub && (
-              <Action onClick={onOpenLegalHub} label="Legal & Letterhead Hub" />
-            )}
-            {onOpenDirectory && (
-              <Action onClick={onOpenDirectory} label="Company Directory" />
-            )}
-
+            {onOpenLegalHub && <Action onClick={onOpenLegalHub} label="Legal & Letterhead Hub" />}
+            {onOpenDirectory && <Action onClick={onOpenDirectory} label="Company Directory" />}
 
             <Action onClick={onOpenDraftHub} label="Auto-Draft Templates" />
             <Action onClick={onRunRfq} label="Run RFQ Project Cycle Test" />
@@ -5048,9 +8470,14 @@ function CommandCenter({
       {persona.kind !== "admin" && (
         <section className="ops-section flex flex-wrap items-center justify-between gap-3 border-steel/35 bg-accent/35 px-4 py-3">
           <div>
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-steel">Active persona · DEMO context</p>
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-steel">
+              Active persona · DEMO context
+            </p>
             <p className="mt-1 text-sm font-semibold">{persona.person}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Queues, owned records and human approval visibility are filtered for this persona. No account impersonation occurs.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Queues, owned records and human approval visibility are filtered for this persona. No
+              account impersonation occurs.
+            </p>
           </div>
           <Action label="Switch back to Admin" onClick={onReturnGlobal} />
         </section>
@@ -5060,11 +8487,7 @@ function CommandCenter({
       <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
           label="Today"
-          value={String(
-            taskRecords.filter(
-              (record) => taskLane(record,today)==="today",
-            ).length,
-          )}
+          value={String(taskRecords.filter((record) => taskLane(record, today) === "today").length)}
           detail="Checklist tasks"
           tone="steel"
         />
@@ -5080,11 +8503,7 @@ function CommandCenter({
         />
         <Metric
           label="Tomorrow"
-          value={String(
-            taskRecords.filter(
-              (record) => taskLane(record,today)==="todo",
-            ).length,
-          )}
+          value={String(taskRecords.filter((record) => taskLane(record, today) === "todo").length)}
           detail="Pending list"
           tone="warning"
         />
@@ -5111,7 +8530,9 @@ function CommandCenter({
             {portal.departments
               .filter(
                 (department) =>
-                  department.active && department.code.replace(/^DEMO-/, "").toUpperCase() !== "TST" && (!departmentContext || department.id === departmentContext),
+                  department.active &&
+                  department.code.replace(/^DEMO-/, "").toUpperCase() !== "TST" &&
+                  (!departmentContext || department.id === departmentContext),
               )
               .sort((a, b) => a.sortOrder - b.sortOrder)
               .map((department) => {
@@ -5153,7 +8574,20 @@ function CommandCenter({
           </div>
         </div>
         <aside className="ops-section bg-panel p-4">
-          {portal.departments.some(department => department.code.replace(/^DEMO-/, "").toUpperCase() === "TST") && <details className="mb-4 border-b border-border pb-4"><summary className="cursor-pointer text-sm font-semibold">Legacy TST records · ownership review</summary><p className="mt-2 text-xs text-muted-foreground">Retired department. Historical records, owners and IDs are preserved; no automatic reassignment to EMF, MMF or QA.</p><Action label="Review legacy TST records" onClick={() => onNavigate("tst")} /></details>}
+          {portal.departments.some(
+            (department) => department.code.replace(/^DEMO-/, "").toUpperCase() === "TST",
+          ) && (
+            <details className="mb-4 border-b border-border pb-4">
+              <summary className="cursor-pointer text-sm font-semibold">
+                Legacy TST records · ownership history
+              </summary>
+              <p className="mt-2 text-xs text-muted-foreground">
+                EOL Testing is an EMF-owned role. Historical TST records, owners and IDs retain
+                their original codes and links.
+              </p>
+              <Action label="Review legacy TST records" onClick={() => onNavigate("tst")} />
+            </details>
+          )}
 
           <p className="text-sm font-semibold">Quick actions</p>
           <div className="mt-3 grid gap-2">
@@ -5190,9 +8624,12 @@ function RfqCycleTest({
       <p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">
         TEST-RFQ-NORTHSTAR-042 · Interactive walkthrough · fictional data
       </p>
-      <h3 className="mt-2 text-xl font-semibold">Northstar Cargo EV Gateway · Fictional Test Program</h3>
+      <h3 className="mt-2 text-xl font-semibold">
+        Northstar Cargo EV Gateway · Fictional Test Program
+      </h3>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        Illustrative pilot volume under review. Commercial, engineering and prototype milestones shown for workflow testing.
+        Illustrative pilot volume under review. Commercial, engineering and prototype milestones
+        shown for workflow testing.
       </p>
       <ol className="mt-6 grid gap-2 sm:grid-cols-3">
         {rfqStages.map(([stage, stageTitle], index) => (
@@ -5206,17 +8643,30 @@ function RfqCycleTest({
         ))}
       </ol>
       <section className="mt-6 border border-border bg-panel p-5">
-        <p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">Current checkpoint</p>
-        <h4 className="mt-2 text-lg font-semibold">{label} · {title}</h4>
+        <p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">
+          Current checkpoint
+        </p>
+        <h4 className="mt-2 text-lg font-semibold">
+          {label} · {title}
+        </h4>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{detail}</p>
         <div className="mt-5 h-2 overflow-hidden rounded-full bg-secondary">
-          <div className="h-full bg-primary transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${((step + 1) / rfqStages.length) * 100}%` }} />
+          <div
+            className="h-full bg-primary transition-[width] duration-500 motion-reduce:transition-none"
+            style={{ width: `${((step + 1) / rfqStages.length) * 100}%` }}
+          />
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">{step + 1} of {rfqStages.length} gates shown</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {step + 1} of {rfqStages.length} gates shown
+        </p>
       </section>
       <div className="mt-6 flex flex-wrap justify-between gap-2">
         <Action label="Restart test" onClick={onReset} />
-        <Action label={complete ? "Stage 9 complete" : "Advance Stage Gate"} onClick={onAdvance} primary />
+        <Action
+          label={complete ? "Stage 9 complete" : "Advance Stage Gate"}
+          onClick={onAdvance}
+          primary
+        />
       </div>
     </Modal>
   );
@@ -5261,53 +8711,95 @@ function Ai4tLifecycleHub({
 }) {
   const [dossier, setDossier] = useState<(typeof ai4tDossier)[number] | null>(null);
   const [tab, setTab] = useState<"stages" | "feasibility" | "binder">(initialTab ?? "stages");
-  const activeProfile = projectDocumentProfiles[projectId] ?? projectDocumentProfiles["HLPL-AI4T-01"]!;
+  const activeProfile =
+    projectDocumentProfiles[projectId] ?? projectDocumentProfiles["HLPL-AI4T-01"]!;
   const current = ai4tStages[simulation.stage] ?? ai4tStages[0];
   const progress = Math.round(((simulation.stage + 1) / ai4tStages.length) * 100);
-  const accessibleDossier = persona.kind === "client"
-    ? ai4tDossier.filter(([, , owner]) => owner === "SAL" || owner === "TST" || owner === "FIN")
-    : (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
-      ? ai4tDossier.filter(([, , owner]) => owner === areaById(persona.departmentId ?? "home").short)
-      : ai4tDossier;
+  const accessibleDossier =
+    persona.kind === "client"
+      ? ai4tDossier.filter(([, , owner]) => owner === "SAL" || owner === "TST" || owner === "FIN")
+      : (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
+        ? ai4tDossier.filter(
+            ([, , owner]) => owner === areaById(persona.departmentId ?? "home").short,
+          )
+        : ai4tDossier;
   return (
     <Modal title={`${projectId} · End-to-End Lifecycle & Engineering Gate`} onClose={onClose} wide>
       <DemoMarker />
       <section className="ops-section overflow-hidden">
         <div className="ops-section-header flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-steel">Lifecycle & Gate Engine</p>
-            <h3 className="mt-1 text-base font-semibold">{projectId} · {activeProfile.name}</h3>
-            <p className="mt-1 text-xs text-muted-foreground">{activeProfile.customer} · {activeProfile.quantity} · {activeProfile.commercialValue}</p>
+            <p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-steel">
+              Lifecycle & Gate Engine
+            </p>
+            <h3 className="mt-1 text-base font-semibold">
+              {projectId} · {activeProfile.name}
+            </h3>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {activeProfile.customer} · {activeProfile.quantity} · {activeProfile.commercialValue}
+            </p>
           </div>
           <Status status={simulation.stage === ai4tStages.length - 1 ? "Released" : "In review"} />
         </div>
         <div className="p-4">
-          <div className="flex items-end justify-between gap-4"><div><p className="font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground">Overall Project Progress</p><p className="mt-1 text-2xl font-semibold">{progress}%</p></div><p className="max-w-md text-right text-sm font-medium">{current[0]} · {current[1]}</p></div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full bg-primary transition-[width] duration-500 motion-reduce:transition-none" style={{ width: `${progress}%` }} /></div>
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground">
+                Overall Project Progress
+              </p>
+              <p className="mt-1 text-2xl font-semibold">{progress}%</p>
+            </div>
+            <p className="max-w-md text-right text-sm font-medium">
+              {current[0]} · {current[1]}
+            </p>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full bg-primary transition-[width] duration-500 motion-reduce:transition-none"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">{current[2]}</p>
         </div>
       </section>
       <div className="mt-5 flex flex-wrap gap-2 border-b border-border pb-2">
-        <button onClick={() => setTab("stages")} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${tab === "stages" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>Lifecycle stages (1-9)</button>
-        <button onClick={() => setTab("feasibility")} className={`rounded-md px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 ${tab === "feasibility" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}><Lock className="size-3.5" /> Feasibility & Req Lock Gate (Stage 2-5)</button>
-        <button onClick={() => setTab("binder")} className={`rounded-md px-3 py-1.5 text-xs font-semibold ${tab === "binder" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}>Master dossier binder</button>
+        <button
+          onClick={() => setTab("stages")}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold ${tab === "stages" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}
+        >
+          Lifecycle stages (1-9)
+        </button>
+        <button
+          onClick={() => setTab("feasibility")}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 ${tab === "feasibility" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}
+        >
+          <Lock className="size-3.5" /> Feasibility & Req Lock Gate (Stage 2-5)
+        </button>
+        <button
+          onClick={() => setTab("binder")}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold ${tab === "binder" ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"}`}
+        >
+          Master dossier binder
+        </button>
       </div>
       {tab === "stages" && (
         <>
           {/* Interactive Playback Stepper & Page-by-Page Distributed View */}
           <div className="mt-4">
-            <Suspense fallback={<p role="status">Loading lifecycle…</p>}><ProjectLifecyclePlayerAndDetail
-              activeProjectId={projectId}
-              onSelectProject={(newId) => {
-                if (onSelectProject) onSelectProject(newId);
-              }}
-              currentStage={simulation.stage}
-              onJumpToStage={(stageIdx) => onJump(stageIdx)}
-              persona={persona}
-              onOpenPrintable={onOpenPrintable}
-              chronicles={chronicles}
-              onOpenChroniclesManager={onOpenChroniclesManager}
-            /></Suspense>
+            <Suspense fallback={<p role="status">Loading lifecycle…</p>}>
+              <ProjectLifecyclePlayerAndDetail
+                activeProjectId={projectId}
+                onSelectProject={(newId) => {
+                  if (onSelectProject) onSelectProject(newId);
+                }}
+                currentStage={simulation.stage}
+                onJumpToStage={(stageIdx) => onJump(stageIdx)}
+                persona={persona}
+                onOpenPrintable={onOpenPrintable}
+                chronicles={chronicles}
+                onOpenChroniclesManager={onOpenChroniclesManager}
+              />
+            </Suspense>
           </div>
 
           <div className="mt-6 border-t border-border pt-4">
@@ -5316,104 +8808,150 @@ function Ai4tLifecycleHub({
                 Automotive Stage Gate Interlocks & Verification Matrix
               </span>
               <span className="text-[11px] text-muted-foreground">
-                {persona.kind === "admin" ? "Admin Mode · Direct Jump Enabled" : "Strict Gate Interlocks Active"}
+                {persona.kind === "admin"
+                  ? "Admin Mode · Direct Jump Enabled"
+                  : "Strict Gate Interlocks Active"}
               </span>
             </div>
             <section className="grid gap-2 sm:grid-cols-3">
-        {ai4tStages.map(([stage, title], index) => {
-          const gateCheck = verifyStageTransition({
-            targetStageIndex: index,
-            currentStageIndex: simulation.stage,
-            projectId,
-            documents,
-            isDemo: true,
-          });
-          const isBlocked = !gateCheck.allowed;
-          const canJumpToStage = persona.kind === "admin";
-          const isSchematicPrereqMet = simulation.stage >= 3;
+              {ai4tStages.map(([stage, title], index) => {
+                const gateCheck = verifyStageTransition({
+                  targetStageIndex: index,
+                  currentStageIndex: simulation.stage,
+                  projectId,
+                  documents,
+                  isDemo: true,
+                });
+                const isBlocked = !gateCheck.allowed;
+                const canJumpToStage = persona.kind === "admin";
+                const isSchematicPrereqMet = simulation.stage >= 3;
 
-          return (
-            <div
-              key={stage}
-              role={canJumpToStage ? "button" : undefined}
-              tabIndex={canJumpToStage ? 0 : undefined}
-              onClick={() => {
-                if (!canJumpToStage) return;
-                if (isBlocked) {
-                  alert(`AUTOMOTIVE GATE INTERLOCK ACTIVE:\n\nCannot advance to ${stage}: ${title}.\n\n${gateCheck.reason}`);
-                  return;
-                }
-                onJump(index);
-              }}
-              className={`relative rounded-lg border p-3 text-left transition-colors ${
-                !canJumpToStage ? "cursor-default" : "cursor-pointer"
-              } ${
-                isBlocked
-                  ? "border-amber-500/40 bg-amber-500/5 opacity-80 cursor-not-allowed"
-                  : index === simulation.stage
-                    ? "border-primary bg-primary/10 font-bold"
-                    : index < simulation.stage
-                      ? "border-emerald-500/30 bg-panel hover:bg-secondary"
-                      : "border-border bg-card hover:bg-secondary"
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[10px] text-steel">{stage}</span>
-                {isBlocked ? (
-                  <span className="inline-flex items-center gap-0.5 rounded bg-amber-500/20 px-1.5 py-0.2 font-mono text-[9px] font-bold text-amber-600 dark:text-amber-400">
-                    <Lock className="size-2.5" /> Gated
-                  </span>
-                ) : index < simulation.stage ? (
-                  <span className="font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400">✓ Complete</span>
-                ) : index === simulation.stage ? (
-                  <span className="font-mono text-[10px] font-bold text-primary">In Progress</span>
-                ) : (
-                  <span className="font-mono text-[10px] text-muted-foreground">Upcoming</span>
-                )}
+                return (
+                  <div
+                    key={stage}
+                    role={canJumpToStage ? "button" : undefined}
+                    tabIndex={canJumpToStage ? 0 : undefined}
+                    onClick={() => {
+                      if (!canJumpToStage) return;
+                      if (isBlocked) {
+                        alert(
+                          `AUTOMOTIVE GATE INTERLOCK ACTIVE:\n\nCannot advance to ${stage}: ${title}.\n\n${gateCheck.reason}`,
+                        );
+                        return;
+                      }
+                      onJump(index);
+                    }}
+                    className={`relative rounded-lg border p-3 text-left transition-colors ${
+                      !canJumpToStage ? "cursor-default" : "cursor-pointer"
+                    } ${
+                      isBlocked
+                        ? "border-amber-500/40 bg-amber-500/5 opacity-80 cursor-not-allowed"
+                        : index === simulation.stage
+                          ? "border-primary bg-primary/10 font-bold"
+                          : index < simulation.stage
+                            ? "border-emerald-500/30 bg-panel hover:bg-secondary"
+                            : "border-border bg-card hover:bg-secondary"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[10px] text-steel">{stage}</span>
+                      {isBlocked ? (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-amber-500/20 px-1.5 py-0.2 font-mono text-[9px] font-bold text-amber-600 dark:text-amber-400">
+                          <Lock className="size-2.5" /> Gated
+                        </span>
+                      ) : index < simulation.stage ? (
+                        <span className="font-mono text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          ✓ Complete
+                        </span>
+                      ) : index === simulation.stage ? (
+                        <span className="font-mono text-[10px] font-bold text-primary">
+                          In Progress
+                        </span>
+                      ) : (
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          Upcoming
+                        </span>
+                      )}
+                    </div>
+                    <strong className="mt-1 block text-xs text-foreground">{title}</strong>
+                    <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                      {index === 4 || index === 6 ? (
+                        <span
+                          className={
+                            isSchematicPrereqMet
+                              ? "text-emerald-600 dark:text-emerald-400 font-semibold"
+                              : "text-amber-600 dark:text-amber-400 font-semibold"
+                          }
+                        >
+                          {isSchematicPrereqMet
+                            ? "✓ Prereq: SCH-01 Released"
+                            : "Prereq: Requires SCH-01 Release"}
+                        </span>
+                      ) : (
+                        <span>Prereq: Stage {Math.max(1, index)}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+          </div>
+          <div className="mt-5">
+            <FeasibilityAndHardwareKickoff
+              currentStageIndex={simulation.stage}
+              onAdvanceToStage={(stageIndex) => onJump(stageIndex)}
+              projectId={projectId}
+              modularConfig={modularConfig}
+              onKickoffComplete={onKickoffComplete}
+              readOnly={persona.kind === "client"}
+              onOpenDocumentView={(docId, title, dept) =>
+                onOpenPrintable({
+                  title: title.toUpperCase(),
+                  documentId: docId,
+                  department: dept,
+                  revision: "Rev 01",
+                  status: "Approved",
+                  project: projectId,
+                  stage: `Stage ${simulation.stage + 1}`,
+                })
+              }
+            />
+          </div>
+          <LifecycleDeliverables
+            documents={documents}
+            stage={current[0]}
+            onOpenDocument={onOpenDocument}
+          />
+          <section className="ops-section mt-5 overflow-hidden">
+            <div className="ops-section-header flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">
+                  Master dossier · {accessibleDossier.length} documents visible
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Role-filtered binder view. Controlled automotive document repository.
+                </p>
               </div>
-              <strong className="mt-1 block text-xs text-foreground">{title}</strong>
-              <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-                {index === 4 || index === 6 ? (
-                  <span className={isSchematicPrereqMet ? "text-emerald-600 dark:text-emerald-400 font-semibold" : "text-amber-600 dark:text-amber-400 font-semibold"}>
-                    {isSchematicPrereqMet ? "✓ Prereq: SCH-01 Released" : "Prereq: Requires SCH-01 Release"}
-                  </span>
-                ) : (
-                  <span>Prereq: Stage {Math.max(1, index)}</span>
-                )}
-              </div>
+              <BriefcaseBusiness className="size-4 text-steel" />
             </div>
-          );
-        })}
-      </section>
-      </div>
-      <div className="mt-5">
-        <FeasibilityAndHardwareKickoff
-          currentStageIndex={simulation.stage}
-          onAdvanceToStage={(stageIndex) => onJump(stageIndex)}
-          projectId={projectId}
-          modularConfig={modularConfig}
-          onKickoffComplete={onKickoffComplete}
-          readOnly={persona.kind === "client"}
-          onOpenDocumentView={(docId, title, dept) =>
-            onOpenPrintable({
-              title: title.toUpperCase(),
-              documentId: docId,
-              department: dept,
-              revision: "Rev 01",
-              status: "Approved",
-              project: projectId,
-              stage: `Stage ${simulation.stage + 1}`,
-            })
-          }
-        />
-      </div>
-      <LifecycleDeliverables documents={documents} stage={current[0]} onOpenDocument={onOpenDocument} />
-      <section className="ops-section mt-5 overflow-hidden">
-        <div className="ops-section-header flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">Master dossier · {accessibleDossier.length} documents visible</p><p className="text-xs text-muted-foreground">Role-filtered binder view. Controlled automotive document repository.</p></div><BriefcaseBusiness className="size-4 text-steel" /></div>
-        <div className="divide-y divide-border">
-          {accessibleDossier.map((document) => <button key={document[1]} onClick={() => setDossier(document)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary"><span className="min-w-0"><strong className="block text-sm">{document[0]}</strong><small className="font-mono text-[10px] text-muted-foreground">{document[1]} · {document[2]} · {document[3]}</small></span><ChevronRight className="size-4 self-center text-steel" /></button>)}
-        </div>
-      </section>
+            <div className="divide-y divide-border">
+              {accessibleDossier.map((document) => (
+                <button
+                  key={document[1]}
+                  onClick={() => setDossier(document)}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary"
+                >
+                  <span className="min-w-0">
+                    <strong className="block text-sm">{document[0]}</strong>
+                    <small className="font-mono text-[10px] text-muted-foreground">
+                      {document[1]} · {document[2]} · {document[3]}
+                    </small>
+                  </span>
+                  <ChevronRight className="size-4 self-center text-steel" />
+                </button>
+              ))}
+            </div>
+          </section>
         </>
       )}
       {tab === "feasibility" && (
@@ -5439,13 +8977,90 @@ function Ai4tLifecycleHub({
           />
         </div>
       )}
-      {tab === "binder" && <section className="ops-section mt-5 overflow-hidden">
-
-        <div className="ops-section-header flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">Master dossier · {accessibleDossier.length} documents visible</p><p className="text-xs text-muted-foreground">Original controlled documents within your access.</p></div><BriefcaseBusiness className="size-4 text-steel" /></div>
-        <div className="divide-y divide-border">{accessibleDossier.map((document) => <button key={document[1]} onClick={() => setDossier(document)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary"><span className="min-w-0"><strong className="block text-sm">{document[0]}</strong><small className="font-mono text-[10px] text-muted-foreground">{document[1]} · {document[2]} · {document[3]}</small></span><ChevronRight className="size-4 self-center text-steel" /></button>)}</div>
-      </section>}
-      {dossier && <section className="mt-5 rounded-lg border border-steel/35 bg-panel p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">Controlled Document Preview</p><h4 className="mt-1 text-sm font-semibold">{dossier[0]}</h4></div><Status status="Draft" /></div><div className="mt-4 grid gap-3 sm:grid-cols-3"><DocumentField label="Document ID" value={dossier[1]} /><DocumentField label="Project" value="HLPL-AI4T-01 · Operational Baseline" /><DocumentField label="Stage" value={dossier[3]} /><DocumentField label="Owner" value={`${dossier[2]} · department-owned`} /><DocumentField label="Revision" value="Rev 01 · Controlled Release" /><DocumentField label="Approval" value="Human approval required" /></div><div className="mt-4"><Action label="Open complete document" primary onClick={() => onOpenPrintable({ title: dossier[0].toUpperCase(), documentId: dossier[1], department: dossier[2], revision: "Rev 01", status: "Draft", project: "HLPL-AI4T-01", stage: dossier[3] })} /></div></section>}
-      <section className="mt-5 rounded-lg border border-border bg-panel p-4"><p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-muted-foreground">Stage Gate Audit Trail</p>{simulation.history.length ? <ol className="mt-2 space-y-1 text-xs text-muted-foreground">{simulation.history.slice(0, 8).map((entry, index) => <li key={`${entry}-${index}`}>{entry}</li>)}</ol> : <p className="mt-2 text-xs text-muted-foreground">No gate transitions recorded.</p>}</section>
+      {tab === "binder" && (
+        <section className="ops-section mt-5 overflow-hidden">
+          <div className="ops-section-header flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">
+                Master dossier · {accessibleDossier.length} documents visible
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Original controlled documents within your access.
+              </p>
+            </div>
+            <BriefcaseBusiness className="size-4 text-steel" />
+          </div>
+          <div className="divide-y divide-border">
+            {accessibleDossier.map((document) => (
+              <button
+                key={document[1]}
+                onClick={() => setDossier(document)}
+                className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5 text-left transition-colors hover:bg-secondary"
+              >
+                <span className="min-w-0">
+                  <strong className="block text-sm">{document[0]}</strong>
+                  <small className="font-mono text-[10px] text-muted-foreground">
+                    {document[1]} · {document[2]} · {document[3]}
+                  </small>
+                </span>
+                <ChevronRight className="size-4 self-center text-steel" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {dossier && (
+        <section className="mt-5 rounded-lg border border-steel/35 bg-panel p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">
+                Controlled Document Preview
+              </p>
+              <h4 className="mt-1 text-sm font-semibold">{dossier[0]}</h4>
+            </div>
+            <Status status="Draft" />
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <DocumentField label="Document ID" value={dossier[1]} />
+            <DocumentField label="Project" value="HLPL-AI4T-01 · Operational Baseline" />
+            <DocumentField label="Stage" value={dossier[3]} />
+            <DocumentField label="Owner" value={`${dossier[2]} · department-owned`} />
+            <DocumentField label="Revision" value="Rev 01 · Controlled Release" />
+            <DocumentField label="Approval" value="Human approval required" />
+          </div>
+          <div className="mt-4">
+            <Action
+              label="Open complete document"
+              primary
+              onClick={() =>
+                onOpenPrintable({
+                  title: dossier[0].toUpperCase(),
+                  documentId: dossier[1],
+                  department: dossier[2],
+                  revision: "Rev 01",
+                  status: "Draft",
+                  project: "HLPL-AI4T-01",
+                  stage: dossier[3],
+                })
+              }
+            />
+          </div>
+        </section>
+      )}
+      <section className="mt-5 rounded-lg border border-border bg-panel p-4">
+        <p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-muted-foreground">
+          Stage Gate Audit Trail
+        </p>
+        {simulation.history.length ? (
+          <ol className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {simulation.history.slice(0, 8).map((entry, index) => (
+              <li key={`${entry}-${index}`}>{entry}</li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-2 text-xs text-muted-foreground">No gate transitions recorded.</p>
+        )}
+      </section>
       <div className="mt-5 flex flex-wrap justify-between gap-2">
         {persona.kind === "client" ? (
           <div className="flex items-center gap-2 rounded-lg border border-steel/30 bg-muted/40 px-3.5 py-2 text-xs font-semibold text-muted-foreground">
@@ -5459,7 +9074,11 @@ function Ai4tLifecycleHub({
               <Action label="Run Automated Gate Verification" onClick={onRun} />
             </div>
             <Action
-              label={simulation.stage === ai4tStages.length - 1 ? "Lifecycle Complete" : "Advance to Next Stage"}
+              label={
+                simulation.stage === ai4tStages.length - 1
+                  ? "Lifecycle Complete"
+                  : "Advance to Next Stage"
+              }
               primary
               onClick={onAdvance}
             />
@@ -5477,7 +9096,9 @@ function Ai4tLifecycleHub({
               7: ["qa"],
               8: ["tst", "fin"],
             };
-            const canAdvance = persona.departmentId && stageOwnerMap[simulation.stage]?.includes(persona.departmentId);
+            const canAdvance =
+              persona.departmentId &&
+              stageOwnerMap[simulation.stage]?.includes(persona.departmentId);
             return (
               <div className="flex w-full items-center justify-between gap-2">
                 <span className="text-[11px] font-mono text-muted-foreground">
@@ -5485,7 +9106,11 @@ function Ai4tLifecycleHub({
                 </span>
                 {canAdvance ? (
                   <Action
-                    label={simulation.stage === ai4tStages.length - 1 ? "Lifecycle Complete" : "Advance to Next Stage"}
+                    label={
+                      simulation.stage === ai4tStages.length - 1
+                        ? "Lifecycle Complete"
+                        : "Advance to Next Stage"
+                    }
                     primary
                     onClick={onAdvance}
                   />
@@ -5515,7 +9140,9 @@ function SmartNextStep({
     (record) => record.reference === "HLPL/F/MKT/01" && record.status === "Approved",
   );
   const openCritical = records.find(
-    (record) => record.priority === "Critical" && !["Approved", "Released", "Archived"].includes(record.status),
+    (record) =>
+      record.priority === "Critical" &&
+      !["Approved", "Released", "Archived"].includes(record.status),
   );
   const suggestion = openCritical
     ? {
@@ -5527,12 +9154,14 @@ function SmartNextStep({
       ? {
           status: "Feasibility approved · Contract Review HLPL/F/MKT/01",
           next: "Auto-compile PRS-01 & issue quotation",
-          detail: "The approved feasibility record unblocks the frozen requirement baseline and commercial quotation.",
+          detail:
+            "The approved feasibility record unblocks the frozen requirement baseline and commercial quotation.",
         }
       : {
           status: "Lifecycle evidence is being assessed",
           next: "Review the next open controlled record",
-          detail: "The recommendation refreshes whenever lifecycle tasks or stage records are completed.",
+          detail:
+            "The recommendation refreshes whenever lifecycle tasks or stage records are completed.",
         };
   return (
     <section className="surface-card mt-6 overflow-hidden border border-steel/35 bg-panel">
@@ -5640,44 +9269,166 @@ function AutoDraftHub({
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedDraft, setSavedDraft] = useState<string | null>(null);
-  const scopedTemplates = autoDraftTemplates.filter(template => !departmentScope || departmentCode(template[2].split("/")[0]) === departmentScope);
+  const scopedTemplates = autoDraftTemplates.filter(
+    (template) => !departmentScope || departmentCode(template[2].split("/")[0]) === departmentScope,
+  );
   const [selected, setSelected] = useState<(typeof autoDraftTemplates)[number] | null>(null);
-  const [project, setProject] = useState(projects.some(p => p.reference === initialProject) ? initialProject! : projects[0]?.reference ?? "");
-  const projectRecord = projects.find(record => record.reference === project);
-  const profile = { customer: projectRecord?.fields["customer"] || "Customer not provided", quantity: projectRecord?.fields["quantity"] || "Quantity not provided", techSpec: projectRecord?.fields["scope"] || "Requirements not provided", commercialValue: projectRecord?.fields["commercialValue"] || "Commercial baseline not provided" };
+  const [project, setProject] = useState(
+    projects.some((p) => p.reference === initialProject)
+      ? initialProject!
+      : (projects[0]?.reference ?? ""),
+  );
+  const projectRecord = projects.find((record) => record.reference === project);
+  const profile = {
+    customer: projectRecord?.fields["customer"] || "Customer not provided",
+    quantity: projectRecord?.fields["quantity"] || "Quantity not provided",
+    techSpec: projectRecord?.fields["scope"] || "Requirements not provided",
+    commercialValue: projectRecord?.fields["commercialValue"] || "Commercial baseline not provided",
+  };
   return (
     <Modal title="Auto-Draft Document Templates" onClose={onClose} wide>
       <div className="rounded-lg border border-warning/35 bg-accent p-4 text-sm">
         <strong>UNISSUED DOCUMENT DRAFTS</strong>
-        <p className="mt-1 text-muted-foreground">Templates use the selected project record where information exists. Missing fields require owner confirmation. Drafts are not signed, approved or issued.</p>
+        <p className="mt-1 text-muted-foreground">
+          Templates use the selected project record where information exists. Missing fields require
+          owner confirmation. Drafts are not signed, approved or issued.
+        </p>
       </div>
       <div className="mt-5 grid gap-2 sm:grid-cols-2">
-        {scopedTemplates.length === 0 && <p className="text-sm text-muted-foreground">No controlled templates configured for this department. Contact the template owner to add approved formats.</p>}
+        {scopedTemplates.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No controlled templates configured for this department. Contact the template owner to
+            add approved formats.
+          </p>
+        )}
         {scopedTemplates.map((template) => (
-          <button key={template[1]} onClick={() => setSelected(template)} className="flex items-center gap-3 border border-border bg-card px-3 py-3 text-left transition-colors hover:border-steel/50 hover:bg-secondary">
+          <button
+            key={template[1]}
+            onClick={() => setSelected(template)}
+            className="flex items-center gap-3 border border-border bg-card px-3 py-3 text-left transition-colors hover:border-steel/50 hover:bg-secondary"
+          >
             <FileText className="size-4 shrink-0 text-steel" />
-            <span className="min-w-0 flex-1"><strong className="block text-sm">{template[0]}</strong><small className="font-mono text-[10px] text-muted-foreground">{template[1]} · {template[2]}</small></span>
+            <span className="min-w-0 flex-1">
+              <strong className="block text-sm">{template[0]}</strong>
+              <small className="font-mono text-[10px] text-muted-foreground">
+                {template[1]} · {template[2]}
+              </small>
+            </span>
             <ChevronRight className="size-4 text-muted-foreground" />
           </button>
         ))}
       </div>
-      <div className="mt-5 max-w-md"><CompactFilterSelect label="Project document baseline" shortLabel="Project" icon={Layers} value={project} onChange={value=>{setProject(value);setSavedDraft(null);}} options={projects.map(record=>({value:record.reference,label:`${record.reference} · ${record.title}`}))} /></div>
-      {readOnlyReason && <p role="status" className="mt-3 text-xs text-muted-foreground">{readOnlyReason}</p>}
-      {saveError && <p role="alert" className="mt-3 text-xs text-destructive">{saveError}</p>}
-      {savedDraft && <p role="status" className="mt-4 text-sm">Local draft saved: {savedDraft}. Available in department documents after refresh; not issued or cloud-synced.</p>}
+      <div className="mt-5 max-w-md">
+        <CompactFilterSelect
+          label="Project document baseline"
+          shortLabel="Project"
+          icon={Layers}
+          value={project}
+          onChange={(value) => {
+            setProject(value);
+            setSavedDraft(null);
+          }}
+          options={projects.map((record) => ({
+            value: record.reference,
+            label: `${record.reference} · ${record.title}`,
+          }))}
+        />
+      </div>
+      {readOnlyReason && (
+        <p role="status" className="mt-3 text-xs text-muted-foreground">
+          {readOnlyReason}
+        </p>
+      )}
+      {saveError && (
+        <p role="alert" className="mt-3 text-xs text-destructive">
+          {saveError}
+        </p>
+      )}
+      {savedDraft && (
+        <p role="status" className="mt-4 text-sm">
+          Local draft saved: {savedDraft}. Available in department documents after refresh; not
+          issued or cloud-synced.
+        </p>
+      )}
       {selected && (
         <section className="mt-5 border border-steel/35 bg-panel p-5">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-4">
-            <div><p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">Document control header · auto-drafted</p><h3 className="mt-1 text-lg font-semibold">{selected[0]}</h3></div>
+            <div>
+              <p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">
+                Document control header · auto-drafted
+              </p>
+              <h3 className="mt-1 text-lg font-semibold">{selected[0]}</h3>
+            </div>
             <Status status="Draft" />
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
-             <DocumentField label="Document ID" value={createPrintableDocument(selected, settings, project).documentId} /><DocumentField label="Project" value={`${project} · DEMO`} /><DocumentField label="Revision" value="00 · next draft revision" />
-            <DocumentField label="Classification" value="Internal · controlled draft" /><DocumentField label="Owner" value={`${selected[2]} · DEMO owner`} /><DocumentField label="Approval" value="Human approval required" />
+            <DocumentField
+              label="Document ID"
+              value={createPrintableDocument(selected, settings, project).documentId}
+            />
+            <DocumentField label="Project" value={`${project} · DEMO`} />
+            <DocumentField label="Revision" value="00 · next draft revision" />
+            <DocumentField label="Classification" value="Internal · controlled draft" />
+            <DocumentField label="Owner" value={`${selected[2]} · DEMO owner`} />
+            <DocumentField label="Approval" value="Human approval required" />
           </div>
-          <p className="mt-4 text-sm leading-6 text-muted-foreground">{profile.customer} · {profile.quantity} · {profile.techSpec} · {profile.commercialValue}. Validate all technical and commercial information before any controlled release.</p>
-          <label className="mt-4 block font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">Editable template content<textarea value={templateBodies[selected[0]] ?? templateBlueprint(selected[0], selected[1])} onChange={(event) => onTemplateBodiesChange({ ...templateBodies, [selected[0]]: event.target.value })} className="mt-2 min-h-28 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal normal-case text-foreground" /></label>
-          <div className="mt-5 flex flex-wrap gap-2"><Action label="Save local draft" primary onClick={async () => { if (saving) return; setSaveError(""); setSavedDraft(null); if (readOnlyReason) { setSaveError(readOnlyReason); return; } if (!projectRecord) { setSaveError("Choose an existing permitted project."); return; } setSaving(true); try { const draft = createPrintableDocument(selected, settings, project); const saved = await onSaveDraft(draft, templateBodies[selected[0]] ?? templateBlueprint(selected[0], selected[1])); if (saved) setSavedDraft(draft.documentId); else setSaveError("Draft was not saved; your preview remains open."); } catch (e) { setSaveError(e instanceof Error ? e.message : "Draft could not be saved."); } finally { setSaving(false); } }} /><Action label="Full Document Viewer & Print" onClick={() => { if (onOpenPrintable) onOpenPrintable(createPrintableDocument(selected, settings, project)); }} />{onOpenSettings && <Action label="Customize header & footer" onClick={onOpenSettings} />}</div>
+          <p className="mt-4 text-sm leading-6 text-muted-foreground">
+            {profile.customer} · {profile.quantity} · {profile.techSpec} · {profile.commercialValue}
+            . Validate all technical and commercial information before any controlled release.
+          </p>
+          <label className="mt-4 block font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
+            Editable template content
+            <textarea
+              value={templateBodies[selected[0]] ?? templateBlueprint(selected[0], selected[1])}
+              onChange={(event) =>
+                onTemplateBodiesChange({ ...templateBodies, [selected[0]]: event.target.value })
+              }
+              className="mt-2 min-h-28 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal normal-case text-foreground"
+            />
+          </label>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Action
+              label="Save local draft"
+              primary
+              onClick={async () => {
+                if (saving) return;
+                setSaveError("");
+                setSavedDraft(null);
+                if (readOnlyReason) {
+                  setSaveError(readOnlyReason);
+                  return;
+                }
+                if (!projectRecord) {
+                  setSaveError("Choose an existing permitted project.");
+                  return;
+                }
+                setSaving(true);
+                try {
+                  const draft = createPrintableDocument(selected, settings, project);
+                  const saved = await onSaveDraft(
+                    draft,
+                    templateBodies[selected[0]] ?? templateBlueprint(selected[0], selected[1]),
+                  );
+                  if (saved) setSavedDraft(draft.documentId);
+                  else setSaveError("Draft was not saved; your preview remains open.");
+                } catch (e) {
+                  setSaveError(e instanceof Error ? e.message : "Draft could not be saved.");
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            />
+            <Action
+              label="Full Document Viewer & Print"
+              onClick={() => {
+                if (onOpenPrintable)
+                  onOpenPrintable(createPrintableDocument(selected, settings, project));
+              }}
+            />
+            {onOpenSettings && (
+              <Action label="Customize header & footer" onClick={onOpenSettings} />
+            )}
+          </div>
         </section>
       )}
     </Modal>
@@ -5709,56 +9460,111 @@ function TodayChecklist({
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [expandAll, setExpandAll] = useState(false);
   const [inspectionOpen, setInspectionOpen] = useState(false);
-  const todayTasks = sortTaskRecords(tasks.filter(task => taskLane(task,today)==="today" || (taskLane(task,today)==="review" && (!task.fields["dueDate"] || task.fields["dueDate"]!<=today))),today);
-  const pendingTasks = sortTaskRecords(tasks.filter(task => taskLane(task,today)==="todo" || (taskLane(task,today)==="review" && task.fields["dueDate"]!>today)),today);
-  const completedTasks = tasks.filter(task => taskLane(task, today) === "completed");
+  const todayTasks = sortTaskRecords(
+    tasks.filter(
+      (task) =>
+        taskLane(task, today) === "today" ||
+        (taskLane(task, today) === "review" &&
+          (!task.fields["dueDate"] || task.fields["dueDate"]! <= today)),
+    ),
+    today,
+  );
+  const pendingTasks = sortTaskRecords(
+    tasks.filter(
+      (task) =>
+        taskLane(task, today) === "todo" ||
+        (taskLane(task, today) === "review" && task.fields["dueDate"]! > today),
+    ),
+    today,
+  );
+  const completedTasks = tasks.filter((task) => taskLane(task, today) === "completed");
   const move = (task: RecordItem, dueDate: string, action: string) =>
     onUpdateTask(task.id, { fields: { ...task.fields, dueDate } }, action);
   return (
     <section className="ops-section overflow-hidden">
       <div className="ops-section-header grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-        <div><p className="text-sm font-semibold">Task checklist</p><p className="text-xs text-muted-foreground">Compact operational rows · up to 23 visible per lane</p></div>
-        <div className="flex shrink-0 gap-2"><Action label={expandAll ? "Collapse all" : "Expand all"} onClick={() => setExpandAll((value) => !value)} /><Action label="Open expanded modal" onClick={() => setInspectionOpen(true)} /></div>
+        <div>
+          <p className="text-sm font-semibold">Task checklist</p>
+          <p className="text-xs text-muted-foreground">
+            Compact operational rows · up to 23 visible per lane
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Action
+            label={expandAll ? "Collapse all" : "Expand all"}
+            onClick={() => setExpandAll((value) => !value)}
+          />
+          <Action label="Open expanded modal" onClick={() => setInspectionOpen(true)} />
+        </div>
       </div>
-    <div className="grid gap-6 p-4 lg:grid-cols-2">
-      <ChecklistLane
-        title="Today"
-        description="Short department-wise checklist"
-        tasks={todayTasks}
-        departments={departments}
-        onDrop={() => {
-          const task = tasks.find((item) => item.id === draggedId);
-          if (task && taskLane(task, today) !== "review") move(task, today, "Task reprioritized to today");
-          setDraggedId(null);
-        }}
-        onDragStart={setDraggedId}
-        onDone={(task) => onUpdateTask(task.id, { status: "Released" }, "Task marked done")}
-        onMove={(task) => move(task, tomorrow, "Task moved to pending / tomorrow")}
-        onOpenProject={onOpenProject}
-        onOpenAssignee={onOpenAssignee}
-        expandAll={expandAll}
-      />
-      <ChecklistLane
-        title="Tomorrow / Planned"
-        description="Tomorrow’s tasks; drag back to today to reprioritize"
-        tasks={pendingTasks}
-        departments={departments}
-        onDrop={() => {
-          const task = tasks.find((item) => item.id === draggedId);
-          if (task && taskLane(task, today) !== "review") move(task, tomorrow, "Task moved to planned / tomorrow");
-          setDraggedId(null);
-        }}
-        onDragStart={setDraggedId}
-        onDone={(task) => onUpdateTask(task.id, { status: "Released" }, "Task marked done")}
-        onMove={(task) => move(task, today, "Task reprioritized to today")}
-        onOpenProject={onOpenProject}
-        onOpenAssignee={onOpenAssignee}
-        expandAll={expandAll}
-      />
-
-    </div>
-    <details className="mx-4 mb-4 rounded-lg border border-border/70"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold">Completed ({completedTasks.length})</summary><div>{completedTasks.map(task=><TaskCard key={task.id} task={task} department={departments.find(d=>d.id===task.departmentId)} onDragStart={()=>{}} onDone={()=>{}} onMove={()=>{}} onOpenProject={onOpenProject} onOpenAssignee={onOpenAssignee} expanded={false}/>)}</div></details>
-    {inspectionOpen && <TaskInspectionModal tasks={[...todayTasks, ...pendingTasks]} departments={departments} onClose={() => setInspectionOpen(false)} onDone={(task) => onUpdateTask(task.id, { status: "Released" }, "Task marked done from inspection")} />}
+      <div className="grid gap-6 p-4 lg:grid-cols-2">
+        <ChecklistLane
+          title="Today"
+          description="Short department-wise checklist"
+          tasks={todayTasks}
+          departments={departments}
+          onDrop={() => {
+            const task = tasks.find((item) => item.id === draggedId);
+            if (task && taskLane(task, today) !== "review")
+              move(task, today, "Task reprioritized to today");
+            setDraggedId(null);
+          }}
+          onDragStart={setDraggedId}
+          onDone={(task) => onUpdateTask(task.id, { status: "Released" }, "Task marked done")}
+          onMove={(task) => move(task, tomorrow, "Task moved to pending / tomorrow")}
+          onOpenProject={onOpenProject}
+          onOpenAssignee={onOpenAssignee}
+          expandAll={expandAll}
+        />
+        <ChecklistLane
+          title="Tomorrow / Planned"
+          description="Tomorrow’s tasks; drag back to today to reprioritize"
+          tasks={pendingTasks}
+          departments={departments}
+          onDrop={() => {
+            const task = tasks.find((item) => item.id === draggedId);
+            if (task && taskLane(task, today) !== "review")
+              move(task, tomorrow, "Task moved to planned / tomorrow");
+            setDraggedId(null);
+          }}
+          onDragStart={setDraggedId}
+          onDone={(task) => onUpdateTask(task.id, { status: "Released" }, "Task marked done")}
+          onMove={(task) => move(task, today, "Task reprioritized to today")}
+          onOpenProject={onOpenProject}
+          onOpenAssignee={onOpenAssignee}
+          expandAll={expandAll}
+        />
+      </div>
+      <details className="mx-4 mb-4 rounded-lg border border-border/70">
+        <summary className="cursor-pointer px-3 py-2 text-xs font-semibold">
+          Completed ({completedTasks.length})
+        </summary>
+        <div>
+          {completedTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              department={departments.find((d) => d.id === task.departmentId)}
+              onDragStart={() => {}}
+              onDone={() => {}}
+              onMove={() => {}}
+              onOpenProject={onOpenProject}
+              onOpenAssignee={onOpenAssignee}
+              expanded={false}
+            />
+          ))}
+        </div>
+      </details>
+      {inspectionOpen && (
+        <TaskInspectionModal
+          tasks={[...todayTasks, ...pendingTasks]}
+          departments={departments}
+          onClose={() => setInspectionOpen(false)}
+          onDone={(task) =>
+            onUpdateTask(task.id, { status: "Released" }, "Task marked done from inspection")
+          }
+        />
+      )}
     </section>
   );
 }
@@ -5846,59 +9652,167 @@ function TaskCard({
   const assignee = task.fields["assignee"] ?? "Unassigned";
   return (
     <article
-      draggable={task.status !== "In review" && task.status !== "Approved" && task.status !== "Released"}
+      draggable={
+        task.status !== "In review" && task.status !== "Approved" && task.status !== "Released"
+      }
       onDragStart={() => onDragStart(task.id)}
       className="border-b border-border last:border-0"
     >
-      <div className="grid cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 px-3 py-2.5 transition-colors hover:bg-secondary/70" onClick={() => setOpen((value) => !value)}>
-        <span className="rounded border border-steel/35 bg-steel/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-steel">{department?.code.replace("DEMO-", "") ?? "—"}</span>
-        <span className={`size-2 rounded-full ${task.priority === "Critical" ? "bg-danger" : task.priority === "High" ? "bg-warning" : "bg-steel"}`} />
-        <p className="truncate text-sm font-medium">{task.title}{task.status==="In review"&&<span className="ml-2 text-[10px] text-warning">Awaiting approval</span>}{!["Released","Approved"].includes(task.status)&&isTaskOverdue(task)&&<span className="ml-2 text-[10px] text-danger">Overdue</span>}</p>
-        <span className="grid size-6 place-items-center rounded-full border border-border bg-panel font-mono text-[9px] text-muted-foreground" title={assignee}>{assignee.split(" ").map((part) => part[0]).join("").slice(0, 2)}</span>
-        <span className="hidden font-mono text-[10px] text-muted-foreground sm:block">{task.fields["dueDate"] || "Unscheduled"}</span>
-        <div className="flex items-center gap-1"><button disabled={task.status === "In review" || task.status === "Approved" || task.status === "Released"} title={task.status === "In review" ? "Complete through the designated approval" : "Mark done"} aria-label={`Mark ${task.title} done`} onClick={(event) => { event.stopPropagation(); onDone(task); }} className="grid size-7 place-items-center rounded border border-moss/35 text-moss hover:bg-accent"><Check className="size-3.5" /></button><ChevronRight className={`size-4 text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`} /></div>
-      </div>
-      {open && <div className="task-disclosure grid px-4 pb-4"><div className="min-h-0 overflow-hidden border-l-2 border-steel/35 pl-3">
-      <p className="text-sm leading-6 text-muted-foreground">{task.notes || "No further task description recorded."}</p>
-      <p className="mt-2 text-xs font-medium text-steel">Next action: Completing this task enables the next unblocked lifecycle handoff.</p>
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2 text-xs">
-        <button
-          disabled={!projectId}
-          onClick={() => projectId && onOpenProject(projectId)}
-          className="text-left font-semibold text-steel transition-colors hover:text-primary disabled:text-muted-foreground"
+      <div
+        className="grid cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 px-3 py-2.5 transition-colors hover:bg-secondary/70"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="rounded border border-steel/35 bg-steel/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-steel">
+          {department?.code.replace("DEMO-", "") ?? "—"}
+        </span>
+        <span
+          className={`size-2 rounded-full ${task.priority === "Critical" ? "bg-danger" : task.priority === "High" ? "bg-warning" : "bg-steel"}`}
+        />
+        <p className="truncate text-sm font-medium">
+          {task.title}
+          {task.status === "In review" && (
+            <span className="ml-2 text-[10px] text-warning">Awaiting approval</span>
+          )}
+          {!["Released", "Approved"].includes(task.status) && isTaskOverdue(task) && (
+            <span className="ml-2 text-[10px] text-danger">Overdue</span>
+          )}
+        </p>
+        <span
+          className="grid size-6 place-items-center rounded-full border border-border bg-panel font-mono text-[9px] text-muted-foreground"
+          title={assignee}
         >
-          Project: {projectLabel}
-        </button>
-        <button
-          disabled={assignee === "Unassigned"}
-          onClick={() => assignee !== "Unassigned" && onOpenAssignee(assignee)}
-          className="text-left font-semibold text-steel transition-colors hover:text-primary disabled:text-muted-foreground"
-        >
-          Assignee: {assignee}
-        </button>
+          {assignee
+            .split(" ")
+            .map((part) => part[0])
+            .join("")
+            .slice(0, 2)}
+        </span>
+        <span className="hidden font-mono text-[10px] text-muted-foreground sm:block">
+          {task.fields["dueDate"] || "Unscheduled"}
+        </span>
+        <div className="flex items-center gap-1">
+          <button
+            disabled={
+              task.status === "In review" ||
+              task.status === "Approved" ||
+              task.status === "Released"
+            }
+            title={
+              task.status === "In review" ? "Complete through the designated approval" : "Mark done"
+            }
+            aria-label={`Mark ${task.title} done`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDone(task);
+            }}
+            className="grid size-7 place-items-center rounded border border-moss/35 text-moss hover:bg-accent"
+          >
+            <Check className="size-3.5" />
+          </button>
+          <ChevronRight
+            className={`size-4 text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+          />
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {task.status !== "In review" && task.status !== "Approved" && task.status !== "Released" && <Action onClick={() => onDone(task)} label="Mark done" />}
-        {task.status !== "In review" && task.status !== "Approved" && task.status !== "Released" && <Action
-          onClick={() => onMove(task)}
-          label={
-            task.fields["dueDate"] === businessDate()
-              ? "Move to Pending / Tomorrow"
-              : "Move to Today"
-          }
-        />}
-      </div></div></div>}
+      {open && (
+        <div className="task-disclosure grid px-4 pb-4">
+          <div className="min-h-0 overflow-hidden border-l-2 border-steel/35 pl-3">
+            <p className="text-sm leading-6 text-muted-foreground">
+              {task.notes || "No further task description recorded."}
+            </p>
+            <p className="mt-2 text-xs font-medium text-steel">
+              Next action: Completing this task enables the next unblocked lifecycle handoff.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2 text-xs">
+              <button
+                disabled={!projectId}
+                onClick={() => projectId && onOpenProject(projectId)}
+                className="text-left font-semibold text-steel transition-colors hover:text-primary disabled:text-muted-foreground"
+              >
+                Project: {projectLabel}
+              </button>
+              <button
+                disabled={assignee === "Unassigned"}
+                onClick={() => assignee !== "Unassigned" && onOpenAssignee(assignee)}
+                className="text-left font-semibold text-steel transition-colors hover:text-primary disabled:text-muted-foreground"
+              >
+                Assignee: {assignee}
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {task.status !== "In review" &&
+                task.status !== "Approved" &&
+                task.status !== "Released" && (
+                  <Action onClick={() => onDone(task)} label="Mark done" />
+                )}
+              {task.status !== "In review" &&
+                task.status !== "Approved" &&
+                task.status !== "Released" && (
+                  <Action
+                    onClick={() => onMove(task)}
+                    label={
+                      task.fields["dueDate"] === businessDate()
+                        ? "Move to Pending / Tomorrow"
+                        : "Move to Today"
+                    }
+                  />
+                )}
+            </div>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
 
-function TaskInspectionModal({ tasks, departments, onClose, onDone }: { tasks: RecordItem[]; departments: Department[]; onClose: () => void; onDone: (task: RecordItem) => void }) {
-  return <Modal title="Expanded task inspection" onClose={onClose} wide><div className="space-y-3">{tasks.map((task) => <article key={task.id} className="border border-border bg-panel p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-mono text-[10px] text-steel">{departments.find((item) => item.id === task.departmentId)?.code ?? "—"} · {task.reference}</p><h3 className="mt-1 font-semibold">{task.title}</h3></div><Status status={task.status} /></div><p className="mt-2 text-sm text-muted-foreground">{task.notes || "No further description recorded."}</p><p className="mt-3 text-xs font-medium text-steel">Next action: Completion unblocks the next controlled lifecycle handoff.</p><div className="mt-4">{task.status!=="In review"&&<Action label="Mark done" onClick={() => onDone(task)} />}</div></article>)}</div></Modal>;
+function TaskInspectionModal({
+  tasks,
+  departments,
+  onClose,
+  onDone,
+}: {
+  tasks: RecordItem[];
+  departments: Department[];
+  onClose: () => void;
+  onDone: (task: RecordItem) => void;
+}) {
+  return (
+    <Modal title="Expanded task inspection" onClose={onClose} wide>
+      <div className="space-y-3">
+        {tasks.map((task) => (
+          <article key={task.id} className="border border-border bg-panel p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-mono text-[10px] text-steel">
+                  {departments.find((item) => item.id === task.departmentId)?.code ?? "—"} ·{" "}
+                  {task.reference}
+                </p>
+                <h3 className="mt-1 font-semibold">{task.title}</h3>
+              </div>
+              <Status status={task.status} />
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {task.notes || "No further description recorded."}
+            </p>
+            <p className="mt-3 text-xs font-medium text-steel">
+              Next action: Completion unblocks the next controlled lifecycle handoff.
+            </p>
+            <div className="mt-4">
+              {task.status !== "In review" && (
+                <Action label="Mark done" onClick={() => onDone(task)} />
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </Modal>
+  );
 }
 function fallbackProjectRecord(projectId: string, records: RecordItem[]): RecordItem {
-  const found = records.find(
-    (r) => r.type === "Project" && (r.reference === projectId || r.id === projectId),
-  ) ?? records.find((r) => r.type === "Project");
+  const found =
+    records.find(
+      (r) => r.type === "Project" && (r.reference === projectId || r.id === projectId),
+    ) ?? records.find((r) => r.type === "Project");
 
   if (found) return found;
 
@@ -5957,11 +9871,17 @@ function ProjectDetail({
   selectedProjectId?: string;
 }) {
   const [tab, setTab] = useState<"shared" | "dept" | "client" | "records">("shared");
-  const activeProjectKey = project.fields?.["projectId"] || project.reference || selectedProjectId || "HLPL-AI4T-01";
+  const activeProjectKey =
+    project.fields?.["projectId"] || project.reference || selectedProjectId || "HLPL-AI4T-01";
   const profile = projectDocumentProfiles[activeProjectKey] ?? {
-    name: project.title, customer: project.fields["customer"] || "Not recorded", contact: "Not recorded",
-    quantity: project.fields["quantity"] || "Not recorded", techSpec: project.fields["scope"] || "Requirements not yet recorded",
-    commercialValue: "Not recorded", environmental: "Not recorded", compliance: "Not yet verified",
+    name: project.title,
+    customer: project.fields["customer"] || "Not recorded",
+    contact: "Not recorded",
+    quantity: project.fields["quantity"] || "Not recorded",
+    techSpec: project.fields["scope"] || "Requirements not yet recorded",
+    commercialValue: "Not recorded",
+    environmental: "Not recorded",
+    compliance: "Not yet verified",
   };
 
   const analysisMap: Record<string, DepartmentAnalysisEntry> = useMemo(() => {
@@ -6010,7 +9930,9 @@ function ProjectDetail({
 
   const saveDeptAnalysis = () => {
     if (!canEditSelectedDept) {
-      alert(`Unauthorized: Remarks for ${selectedDeptCode} can only be saved by the ${selectedDeptCode} Department Lead or Executive Admin.`);
+      alert(
+        `Unauthorized: Remarks for ${selectedDeptCode} can only be saved by the ${selectedDeptCode} Department Lead or Executive Admin.`,
+      );
       return;
     }
     onUpdate((state) => ({
@@ -6018,7 +9940,8 @@ function ProjectDetail({
       projectAnalysis: {
         ...(state.projectAnalysis ?? {}),
         [activeProjectKey]: {
-          ...(state.projectAnalysis?.[activeProjectKey] ?? defaultProjectAnalysis(activeProjectKey)),
+          ...(state.projectAnalysis?.[activeProjectKey] ??
+            defaultProjectAnalysis(activeProjectKey)),
           [selectedDeptCode]: {
             ...deptDraft,
             lastUpdated: new Date().toISOString().slice(0, 16).replace("T", " "),
@@ -6030,14 +9953,17 @@ function ProjectDetail({
       "Project department analysis updated",
       `${selectedDeptCode} updated internal and client remarks for ${activeProjectKey}`,
     );
-    setSaveNotice(`✓ ${selectedDeptCode} analysis and remarks saved. Synchronized to Page 1 shared view and Client Preview.`);
+    setSaveNotice(
+      `✓ ${selectedDeptCode} analysis and remarks saved. Synchronized to Page 1 shared view and Client Preview.`,
+    );
     window.setTimeout(() => setSaveNotice(null), 3500);
   };
 
   const clientShareToken = `cl_${activeProjectKey.toLowerCase().replace(/[^a-z0-9]/g, "")}_auth8f9a2b`;
-  const shareUrl = typeof window !== "undefined"
-    ? `${window.location.origin}/client-preview/${activeProjectKey}?token=${clientShareToken}&view=client`
-    : `https://portal.XYZ Pvt Ltd.com/shared/project/${activeProjectKey}?token=${clientShareToken}&view=client`;
+  const shareUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/client-preview/${activeProjectKey}?token=${clientShareToken}&view=client`
+      : `https://portal.XYZ Pvt Ltd.com/shared/project/${activeProjectKey}?token=${clientShareToken}&view=client`;
 
   const copyShareLink = async () => {
     try {
@@ -6046,7 +9972,10 @@ function ProjectDetail({
       }
       setCopyNotice(true);
       window.setTimeout(() => setCopyNotice(false), 3000);
-      onLog("Client share link copied", `Shareable link for ${activeProjectKey} copied to clipboard`);
+      onLog(
+        "Client share link copied",
+        `Shareable link for ${activeProjectKey} copied to clipboard`,
+      );
     } catch {
       setCopyNotice(true);
       window.setTimeout(() => setCopyNotice(false), 3000);
@@ -6055,11 +9984,20 @@ function ProjectDetail({
 
   const allEntries = useMemo(() => Object.values(analysisMap), [analysisMap]);
   const avgProgress = useMemo(
-    () => Math.round(allEntries.reduce((acc, curr) => acc + (curr.progress || 0), 0) / (allEntries.length || 1)),
+    () =>
+      Math.round(
+        allEntries.reduce((acc, curr) => acc + (curr.progress || 0), 0) / (allEntries.length || 1),
+      ),
     [allEntries],
   );
-  const completedCount = useMemo(() => allEntries.filter((e) => e.status === "Completed").length, [allEntries]);
-  const onTrackCount = useMemo(() => allEntries.filter((e) => e.status === "On Track").length, [allEntries]);
+  const completedCount = useMemo(
+    () => allEntries.filter((e) => e.status === "Completed").length,
+    [allEntries],
+  );
+  const onTrackCount = useMemo(
+    () => allEntries.filter((e) => e.status === "On Track").length,
+    [allEntries],
+  );
   const attentionCount = useMemo(
     () => allEntries.filter((e) => e.status === "Needs Attention" || e.status === "At Risk").length,
     [allEntries],
@@ -6096,14 +10034,16 @@ function ProjectDetail({
         document.type?.includes(activeProjectKey.replace("HLPL-", "")),
     )
     .filter((document) =>
-      canDepartmentAccessDocument(
-        document,
-        persona,
-        selectedDeptCode.toLowerCase()
-      )
+      canDepartmentAccessDocument(document, persona, selectedDeptCode.toLowerCase()),
     );
 
-  const deptCodes = ["SAL", "EHW", "FW", "SW", "MECH", "PUR", "QA", "EMF", "MMF", "TST", "FIN", "SIT", "HR"];
+  const deptCodes = [
+    ...new Set(
+      portal.departments
+        .filter((department) => department.active)
+        .map((department) => canonicalDepartmentCode(department.code.replace(/^DEMO-/, ""))),
+    ),
+  ].filter((code) => Boolean(analysisMap[code]));
 
   return (
     <div className="space-y-6">
@@ -6117,7 +10057,9 @@ function ProjectDetail({
             Back to Command Center
           </button>
           <span className="text-muted-foreground/40">/</span>
-          <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">Projects</span>
+          <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            Projects
+          </span>
           <span className="text-muted-foreground/40">/</span>
           <span className="font-mono text-xs font-bold text-foreground">{activeProjectKey}</span>
         </div>
@@ -6130,7 +10072,13 @@ function ProjectDetail({
               onChange={(e) => onSelectProject(e.target.value)}
               className="h-8 rounded border border-border bg-background px-2.5 text-xs font-semibold"
             >
-              {records.filter(record => record.type === "Project").map(record => <option key={record.id} value={record.reference}>{record.reference} · {record.title}</option>)}
+              {records
+                .filter((record) => record.type === "Project")
+                .map((record) => (
+                  <option key={record.id} value={record.reference}>
+                    {record.reference} · {record.title}
+                  </option>
+                ))}
             </select>
           </div>
         )}
@@ -6148,7 +10096,9 @@ function ProjectDetail({
                 {profile.customer}
               </span>
               <span className="rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase">
-                {project.fields["lifecycleStage"] || project.fields["currentStage"] || "Stage not recorded"}
+                {project.fields["lifecycleStage"] ||
+                  project.fields["currentStage"] ||
+                  "Stage not recorded"}
               </span>
             </div>
             <h2 className="mt-2 text-lg font-bold tracking-tight text-foreground md:text-xl">
@@ -6161,11 +10111,15 @@ function ProjectDetail({
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="rounded border border-border bg-panel px-3 py-2 text-right">
-              <p className="font-mono text-[10px] uppercase text-muted-foreground">Planned Volume</p>
+              <p className="font-mono text-[10px] uppercase text-muted-foreground">
+                Planned Volume
+              </p>
               <p className="text-xs font-bold text-foreground">{profile.quantity}</p>
             </div>
             <div className="rounded border border-border bg-panel px-3 py-2 text-right">
-              <p className="font-mono text-[10px] uppercase text-muted-foreground">Contract Value</p>
+              <p className="font-mono text-[10px] uppercase text-muted-foreground">
+                Contract Value
+              </p>
               <p className="text-xs font-bold text-foreground">{profile.commercialValue}</p>
             </div>
           </div>
@@ -6236,11 +10190,15 @@ function ProjectDetail({
                   All-in-One Shared Analysis & Cross-Department Matrix (Page 1 View)
                 </h3>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Common view shared across all 11 departments. Tracks synchronized engineering progress, deliverables, company-confidential internal remarks, and client-facing status.
+                  Common view shared across all 11 departments. Tracks synchronized engineering
+                  progress, deliverables, company-confidential internal remarks, and client-facing
+                  status.
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-xs font-bold text-primary">{avgProgress}% Overall Progress</span>
+                <span className="font-mono text-xs font-bold text-primary">
+                  {avgProgress}% Overall Progress
+                </span>
               </div>
             </div>
 
@@ -6274,7 +10232,10 @@ function ProjectDetail({
 
               <div className="rounded border border-border bg-card p-3">
                 <p className="text-[11px] text-muted-foreground">Current Gate</p>
-                <p className="mt-1 text-xs font-bold text-foreground truncate" title="Stage 8 TAC & ARAI">
+                <p
+                  className="mt-1 text-xs font-bold text-foreground truncate"
+                  title="Stage 8 TAC & ARAI"
+                >
                   Stage 8 TAC
                 </p>
                 <p className="text-[10px] text-muted-foreground">Pre-series mass run</p>
@@ -6287,7 +10248,21 @@ function ProjectDetail({
             projectId={activeProjectKey}
             activeRev={activeRev}
             onRevChange={setActiveRev}
-            onOpenDocument={onOpenDocument ? (id) => onOpenDocument({ id, title: id, url: `/documents/${id}`, type: id, revision: activeRev, lifecycle: "Approved", departmentId: "ehw", classification: "Internal" }) : undefined}
+            onOpenDocument={
+              onOpenDocument
+                ? (id) =>
+                    onOpenDocument({
+                      id,
+                      title: id,
+                      url: `/documents/${id}`,
+                      type: id,
+                      revision: activeRev,
+                      lifecycle: "Approved",
+                      departmentId: "ehw",
+                      classification: "Internal",
+                    })
+                : undefined
+            }
           />
 
           {/* Search & Filter Controls */}
@@ -6346,8 +10321,8 @@ function ProjectDetail({
                         entry.status === "Completed"
                           ? "bg-blue-500/10 text-blue-500 border border-blue-500/20"
                           : entry.status === "On Track"
-                          ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-                          : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                            ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-500 border border-amber-500/20"
                       }`}
                     >
                       {entry.status}
@@ -6366,8 +10341,8 @@ function ProjectDetail({
                         entry.status === "Completed"
                           ? "bg-blue-500"
                           : entry.status === "Needs Attention"
-                          ? "bg-amber-500"
-                          : "bg-primary"
+                            ? "bg-amber-500"
+                            : "bg-primary"
                       }`}
                       style={{ width: `${entry.progress}%` }}
                     />
@@ -6386,7 +10361,9 @@ function ProjectDetail({
                   </div>
                   <div>
                     <span className="text-muted-foreground">Controlled Doc:</span>{" "}
-                    <span className="font-mono font-medium text-foreground">{entry.keyDocumentId}</span>
+                    <span className="font-mono font-medium text-foreground">
+                      {entry.keyDocumentId}
+                    </span>
                   </div>
                 </div>
 
@@ -6399,7 +10376,9 @@ function ProjectDetail({
                         <Lock className="size-3" />
                         Internal Remarks · Company-Confidential
                       </span>
-                      <span className="text-[10px] text-muted-foreground">Page 1 Internal Only</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        Page 1 Internal Only
+                      </span>
                     </div>
                     <p className="text-xs text-foreground leading-relaxed pt-1">
                       {entry.internalRemarks}
@@ -6413,7 +10392,9 @@ function ProjectDetail({
                         <Globe className="size-3" />
                         Client's Remarks · Shared OEM Status
                       </span>
-                      <span className="text-[10px] text-muted-foreground">Shared via Client Link</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        Shared via Client Link
+                      </span>
                     </div>
                     <p className="text-xs text-foreground leading-relaxed pt-1">
                       {entry.clientRemarks}
@@ -6446,7 +10427,9 @@ function ProjectDetail({
           <div className="rounded-lg border border-border/60 bg-panel/50 p-3.5 text-xs text-muted-foreground flex items-center gap-2">
             <Sparkles className="size-4 text-primary shrink-0" />
             <span>
-              <strong>Symmetrical Project Update Active:</strong> Every department sees this shared Page 1 view. Modifications made in Department Focus immediately update this common overview across the organization.
+              <strong>Symmetrical Project Update Active:</strong> Every department sees this shared
+              Page 1 view. Modifications made in Department Focus immediately update this common
+              overview across the organization.
             </span>
           </div>
         </div>
@@ -6461,7 +10444,8 @@ function ProjectDetail({
               Department Focus & Editable Engineering Workspace
             </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Select your department below to update active deliverables, revise company-confidential internal remarks, and set client-facing status summaries.
+              Select your department below to update active deliverables, revise
+              company-confidential internal remarks, and set client-facing status summaries.
             </p>
 
             {/* Department Selector Pills */}
@@ -6555,10 +10539,18 @@ function ProjectDetail({
                   Program Baseline Specifications
                 </p>
                 <div className="space-y-1 text-muted-foreground">
-                  <p><strong>Customer:</strong> {profile.customer}</p>
-                  <p><strong>Vehicle Model:</strong> Tata Ace EV / Commercial Gateway</p>
-                  <p><strong>Operating Range:</strong> {profile.environmental}</p>
-                  <p><strong>Compliance Standard:</strong> {profile.compliance}</p>
+                  <p>
+                    <strong>Customer:</strong> {profile.customer}
+                  </p>
+                  <p>
+                    <strong>Vehicle Model:</strong> Tata Ace EV / Commercial Gateway
+                  </p>
+                  <p>
+                    <strong>Operating Range:</strong> {profile.environmental}
+                  </p>
+                  <p>
+                    <strong>Compliance Standard:</strong> {profile.compliance}
+                  </p>
                 </div>
               </div>
             </div>
@@ -6570,7 +10562,8 @@ function ProjectDetail({
                   Edit {deptDraft.departmentName} Analysis & Remarks
                 </h4>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Update deliverable progress, target dates, and maintain strict separation between internal risk remarks and client-facing summaries.
+                  Update deliverable progress, target dates, and maintain strict separation between
+                  internal risk remarks and client-facing summaries.
                 </p>
               </div>
 
@@ -6579,7 +10572,9 @@ function ProjectDetail({
                 <div className="space-y-1.5 rounded-lg border border-border bg-panel p-3">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-foreground">Completion Progress</label>
-                    <span className="font-mono text-xs font-bold text-primary">{deptDraft.progress}%</span>
+                    <span className="font-mono text-xs font-bold text-primary">
+                      {deptDraft.progress}%
+                    </span>
                   </div>
                   <input
                     type="range"
@@ -6587,7 +10582,9 @@ function ProjectDetail({
                     max="100"
                     disabled={!canEditSelectedDept}
                     value={deptDraft.progress}
-                    onChange={(e) => setDeptDraft({ ...deptDraft, progress: Number(e.target.value) })}
+                    onChange={(e) =>
+                      setDeptDraft({ ...deptDraft, progress: Number(e.target.value) })
+                    }
                     className="w-full accent-primary disabled:opacity-50"
                   />
                 </div>
@@ -6616,18 +10613,24 @@ function ProjectDetail({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground">Current Deliverable</label>
+                  <label className="text-xs font-semibold text-foreground">
+                    Current Deliverable
+                  </label>
                   <input
                     type="text"
                     disabled={!canEditSelectedDept}
                     value={deptDraft.currentDeliverable}
-                    onChange={(e) => setDeptDraft({ ...deptDraft, currentDeliverable: e.target.value })}
+                    onChange={(e) =>
+                      setDeptDraft({ ...deptDraft, currentDeliverable: e.target.value })
+                    }
                     className="w-full h-9 rounded-lg border border-border bg-background px-3 text-xs disabled:opacity-50"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-foreground">Target Completion Date</label>
+                  <label className="text-xs font-semibold text-foreground">
+                    Target Completion Date
+                  </label>
                   <input
                     type="text"
                     disabled={!canEditSelectedDept}
@@ -6645,10 +10648,13 @@ function ProjectDetail({
                     <Lock className="size-3.5" />
                     Internal Remarks (Company-Confidential)
                   </label>
-                  <span className="text-[10px] text-muted-foreground">Visible on Page 1 · Hidden from client</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Visible on Page 1 · Hidden from client
+                  </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Confidential technical notes, risk assessments, supplier lead-time buffers, and HOD observations.
+                  Confidential technical notes, risk assessments, supplier lead-time buffers, and
+                  HOD observations.
                 </p>
                 <textarea
                   rows={3}
@@ -6666,10 +10672,13 @@ function ProjectDetail({
                     <Globe className="size-3.5" />
                     Client's Remarks (Customer-Facing Report)
                   </label>
-                  <span className="text-[10px] text-muted-foreground">Shared on public client preview link</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Shared on public client preview link
+                  </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Official progress update presented to the OEM client (Tata Motors) on their shared link portal.
+                  Official progress update presented to the OEM client (Tata Motors) on their shared
+                  link portal.
                 </p>
                 <textarea
                   rows={3}
@@ -6717,7 +10726,8 @@ function ProjectDetail({
                   Shareable Client Portal Link & Security Token
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Distribute this direct link to OEM fleet managers and external clients. Renders the sanitized, client-safe progress dashboard with internal remarks excluded.
+                  Distribute this direct link to OEM fleet managers and external clients. Renders
+                  the sanitized, client-safe progress dashboard with internal remarks excluded.
                 </p>
               </div>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-500">
@@ -6752,13 +10762,24 @@ function ProjectDetail({
             </div>
 
             <div className="flex flex-wrap items-center gap-3 pt-1 text-[11px] text-muted-foreground">
-              <span><strong>Access Mode:</strong> Read-Only OEM Customer Portal</span>
+              <span>
+                <strong>Access Mode:</strong> Read-Only OEM Customer Portal
+              </span>
               <span>·</span>
-              <span><strong>Token:</strong> <code className="font-mono bg-background px-1 py-0.5 rounded border border-border">{clientShareToken}</code></span>
+              <span>
+                <strong>Token:</strong>{" "}
+                <code className="font-mono bg-background px-1 py-0.5 rounded border border-border">
+                  {clientShareToken}
+                </code>
+              </span>
               <span>·</span>
-              <span><strong>Domain Restriction:</strong> @tatamotors.com</span>
+              <span>
+                <strong>Domain Restriction:</strong> @tatamotors.com
+              </span>
               <span>·</span>
-              <span><strong>Token Expiry:</strong> 30 Days</span>
+              <span>
+                <strong>Token Expiry:</strong> 30 Days
+              </span>
             </div>
           </div>
 
@@ -6785,7 +10806,9 @@ function ProjectDetail({
                   <span className="font-mono text-xs font-bold text-foreground block">
                     {profile.customer}
                   </span>
-                  <span className="text-[10px] text-muted-foreground">External Client Stakeholder View</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    External Client Stakeholder View
+                  </span>
                 </div>
               </div>
             </div>
@@ -6794,7 +10817,9 @@ function ProjectDetail({
             <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-5 py-2.5 text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-2.5">
               <ShieldCheck className="size-4 shrink-0 text-emerald-500" />
               <span>
-                <strong>Client-Safe Filter Active:</strong> Sensitive internal risk evaluations, component cost structures, and confidential internal remarks are completely omitted. Only verified milestones and client-approved reports are displayed.
+                <strong>Client-Safe Filter Active:</strong> Sensitive internal risk evaluations,
+                component cost structures, and confidential internal remarks are completely omitted.
+                Only verified milestones and client-approved reports are displayed.
               </span>
             </div>
 
@@ -6819,54 +10844,84 @@ function ProjectDetail({
                       <span>Automated Stage Gate &amp; Dependency Enforcement</span>
                     </div>
                     <p className="mt-1 text-[11px] text-muted-foreground">
-                      <strong>Prerequisite Rule:</strong> Hardware Schematics (EHW-SCH-01) is the critical path gate. Box-build, mechanical manufacturing, and pilot production are programmatically locked until Schematics release is certified.
+                      <strong>Prerequisite Rule:</strong> Hardware Schematics (EHW-SCH-01) is the
+                      critical path gate. Box-build, mechanical manufacturing, and pilot production
+                      are programmatically locked until Schematics release is certified.
                     </p>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 text-xs">
                     <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-[10px] text-muted-foreground">Stage 1 · Intake</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          Stage 1 · Intake
+                        </span>
                         <CheckCircle2 className="size-3.5 text-emerald-500" />
                       </div>
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-1">SOR &amp; mNDA Locked</p>
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                        SOR &amp; mNDA Locked
+                      </p>
                       <span className="text-[10px] text-muted-foreground">Prereq: Signed ✓</span>
                     </div>
 
                     <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-[10px] text-muted-foreground">Stage 2 · Feasibility</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          Stage 2 · Feasibility
+                        </span>
                         <CheckCircle2 className="size-3.5 text-emerald-500" />
                       </div>
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-1">6/6 HODs Signed</p>
-                      <span className="text-[10px] text-muted-foreground">HLPL/F/MKT/01 Gate ✓</span>
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                        6/6 HODs Signed
+                      </p>
+                      <span className="text-[10px] text-muted-foreground">
+                        HLPL/F/MKT/01 Gate ✓
+                      </span>
                     </div>
 
                     <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-[10px] text-muted-foreground">Stage 4 · Schematics</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          Stage 4 · Schematics
+                        </span>
                         <CheckCircle2 className="size-3.5 text-emerald-500" />
                       </div>
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-1">EHW-SCH-01 Released</p>
-                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">✓ Mandatory Prereq Met</span>
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mt-1">
+                        EHW-SCH-01 Released
+                      </p>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                        ✓ Mandatory Prereq Met
+                      </span>
                     </div>
 
                     <div className="rounded-lg border border-primary/30 bg-primary/5 p-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-[10px] text-muted-foreground">Stage 5 · Pilot Integration</span>
-                        <span className="rounded bg-primary/20 px-1 font-mono text-[9px] font-bold text-primary">ACTIVE</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          Stage 5 · Pilot Integration
+                        </span>
+                        <span className="rounded bg-primary/20 px-1 font-mono text-[9px] font-bold text-primary">
+                          ACTIVE
+                        </span>
                       </div>
                       <p className="font-bold text-primary mt-1">Line 2 Setup Active</p>
-                      <span className="text-[10px] text-muted-foreground">Unlocked by Schematics</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        Unlocked by Schematics
+                      </span>
                     </div>
 
                     <div className="rounded-lg border border-border/60 bg-secondary/30 p-2.5">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-[10px] text-muted-foreground">Stage 7 · Mass Prod</span>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          Stage 7 · Mass Prod
+                        </span>
                         <Lock className="size-3 text-muted-foreground" />
                       </div>
-                      <p className="font-bold text-muted-foreground mt-1">Gated on pilot integration</p>
-                      <span className="text-[10px] text-muted-foreground">Awaiting Stage 5 PPAP</span>
+                      <p className="font-bold text-muted-foreground mt-1">
+                        Gated on pilot integration
+                      </p>
+                      <span className="text-[10px] text-muted-foreground">
+                        Awaiting Stage 5 PPAP
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -6907,8 +10962,8 @@ function ProjectDetail({
                                 entry.status === "Completed"
                                   ? "bg-blue-500/10 text-blue-500"
                                   : entry.status === "On Track"
-                                  ? "bg-emerald-500/10 text-emerald-500"
-                                  : "bg-amber-500/10 text-amber-500"
+                                    ? "bg-emerald-500/10 text-emerald-500"
+                                    : "bg-amber-500/10 text-amber-500"
                               }`}
                             >
                               {entry.status}
@@ -6935,26 +10990,42 @@ function ProjectDetail({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="rounded border border-border bg-card p-3 space-y-2">
                     <p className="font-bold text-xs text-foreground">Customer SOR</p>
-                    <p className="font-mono text-[10px] text-muted-foreground">{activeProjectKey}-SAL-SOR-01</p>
-                    <span className="inline-block text-[10px] text-emerald-500 font-semibold">✓ Accepted & Signed</span>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {activeProjectKey}-SAL-SOR-01
+                    </p>
+                    <span className="inline-block text-[10px] text-emerald-500 font-semibold">
+                      ✓ Accepted & Signed
+                    </span>
                   </div>
 
                   <div className="rounded border border-border bg-card p-3 space-y-2">
                     <p className="font-bold text-xs text-foreground">Mutual NDA</p>
-                    <p className="font-mono text-[10px] text-muted-foreground">{activeProjectKey}-SAL-mNDA-01</p>
-                    <span className="inline-block text-[10px] text-emerald-500 font-semibold">✓ Executed & Active</span>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {activeProjectKey}-SAL-mNDA-01
+                    </p>
+                    <span className="inline-block text-[10px] text-emerald-500 font-semibold">
+                      ✓ Executed & Active
+                    </span>
                   </div>
 
                   <div className="rounded border border-border bg-card p-3 space-y-2">
                     <p className="font-bold text-xs text-foreground">AIS-140 TAC Certificate</p>
-                    <p className="font-mono text-[10px] text-muted-foreground">{activeProjectKey}-QA-TAC-01</p>
-                    <span className="inline-block text-[10px] text-primary font-semibold">Pre-Compliance Pass</span>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {activeProjectKey}-QA-TAC-01
+                    </p>
+                    <span className="inline-block text-[10px] text-primary font-semibold">
+                      Pre-Compliance Pass
+                    </span>
                   </div>
 
                   <div className="rounded border border-border bg-card p-3 space-y-2">
                     <p className="font-bold text-xs text-foreground">100% PDI Certificate</p>
-                    <p className="font-mono text-[10px] text-muted-foreground">{activeProjectKey}-TST-PDI-01</p>
-                    <span className="inline-block text-[10px] text-emerald-500 font-semibold">0-Defect Released</span>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {activeProjectKey}-TST-PDI-01
+                    </p>
+                    <span className="inline-block text-[10px] text-emerald-500 font-semibold">
+                      0-Defect Released
+                    </span>
                   </div>
                 </div>
               </div>
@@ -6973,7 +11044,10 @@ function ProjectDetail({
                 <button
                   onClick={() => {
                     setClientAckDone(true);
-                    onLog("Client milestone acknowledged", `Customer representative confirmed Stage 8 progress for ${activeProjectKey} via shared client link`);
+                    onLog(
+                      "Client milestone acknowledged",
+                      `Customer representative confirmed Stage 8 progress for ${activeProjectKey} via shared client link`,
+                    );
                   }}
                   className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-4 text-xs font-semibold transition-colors ${
                     clientAckDone
@@ -7003,7 +11077,9 @@ function ProjectDetail({
                     onClick={() => onSelect(record)}
                     className="block w-full border-b border-border py-3 text-left last:border-0 hover:bg-secondary/40 px-2 rounded"
                   >
-                    <span className="font-mono text-xs text-muted-foreground">{record.reference}</span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {record.reference}
+                    </span>
                     <strong className="mt-1 block text-sm">{record.title}</strong>
                     <small className="text-muted-foreground">
                       {record.type} · {record.fields["lifecycleStage"] ?? record.status}
@@ -7011,7 +11087,9 @@ function ProjectDetail({
                   </button>
                 ))
               ) : (
-                <p className="text-xs text-muted-foreground py-4">No records linked to this project yet.</p>
+                <p className="text-xs text-muted-foreground py-4">
+                  No records linked to this project yet.
+                </p>
               )}
             </div>
           </div>
@@ -7042,7 +11120,9 @@ function ProjectDetail({
                   </div>
                 ))
               ) : (
-                <p className="text-xs text-muted-foreground py-4">No controlled documents attached yet.</p>
+                <p className="text-xs text-muted-foreground py-4">
+                  No controlled documents attached yet.
+                </p>
               )}
             </div>
           </div>
@@ -7067,9 +11147,7 @@ function AssigneeWorkload({
     (record) => record.fields["assignee"] === assignee || record.fields["owner"] === assignee,
   );
   const overdue = work.filter(
-    (record) =>
-      (record.fields["dueDate"] ?? "") < businessDate() &&
-      record.status !== "Released",
+    (record) => (record.fields["dueDate"] ?? "") < businessDate() && record.status !== "Released",
   );
   return (
     <>
@@ -7133,9 +11211,7 @@ function AssigneeWorkload({
 }
 
 function LifecycleProgress({ records, projectId }: { records: RecordItem[]; projectId: string }) {
-  const lifecycleRecords = records.filter(
-    (record) => record.fields["lifecycleId"] === projectId,
-  );
+  const lifecycleRecords = records.filter((record) => record.fields["lifecycleId"] === projectId);
   const stages = [
     ["1", "Sales & NDA", ["Customer requirement", "Enquiry"]],
     ["2", "Feasibility", ["Contract review", "Requirements and design"]],
@@ -7201,20 +11277,58 @@ function LifecycleProgress({ records, projectId }: { records: RecordItem[]; proj
 }
 
 function ExecutiveKpis({ portal }: { portal: PortalState }) {
-  const departments = portal.departments.filter(department => department.active && department.code.replace(/^DEMO-/, "").toUpperCase() !== "TST");
-  const records = portal.records.filter(record => !record.archived && record.area !== "tst");
-  const projects = records.filter(record => record.type === "Project");
-  const tasks = records.filter(record => record.type === "Task");
-  const pending = portal.approvals.filter(approval => approval.outcome === "Pending");
-  const missingOwners = departments.filter(department => !department.lead?.trim() || /interim|unassigned/i.test(department.lead));
+  const departments = portal.departments.filter(
+    (department) =>
+      department.active && department.code.replace(/^DEMO-/, "").toUpperCase() !== "TST",
+  );
+  const records = portal.records.filter((record) => !record.archived && record.area !== "tst");
+  const projects = records.filter((record) => record.type === "Project");
+  const tasks = records.filter((record) => record.type === "Task");
+  const pending = portal.approvals.filter((approval) => approval.outcome === "Pending");
+  const missingOwners = departments.filter(
+    (department) => !department.lead?.trim() || /interim|unassigned/i.test(department.lead),
+  );
   return (
     <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-      <Metric label="Projects" value={String(projects.length)} detail="Saved local project records" tone="steel" />
-      <Metric label="Active departments" value={String(departments.length)} detail="Legacy TST excluded" tone="moss" />
-      <Metric label="Open tasks" value={String(tasks.filter(task => !["Approved", "Released", "Archived"].includes(task.status)).length)} detail="Saved local task records" tone="steel" />
-      <Metric label="Pending approvals" value={String(pending.length)} detail="Recorded human decisions needed" tone="warning" />
-      <Metric label="Owners to confirm" value={String(missingOwners.length)} detail="Missing or interim department leads" tone="warning" />
-      <Metric label="Shared persistence" value="Unverified" detail="Browser-local prototype" tone="steel" />
+      <Metric
+        label="Projects"
+        value={String(projects.length)}
+        detail="Saved local project records"
+        tone="steel"
+      />
+      <Metric
+        label="Active departments"
+        value={String(departments.length)}
+        detail="Legacy TST excluded"
+        tone="moss"
+      />
+      <Metric
+        label="Open tasks"
+        value={String(
+          tasks.filter((task) => !["Approved", "Released", "Archived"].includes(task.status))
+            .length,
+        )}
+        detail="Saved local task records"
+        tone="steel"
+      />
+      <Metric
+        label="Pending approvals"
+        value={String(pending.length)}
+        detail="Recorded human decisions needed"
+        tone="warning"
+      />
+      <Metric
+        label="Owners to confirm"
+        value={String(missingOwners.length)}
+        detail="Missing or interim department leads"
+        tone="warning"
+      />
+      <Metric
+        label="Shared persistence"
+        value="Unverified"
+        detail="Browser-local prototype"
+        tone="steel"
+      />
     </section>
   );
 }
@@ -7222,8 +11336,16 @@ function ExecutiveKpis({ portal }: { portal: PortalState }) {
 function CrossDepartmentSyncHub({ onClose }: { onClose: () => void }) {
   const flows = [
     ["SAL", "Order locked & customer LOI confirmed", "PO-TATA-SLCT-2026-9041 · 50,000 units"],
-    ["FIN", "Advance deposit verified & invoice generated", "₹6.10 Cr illustrative advance · HLPL-SLCT-FIN-INV-01"],
-    ["PUR", "Long-lead IC purchase plan synchronized", "STM32 · Quectel 4G · u-blox GNSS · DEMO ASL"],
+    [
+      "FIN",
+      "Advance deposit verified & invoice generated",
+      "₹6.10 Cr illustrative advance · HLPL-SLCT-FIN-INV-01",
+    ],
+    [
+      "PUR",
+      "Long-lead IC purchase plan synchronized",
+      "STM32 · Quectel 4G · u-blox GNSS · DEMO ASL",
+    ],
     ["R&D", "Design release package synchronized", "Final Gerber · production BOM · mold tooling"],
     ["EMF", "Tranche 1 production scheduled", "Box-build integration · 2,500 illustrative units"],
     ["EMF", "Functional test capacity planned", "SLCT-2026-00001..50000 · 97.4% simulated FPY"],
@@ -7233,7 +11355,10 @@ function CrossDepartmentSyncHub({ onClose }: { onClose: () => void }) {
     <Modal title="Cross-Department Sync & Order Hub" onClose={onClose} wide>
       <div className="rounded-lg border border-warning/40 bg-accent p-4 text-sm">
         <strong>DEMO WORKSPACE</strong>
-        <p className="mt-1 text-muted-foreground">Illustrative order, financial, supplier, production and audit signals. Nothing represents an actual customer order, payment, purchase, release, or certification.</p>
+        <p className="mt-1 text-muted-foreground">
+          Illustrative order, financial, supplier, production and audit signals. Nothing represents
+          an actual customer order, payment, purchase, release, or certification.
+        </p>
       </div>
       <section className="mt-5 grid gap-3 sm:grid-cols-3">
         <DocumentField label="Customer PO" value="PO-TATA-SLCT-2026-9041" />
@@ -7241,7 +11366,10 @@ function CrossDepartmentSyncHub({ onClose }: { onClose: () => void }) {
         <DocumentField label="Total value" value="₹20.33 Cr · illustrative" />
         <DocumentField label="Advance" value="₹6.10 Cr · verification simulation" />
         <DocumentField label="Project" value="HLPL-SLCT-01" />
-        <DocumentField label="Audit readiness" value="100% IATF 16949 & AIS-140 compliant · 0 NCRs · DEMO assertion" />
+        <DocumentField
+          label="Audit readiness"
+          value="100% IATF 16949 & AIS-140 compliant · 0 NCRs · DEMO assertion"
+        />
       </section>
       <section className="mt-5 divide-y divide-border border border-border bg-panel">
         {flows.map(([code, title, detail]) => (
@@ -7254,7 +11382,10 @@ function CrossDepartmentSyncHub({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </section>
-      <p className="mt-5 text-xs text-muted-foreground">All department outputs are represented as department-owned, access-checked records in the logical 00_Automotive_Hardware_Audit_Repository audit vault.</p>
+      <p className="mt-5 text-xs text-muted-foreground">
+        All department outputs are represented as department-owned, access-checked records in the
+        logical 00_Automotive_Hardware_Audit_Repository audit vault.
+      </p>
     </Modal>
   );
 }
@@ -7299,7 +11430,7 @@ function DepartmentWorkspace({
 }: {
   onSubmitIntake?: React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onSubmitIntake"];
   onAddCustomer?: React.ComponentProps<typeof SalesEnquiriesAndOpportunities>["onAddCustomer"];
-  area: Omit<(typeof areas)[number], 'name'> & {name:string};
+  area: Omit<(typeof areas)[number], "name"> & { name: string };
   records: RecordItem[];
   allRecords: RecordItem[];
   projectScope: ProjectScope;
@@ -7326,26 +11457,63 @@ function DepartmentWorkspace({
   inventoryAssignments: InventoryAssignment[];
   persona: Persona;
   onMoveInventory: (itemId: string, change: number, reason: InventoryMovement["reason"]) => void;
-  onAssignInventory: (itemId: string, assignee: string, department: InventoryAssignment["department"], project: string, quantity: number, note: string) => void;
+  onAssignInventory: (
+    itemId: string,
+    assignee: string,
+    department: InventoryAssignment["department"],
+    project: string,
+    quantity: number,
+    note: string,
+  ) => void;
   purchasingSubView?: PurchasingSubView;
   onSelectPurchasingSubView?: (view: PurchasingSubView) => void;
   onUpdateTask?: ((taskId: string, patch: Partial<RecordItem>, action: string) => void) | undefined;
-  onCreateCustomTask?: ((task: { title: string; priority: Priority; assignee: string; projectId: string; dueDate: string; notes: string }) => boolean | void | Promise<boolean | void>) | undefined;
+  onCreateCustomTask?:
+    | ((task: {
+        title: string;
+        priority: Priority;
+        assignee: string;
+        projectId: string;
+        dueDate: string;
+        notes: string;
+      }) => boolean | void | Promise<boolean | void>)
+    | undefined;
   onAddTeamMember?: ((member: TeamMember) => void) | undefined;
   allTeamMembers?: TeamMember[] | undefined;
 }) {
-  const departmentProjects = allRecords.filter(record => record.type === "Project" && records.some(work => projectReferences(work).includes(record.reference) || projectReferences(work).includes(record.id)));
-  const selectedProject = departmentProjects.find(record => record.reference === projectScope);
-  const scopedRecords = projectScope === "all" ? records : records.filter(record => projectReferences(record).includes(projectScope) || Boolean(selectedProject && projectReferences(record).includes(selectedProject.id)));
+  const departmentProjects = allRecords.filter(
+    (record) =>
+      record.type === "Project" &&
+      records.some(
+        (work) =>
+          projectReferences(work).includes(record.reference) ||
+          projectReferences(work).includes(record.id),
+      ),
+  );
+  const selectedProject = departmentProjects.find((record) => record.reference === projectScope);
+  const scopedRecords =
+    projectScope === "all"
+      ? records
+      : records.filter(
+          (record) =>
+            projectReferences(record).includes(projectScope) ||
+            Boolean(selectedProject && projectReferences(record).includes(selectedProject.id)),
+        );
   const teamForThisDept = (allTeamMembers ?? demoTeam).filter((member) => member.area === area.id);
-  const deptLeadName = persona.kind === "lead" && persona.departmentId === area.id ? persona.person.split(" · ")[0] || "Department Lead" : department?.lead ?? teamForThisDept[0]?.name ?? "Department Lead";
+  const deptLeadName =
+    persona.kind === "lead" && persona.departmentId === area.id
+      ? persona.person.split(" · ")[0] || "Department Lead"
+      : (department?.lead ?? teamForThisDept[0]?.name ?? "Department Lead");
   const departmentMembers = teamForThisDept.length;
   const today = businessDate();
-  const open = scopedRecords.filter((record) => record.status === "Draft" || record.status === "Open");
+  const open = scopedRecords.filter(
+    (record) => record.status === "Draft" || record.status === "Open",
+  );
   const blocked = scopedRecords.filter((record) => record.fields["blocker"]);
   const pendingApprovals = approvals.filter(
     (approval) =>
-      approval.outcome === "Pending" && scopedRecords.some((record) => record.id === approval.recordId),
+      approval.outcome === "Pending" &&
+      scopedRecords.some((record) => record.id === approval.recordId),
   );
   const upcoming = scopedRecords
     .filter((record) => (record.fields["targetDate"] ?? "") >= today)
@@ -7359,7 +11527,14 @@ function DepartmentWorkspace({
       departmentName={area.name}
       departmentLead={deptLeadName}
       records={scopedRecords}
-      projects={departmentProjects.map(record => ({ id: record.reference, name: record.title, customer: record.fields["customer"] || "Not provided", currentStage: record.fields["lifecycleStage"] || "Not provided", targetDate: record.fields["targetDate"] || "Not provided", volume: record.fields["quantity"] || "Not provided" }))}
+      projects={departmentProjects.map((record) => ({
+        id: record.reference,
+        name: record.title,
+        customer: record.fields["customer"] || "Not provided",
+        currentStage: record.fields["lifecycleStage"] || "Not provided",
+        targetDate: record.fields["targetDate"] || "Not provided",
+        volume: record.fields["quantity"] || "Not provided",
+      }))}
       teamMembers={teamForThisDept}
       projectScope={projectScope}
       onProjectScopeChange={(scope) => onProjectScopeChange(scope as ProjectScope)}
@@ -7367,24 +11542,41 @@ function DepartmentWorkspace({
         onUpdateTask?.(
           taskId,
           { fields: { assignee: newAssignee } },
-          `Task reallocated to ${newAssignee}`
+          `Task reallocated to ${newAssignee}`,
         );
       }}
-      onStartTask={taskId => { onUpdateTask?.(taskId, { status: "Open", fields: { workStatus: "In progress" } }, "Task started"); }}
-      onOpenTask={task => onSelect(task.id)}
+      onStartTask={(taskId) => {
+        onUpdateTask?.(
+          taskId,
+          { status: "Open", fields: { workStatus: "In progress" } },
+          "Task started",
+        );
+      }}
+      onOpenTask={(task) => onSelect(task.id)}
       onUpdateTaskStatus={(taskId, newStatus) => {
         const s = newStatus === "Cancelled" ? "Archived" : newStatus;
         onUpdateTask?.(
           taskId,
-          { status: s, ...(newStatus === "Open" ? { fields: { workStatus: "To do" } } : newStatus === "Cancelled" ? { fields: { workStatus: "Cancelled" } } : {}) },
-          `Task status marked ${newStatus}`
+          {
+            status: s,
+            ...(newStatus === "Open"
+              ? { fields: { workStatus: "To do" } }
+              : newStatus === "Cancelled"
+                ? { fields: { workStatus: "Cancelled" } }
+                : {}),
+          },
+          `Task status marked ${newStatus}`,
         );
       }}
-      onCreateTask={task => onCreateCustomTask?.(task)}
+      onCreateTask={(task) => onCreateCustomTask?.(task)}
       onAddTeamMember={(member) => {
         onAddTeamMember?.(member as unknown as TeamMember);
       }}
-      readOnly={persona.kind === "client" || persona.kind === "member" || (persona.kind === "lead" && persona.departmentId !== area.id)}
+      readOnly={
+        persona.kind === "client" ||
+        persona.kind === "member" ||
+        (persona.kind === "lead" && persona.departmentId !== area.id)
+      }
     />
   );
   return (
@@ -7403,25 +11595,51 @@ function DepartmentWorkspace({
             {area.id === "sales" && onOpenCustomerRegister && (
               <Action onClick={onOpenCustomerRegister} label="Customer Register.xlsx" />
             )}
-            {(area.id === "ehw" || area.id === "qa" || area.id === "sales") && onOpenFeasibilityGate && (
-              <Action
-                onClick={() => onOpenFeasibilityGate(projectScope === "all" ? "HLPL-AI4T-01" : projectScope)}
-                label="Feasibility & Hardware Gate"
-              />
-            )}
+            {(area.id === "ehw" || area.id === "qa" || area.id === "sales") &&
+              onOpenFeasibilityGate && (
+                <Action
+                  onClick={() =>
+                    onOpenFeasibilityGate(projectScope === "all" ? "HLPL-AI4T-01" : projectScope)
+                  }
+                  label="Feasibility & Hardware Gate"
+                />
+              )}
             {onOpenAssetCatalog && (
               <Action onClick={onOpenAssetCatalog} label="Platform Asset Library" />
             )}
             <Action onClick={onOpenDrive} label="Department Cloud Drive" />
             <Action onClick={() => onCreate("Task")} label="Create Task" />
-            <Action onClick={() => onCreate(area.recordType)} label={`Create ${area.recordType}`} primary />
+            <Action
+              onClick={() => onCreate(area.recordType)}
+              label={`Create ${area.recordType}`}
+              primary
+            />
           </>
         }
       />
       <section className="ops-section flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <div><p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-steel">Project scope</p><p className="mt-1 text-xs text-muted-foreground">{projectScope === "all" ? `Department rollup · ${records.length} records · ${departmentMembers} team member${departmentMembers === 1 ? "" : "s"}` : "Selected-project tasks, stage evidence, team and deliverables only"}</p></div>
-        <select aria-label="Project scope" value={projectScope} onChange={(event) => onProjectScopeChange(event.target.value as ProjectScope)} className="h-9 min-w-64 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground [&>option]:bg-background [&>option]:text-foreground">
-          <option value="all">All Projects (Department Rollup)</option>{departmentProjects.map(project => <option key={project.id} value={project.reference}>{project.reference} · {project.title}</option>)}
+        <div>
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-steel">
+            Project scope
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {projectScope === "all"
+              ? `Department rollup · ${records.length} records · ${departmentMembers} team member${departmentMembers === 1 ? "" : "s"}`
+              : "Selected-project tasks, stage evidence, team and deliverables only"}
+          </p>
+        </div>
+        <select
+          aria-label="Project scope"
+          value={projectScope}
+          onChange={(event) => onProjectScopeChange(event.target.value as ProjectScope)}
+          className="h-9 min-w-64 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground [&>option]:bg-background [&>option]:text-foreground"
+        >
+          <option value="all">All Projects (Department Rollup)</option>
+          {departmentProjects.map((project) => (
+            <option key={project.id} value={project.reference}>
+              {project.reference} · {project.title}
+            </option>
+          ))}
         </select>
       </section>
       <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
@@ -7439,8 +11657,9 @@ function DepartmentWorkspace({
         <Metric
           label="Priority"
           value={String(
-            scopedRecords.filter((record) => record.priority === "High" || record.priority === "Critical")
-              .length,
+            scopedRecords.filter(
+              (record) => record.priority === "High" || record.priority === "Critical",
+            ).length,
           )}
           detail="Needs attention"
           tone="danger"
@@ -7513,7 +11732,8 @@ function DepartmentWorkspace({
             onReleaseToManufacturing={() => {
               onCreate("Task", {
                 title: "BOM Procurement Lock Released to EMF Box-Build",
-                scope: "All critical line items approved with dual-sourcing and long-lead modem buffer PO issued.",
+                scope:
+                  "All critical line items approved with dual-sourcing and long-lead modem buffer PO issued.",
               });
             }}
           />
@@ -7573,9 +11793,7 @@ function DepartmentWorkspace({
           {renderCoordinationCenter()}
         </section>
       ) : (
-        <section className="mt-8">
-          {renderCoordinationCenter()}
-        </section>
+        <section className="mt-8">{renderCoordinationCenter()}</section>
       )}
     </>
   );
@@ -7705,120 +11923,456 @@ export interface DepartmentProcessItem {
   name: string;
   recordType: string;
   defaultTitle: string;
-  driveGroup: "01 Common documents" | "02 Internal projects" | "03 Client projects" | "04 Other department work";
+  driveGroup:
+    | "01 Common documents"
+    | "02 Internal projects"
+    | "03 Client projects"
+    | "04 Other department work";
   targetFolder: string;
   priority?: Priority;
 }
 
-const departmentProcesses: Partial<Record<AreaId, { drive: string; items: DepartmentProcessItem[] }>> = {
+const departmentProcesses: Partial<
+  Record<AreaId, { drive: string; items: DepartmentProcessItem[] }>
+> = {
   sales: {
     drive: "01_Governance_and_QMS",
     items: [
-      { name: "Customer enquiry & lead intake", recordType: "Enquiry", defaultTitle: "Customer enquiry & lead intake", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
-      { name: "Customer SOR intake & analysis", recordType: "Enquiry", defaultTitle: "Customer SOR requirement analysis", driveGroup: "03 Client projects", targetFolder: "01_Governance_and_QMS" },
-      { name: "Mutual NDA generator", recordType: "Opportunity", defaultTitle: "Mutual NDA (mNDA) execution", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
-      { name: "Commercial quotation builder", recordType: "Order", defaultTitle: "Commercial quotation & volume pricing lock", driveGroup: "03 Client projects", targetFolder: "01_Governance_and_QMS" },
-      { name: "Contract review record", recordType: "Handover", defaultTitle: "Contract review record · HLPL/F/MKT/01", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
+      {
+        name: "Customer enquiry & lead intake",
+        recordType: "Enquiry",
+        defaultTitle: "Customer enquiry & lead intake",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Customer SOR intake & analysis",
+        recordType: "Enquiry",
+        defaultTitle: "Customer SOR requirement analysis",
+        driveGroup: "03 Client projects",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Mutual NDA generator",
+        recordType: "Opportunity",
+        defaultTitle: "Mutual NDA (mNDA) execution",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Commercial quotation builder",
+        recordType: "Order",
+        defaultTitle: "Commercial quotation & volume pricing lock",
+        driveGroup: "03 Client projects",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Contract review record",
+        recordType: "Handover",
+        defaultTitle: "Contract review record · HLPL/F/MKT/01",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
     ],
   },
   ehw: {
     drive: "03_Hardware_Deliverables_ECAD",
     items: [
-      { name: "Product requirement specification", recordType: "PRS", defaultTitle: "Product Requirement Specification (PRS)", driveGroup: "03 Client projects", targetFolder: "03_Hardware_Deliverables_ECAD" },
-      { name: "Schematic package", recordType: "Schematic", defaultTitle: "Schematic package & PCB circuit design", driveGroup: "03 Client projects", targetFolder: "03_Hardware_Deliverables_ECAD" },
-      { name: "Production Gerber & drill ZIP", recordType: "Gerber release", defaultTitle: "Production Gerber & drill ZIP package", driveGroup: "03 Client projects", targetFolder: "03_Hardware_Deliverables_ECAD" },
-      { name: "Production BOM cost tracker", recordType: "BOM", defaultTitle: "Production BOM baseline & cost tracker", driveGroup: "03 Client projects", targetFolder: "03_Hardware_Deliverables_ECAD" },
-      { name: "Hardware DFMEA risk analysis", recordType: "Hardware tracker", defaultTitle: "Hardware DFMEA risk analysis & RPN lock", driveGroup: "04 Other department work", targetFolder: "03_Hardware_Deliverables_ECAD" },
+      {
+        name: "Product requirement specification",
+        recordType: "PRS",
+        defaultTitle: "Product Requirement Specification (PRS)",
+        driveGroup: "03 Client projects",
+        targetFolder: "03_Hardware_Deliverables_ECAD",
+      },
+      {
+        name: "Schematic package",
+        recordType: "Schematic",
+        defaultTitle: "Schematic package & PCB circuit design",
+        driveGroup: "03 Client projects",
+        targetFolder: "03_Hardware_Deliverables_ECAD",
+      },
+      {
+        name: "Production Gerber & drill ZIP",
+        recordType: "Gerber release",
+        defaultTitle: "Production Gerber & drill ZIP package",
+        driveGroup: "03 Client projects",
+        targetFolder: "03_Hardware_Deliverables_ECAD",
+      },
+      {
+        name: "Production BOM cost tracker",
+        recordType: "BOM",
+        defaultTitle: "Production BOM baseline & cost tracker",
+        driveGroup: "03 Client projects",
+        targetFolder: "03_Hardware_Deliverables_ECAD",
+      },
+      {
+        name: "Hardware DFMEA risk analysis",
+        recordType: "Hardware tracker",
+        defaultTitle: "Hardware DFMEA risk analysis & RPN lock",
+        driveGroup: "04 Other department work",
+        targetFolder: "03_Hardware_Deliverables_ECAD",
+      },
     ],
   },
   esw: {
     drive: "05_Firmware_and_Software",
     items: [
-      { name: "Hardware-software interface spec", recordType: "HSI register", defaultTitle: "Hardware-Software Interface (HSI) register", driveGroup: "03 Client projects", targetFolder: "05_Firmware_and_Software" },
-      { name: "Firmware flash binaries", recordType: "Firmware release", defaultTitle: "Production firmware flash binary (.hex/.bin)", driveGroup: "03 Client projects", targetFolder: "05_Firmware_and_Software" },
-      { name: "CAN J1939 parser & DBC", recordType: "Software gate", defaultTitle: "CAN J1939 telemetry parser & DBC matrix", driveGroup: "02 Internal projects", targetFolder: "05_Firmware_and_Software" },
-      { name: "Git PR reviews & unit coverage", recordType: "CI/CD telemetry", defaultTitle: "Git PR review & automated unit test suite", driveGroup: "02 Internal projects", targetFolder: "05_Firmware_and_Software" },
-      { name: "OTA rollout & version lock", recordType: "Firmware release", defaultTitle: "OTA staged deployment & delta update package", driveGroup: "03 Client projects", targetFolder: "05_Firmware_and_Software" },
+      {
+        name: "Hardware-software interface spec",
+        recordType: "HSI register",
+        defaultTitle: "Hardware-Software Interface (HSI) register",
+        driveGroup: "03 Client projects",
+        targetFolder: "05_Firmware_and_Software",
+      },
+      {
+        name: "Firmware flash binaries",
+        recordType: "Firmware release",
+        defaultTitle: "Production firmware flash binary (.hex/.bin)",
+        driveGroup: "03 Client projects",
+        targetFolder: "05_Firmware_and_Software",
+      },
+      {
+        name: "CAN J1939 parser & DBC",
+        recordType: "Software gate",
+        defaultTitle: "CAN J1939 telemetry parser & DBC matrix",
+        driveGroup: "02 Internal projects",
+        targetFolder: "05_Firmware_and_Software",
+      },
+      {
+        name: "Git PR reviews & unit coverage",
+        recordType: "CI/CD telemetry",
+        defaultTitle: "Git PR review & automated unit test suite",
+        driveGroup: "02 Internal projects",
+        targetFolder: "05_Firmware_and_Software",
+      },
+      {
+        name: "OTA rollout & version lock",
+        recordType: "Firmware release",
+        defaultTitle: "OTA staged deployment & delta update package",
+        driveGroup: "03 Client projects",
+        targetFolder: "05_Firmware_and_Software",
+      },
     ],
   },
   mech: {
     drive: "04_Mechanical_Deliverables_MCAD",
     items: [
-      { name: "3D STEP enclosure CAD package", recordType: "STEP clearance", defaultTitle: "3D STEP enclosure CAD model", driveGroup: "03 Client projects", targetFolder: "04_Mechanical_Deliverables_MCAD" },
-      { name: "2D dimension & tooling drawings", recordType: "2D drawing", defaultTitle: "2D dimension & GD&T manufacturing drawing", driveGroup: "03 Client projects", targetFolder: "04_Mechanical_Deliverables_MCAD" },
-      { name: "Thermal & ingress analysis", recordType: "Mechanical release", defaultTitle: "Thermal dissipation & IP67 ingress analysis", driveGroup: "04 Other department work", targetFolder: "04_Mechanical_Deliverables_MCAD" },
-      { name: "IP67 gasket & connector spec", recordType: "Mold tooling", defaultTitle: "IP67 silicone seal gasket & automotive connector", driveGroup: "03 Client projects", targetFolder: "04_Mechanical_Deliverables_MCAD" },
-      { name: "Enclosure mold DFM sign-off", recordType: "Mold tooling", defaultTitle: "Plastic injection mold DFM & tooling release", driveGroup: "02 Internal projects", targetFolder: "04_Mechanical_Deliverables_MCAD" },
+      {
+        name: "3D STEP enclosure CAD package",
+        recordType: "STEP clearance",
+        defaultTitle: "3D STEP enclosure CAD model",
+        driveGroup: "03 Client projects",
+        targetFolder: "04_Mechanical_Deliverables_MCAD",
+      },
+      {
+        name: "2D dimension & tooling drawings",
+        recordType: "2D drawing",
+        defaultTitle: "2D dimension & GD&T manufacturing drawing",
+        driveGroup: "03 Client projects",
+        targetFolder: "04_Mechanical_Deliverables_MCAD",
+      },
+      {
+        name: "Thermal & ingress analysis",
+        recordType: "Mechanical release",
+        defaultTitle: "Thermal dissipation & IP67 ingress analysis",
+        driveGroup: "04 Other department work",
+        targetFolder: "04_Mechanical_Deliverables_MCAD",
+      },
+      {
+        name: "IP67 gasket & connector spec",
+        recordType: "Mold tooling",
+        defaultTitle: "IP67 silicone seal gasket & automotive connector",
+        driveGroup: "03 Client projects",
+        targetFolder: "04_Mechanical_Deliverables_MCAD",
+      },
+      {
+        name: "Enclosure mold DFM sign-off",
+        recordType: "Mold tooling",
+        defaultTitle: "Plastic injection mold DFM & tooling release",
+        driveGroup: "02 Internal projects",
+        targetFolder: "04_Mechanical_Deliverables_MCAD",
+      },
     ],
   },
   pur: {
     drive: "03_Hardware_Deliverables_ECAD",
     items: [
-      { name: "Purchase orders & tracking", recordType: "Rapid prototype request", defaultTitle: "Purchase order placement & component tracking", driveGroup: "03 Client projects", targetFolder: "03_Hardware_Deliverables_ECAD" },
-      { name: "Supplier scorecard · F-PUR-16", recordType: "F-PUR-16", defaultTitle: "Supplier performance scorecard · F-PUR-16", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
-      { name: "RFQ vendor price comparison", recordType: "F-PUR-10", defaultTitle: "RFQ vendor commercial comparison · F-PUR-10", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
-      { name: "Supplier PPAP Level 3 · F-PUR-15", recordType: "PPAP Level 3", defaultTitle: "Supplier PPAP Level 3 documentation submission", driveGroup: "04 Other department work", targetFolder: "06_Quality_and_Compliance" },
-      { name: "Second-source component matrix", recordType: "ASL/ACML", defaultTitle: "Approved Component List (ACML) & second-sourcing", driveGroup: "01 Common documents", targetFolder: "02_Product_Platforms" },
+      {
+        name: "Purchase orders & tracking",
+        recordType: "Rapid prototype request",
+        defaultTitle: "Purchase order placement & component tracking",
+        driveGroup: "03 Client projects",
+        targetFolder: "03_Hardware_Deliverables_ECAD",
+      },
+      {
+        name: "Supplier scorecard · F-PUR-16",
+        recordType: "F-PUR-16",
+        defaultTitle: "Supplier performance scorecard · F-PUR-16",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "RFQ vendor price comparison",
+        recordType: "F-PUR-10",
+        defaultTitle: "RFQ vendor commercial comparison · F-PUR-10",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Supplier PPAP Level 3 · F-PUR-15",
+        recordType: "PPAP Level 3",
+        defaultTitle: "Supplier PPAP Level 3 documentation submission",
+        driveGroup: "04 Other department work",
+        targetFolder: "06_Quality_and_Compliance",
+      },
+      {
+        name: "Second-source component matrix",
+        recordType: "ASL/ACML",
+        defaultTitle: "Approved Component List (ACML) & second-sourcing",
+        driveGroup: "01 Common documents",
+        targetFolder: "02_Product_Platforms",
+      },
     ],
   },
   qa: {
     drive: "06_Quality_and_Compliance",
     items: [
-      { name: "DVP&R verification plan", recordType: "DVP&R", defaultTitle: "Design Verification Plan & Report (DVP&R)", driveGroup: "03 Client projects", targetFolder: "06_Quality_and_Compliance" },
-      { name: "AIS-140 & ARAI/ICAT dossier", recordType: "APQP gate", defaultTitle: "AIS-140 / ARAI TAC certification dossier", driveGroup: "03 Client projects", targetFolder: "06_Quality_and_Compliance" },
-      { name: "IATF / ISO audit checklist", recordType: "Quality review", defaultTitle: "IATF 16949 & ISO 9001 internal audit checklist", driveGroup: "01 Common documents", targetFolder: "06_Quality_and_Compliance" },
-      { name: "CAPA / 8D record", recordType: "8D CAPA", defaultTitle: "8D problem solving & corrective action report", driveGroup: "04 Other department work", targetFolder: "06_Quality_and_Compliance" },
-      { name: "IQC incoming component verification", recordType: "IQC", defaultTitle: "IQC incoming inspection & component testing", driveGroup: "04 Other department work", targetFolder: "06_Quality_and_Compliance" },
+      {
+        name: "DVP&R verification plan",
+        recordType: "DVP&R",
+        defaultTitle: "Design Verification Plan & Report (DVP&R)",
+        driveGroup: "03 Client projects",
+        targetFolder: "06_Quality_and_Compliance",
+      },
+      {
+        name: "AIS-140 & ARAI/ICAT dossier",
+        recordType: "APQP gate",
+        defaultTitle: "AIS-140 / ARAI TAC certification dossier",
+        driveGroup: "03 Client projects",
+        targetFolder: "06_Quality_and_Compliance",
+      },
+      {
+        name: "IATF / ISO audit checklist",
+        recordType: "Quality review",
+        defaultTitle: "IATF 16949 & ISO 9001 internal audit checklist",
+        driveGroup: "01 Common documents",
+        targetFolder: "06_Quality_and_Compliance",
+      },
+      {
+        name: "CAPA / 8D record",
+        recordType: "8D CAPA",
+        defaultTitle: "8D problem solving & corrective action report",
+        driveGroup: "04 Other department work",
+        targetFolder: "06_Quality_and_Compliance",
+      },
+      {
+        name: "IQC incoming component verification",
+        recordType: "IQC",
+        defaultTitle: "IQC incoming inspection & component testing",
+        driveGroup: "04 Other department work",
+        targetFolder: "06_Quality_and_Compliance",
+      },
     ],
   },
   emf: {
     drive: "07_Production_and_Testing",
     items: [
-      { name: "Box-build process flow & control plan", recordType: "Control plan", defaultTitle: "Box-build manufacturing process flow & Control Plan", driveGroup: "03 Client projects", targetFolder: "07_Production_and_Testing" },
-      { name: "Outsourced PCBA acceptance and traceability log", recordType: "Line startup checklist", defaultTitle: "Accepted PCBA lot and box-build readiness record", driveGroup: "04 Other department work", targetFolder: "07_Production_and_Testing" },
-      { name: "PCBA acceptance & functional check criteria", recordType: "PFD", defaultTitle: "Supplier PCBA acceptance & functional inspection criteria", driveGroup: "04 Other department work", targetFolder: "07_Production_and_Testing" },
-      { name: "SOPs & work instructions", recordType: "PFMEA", defaultTitle: "Assembly standard operating procedures (SOPs)", driveGroup: "01 Common documents", targetFolder: "07_Production_and_Testing" },
-      { name: "Line startup & ESD verification", recordType: "Line startup checklist", defaultTitle: "Daily box-build startup & ESD workstation log", driveGroup: "04 Other department work", targetFolder: "07_Production_and_Testing" },
+      {
+        name: "Box-build process flow & control plan",
+        recordType: "Control plan",
+        defaultTitle: "Box-build manufacturing process flow & Control Plan",
+        driveGroup: "03 Client projects",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "Outsourced PCBA acceptance and traceability log",
+        recordType: "Line startup checklist",
+        defaultTitle: "Accepted PCBA lot and box-build readiness record",
+        driveGroup: "04 Other department work",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "PCBA acceptance & functional check criteria",
+        recordType: "PFD",
+        defaultTitle: "Supplier PCBA acceptance & functional inspection criteria",
+        driveGroup: "04 Other department work",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "SOPs & work instructions",
+        recordType: "PFMEA",
+        defaultTitle: "Assembly standard operating procedures (SOPs)",
+        driveGroup: "01 Common documents",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "Line startup & ESD verification",
+        recordType: "Line startup checklist",
+        defaultTitle: "Daily box-build startup & ESD workstation log",
+        driveGroup: "04 Other department work",
+        targetFolder: "07_Production_and_Testing",
+      },
     ],
   },
   tst: {
     drive: "07_Production_and_Testing",
     items: [
-      { name: "Serialized PDI certificate", recordType: "EOL test run", defaultTitle: "100% Pre-Delivery Inspection (PDI) certificate", driveGroup: "03 Client projects", targetFolder: "07_Production_and_Testing" },
-      { name: "Automated EOL jig calibration", recordType: "Test jig", defaultTitle: "Automated EOL test jig calibration & golden unit", driveGroup: "02 Internal projects", targetFolder: "07_Production_and_Testing" },
-      { name: "Cellular RF & GPS TTFF reports", recordType: "EOL test run", defaultTitle: "Cellular RF power & GPS TTFF sensitivity logs", driveGroup: "03 Client projects", targetFolder: "07_Production_and_Testing" },
-      { name: "IMEI / MAC registry export", recordType: "QR label batch", defaultTitle: "Device IMEI, ICCID & MAC address serialized registry", driveGroup: "03 Client projects", targetFolder: "07_Production_and_Testing" },
-      { name: "First-pass yield (FPY) trend analysis", recordType: "FPY review", defaultTitle: "Daily first-pass yield (FPY) review & defect Pareto", driveGroup: "04 Other department work", targetFolder: "07_Production_and_Testing" },
+      {
+        name: "Serialized PDI certificate",
+        recordType: "EOL test run",
+        defaultTitle: "100% Pre-Delivery Inspection (PDI) certificate",
+        driveGroup: "03 Client projects",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "Automated EOL jig calibration",
+        recordType: "Test jig",
+        defaultTitle: "Automated EOL test jig calibration & golden unit",
+        driveGroup: "02 Internal projects",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "Cellular RF & GPS TTFF reports",
+        recordType: "EOL test run",
+        defaultTitle: "Cellular RF power & GPS TTFF sensitivity logs",
+        driveGroup: "03 Client projects",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "IMEI / MAC registry export",
+        recordType: "QR label batch",
+        defaultTitle: "Device IMEI, ICCID & MAC address serialized registry",
+        driveGroup: "03 Client projects",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "First-pass yield (FPY) trend analysis",
+        recordType: "FPY review",
+        defaultTitle: "Daily first-pass yield (FPY) review & defect Pareto",
+        driveGroup: "04 Other department work",
+        targetFolder: "07_Production_and_Testing",
+      },
     ],
   },
   fin: {
     drive: "01_Governance_and_QMS",
     items: [
-      { name: "Commercial tax invoice & GST", recordType: "Commercial billing", defaultTitle: "Commercial tax invoice & GST filing submission", driveGroup: "03 Client projects", targetFolder: "01_Governance_and_QMS" },
-      { name: "e-Way bill & dispatch documents", recordType: "Commercial billing", defaultTitle: "Electronic e-Way bill & shipping dispatch bundle", driveGroup: "03 Client projects", targetFolder: "01_Governance_and_QMS" },
-      { name: "Advance billing authorization", recordType: "PO & GRN validation", defaultTitle: "Customer milestone billing & advance payment auth", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
-      { name: "Project margin & cost-center P&L", recordType: "Receivables review", defaultTitle: "Project profitability & cost-center P&L analysis", driveGroup: "02 Internal projects", targetFolder: "01_Governance_and_QMS" },
-      { name: "Accounts receivable ageing review", recordType: "Receivables review", defaultTitle: "Accounts receivable ageing & customer credit limits", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
+      {
+        name: "Commercial tax invoice & GST",
+        recordType: "Commercial billing",
+        defaultTitle: "Commercial tax invoice & GST filing submission",
+        driveGroup: "03 Client projects",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "e-Way bill & dispatch documents",
+        recordType: "Commercial billing",
+        defaultTitle: "Electronic e-Way bill & shipping dispatch bundle",
+        driveGroup: "03 Client projects",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Advance billing authorization",
+        recordType: "PO & GRN validation",
+        defaultTitle: "Customer milestone billing & advance payment auth",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Project margin & cost-center P&L",
+        recordType: "Receivables review",
+        defaultTitle: "Project profitability & cost-center P&L analysis",
+        driveGroup: "02 Internal projects",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Accounts receivable ageing review",
+        recordType: "Receivables review",
+        defaultTitle: "Accounts receivable ageing & customer credit limits",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
     ],
   },
   sit: {
     drive: "05_Firmware_and_Software",
     items: [
-      { name: "Offsite encrypted backup log", recordType: "Backup review", defaultTitle: "Daily offsite encrypted cloud backup audit", driveGroup: "01 Common documents", targetFolder: "05_Firmware_and_Software" },
-      { name: "OTA firmware rollout manager", recordType: "Server telemetry", defaultTitle: "OTA telemetry fleet rollout monitoring log", driveGroup: "03 Client projects", targetFolder: "05_Firmware_and_Software" },
-      { name: "Telemetry cloud health & uptime", recordType: "Server telemetry", defaultTitle: "Server cluster health, latency & 99.9% uptime log", driveGroup: "01 Common documents", targetFolder: "05_Firmware_and_Software" },
-      { name: "ISMS ISO 27001 audit register", recordType: "ISMS control", defaultTitle: "ISO/IEC 27001:2022 information security register", driveGroup: "01 Common documents", targetFolder: "06_Quality_and_Compliance" },
-      { name: "IT hardware provisioning ticket", recordType: "IT support ticket", defaultTitle: "Staff workstation & hardware provisioning ticket", driveGroup: "04 Other department work", targetFolder: "01_Governance_and_QMS" },
+      {
+        name: "Offsite encrypted backup log",
+        recordType: "Backup review",
+        defaultTitle: "Daily offsite encrypted cloud backup audit",
+        driveGroup: "01 Common documents",
+        targetFolder: "05_Firmware_and_Software",
+      },
+      {
+        name: "OTA firmware rollout manager",
+        recordType: "Server telemetry",
+        defaultTitle: "OTA telemetry fleet rollout monitoring log",
+        driveGroup: "03 Client projects",
+        targetFolder: "05_Firmware_and_Software",
+      },
+      {
+        name: "Telemetry cloud health & uptime",
+        recordType: "Server telemetry",
+        defaultTitle: "Server cluster health, latency & 99.9% uptime log",
+        driveGroup: "01 Common documents",
+        targetFolder: "05_Firmware_and_Software",
+      },
+      {
+        name: "ISMS ISO 27001 audit register",
+        recordType: "ISMS control",
+        defaultTitle: "ISO/IEC 27001:2022 information security register",
+        driveGroup: "01 Common documents",
+        targetFolder: "06_Quality_and_Compliance",
+      },
+      {
+        name: "IT hardware provisioning ticket",
+        recordType: "IT support ticket",
+        defaultTitle: "Staff workstation & hardware provisioning ticket",
+        driveGroup: "04 Other department work",
+        targetFolder: "01_Governance_and_QMS",
+      },
     ],
   },
   hrops: {
     drive: "01_Governance_and_QMS",
     items: [
-      { name: "Annual competency & skill matrix", recordType: "Skill matrix", defaultTitle: "Annual competency matrix · HLPL/F/HR/03", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
-      { name: "IPC-A-610 training log", recordType: "Training need", defaultTitle: "IPC-A-610 Class 3 soldering & inspection training", driveGroup: "01 Common documents", targetFolder: "07_Production_and_Testing" },
-      { name: "ESD & cleanroom certification", recordType: "License alert", defaultTitle: "ESD S20.20 & cleanroom compliance certification", driveGroup: "01 Common documents", targetFolder: "07_Production_and_Testing" },
-      { name: "DMAIC Six Sigma tollgate", recordType: "DMAIC tollgate", defaultTitle: "Six Sigma DMAIC continuous improvement project", driveGroup: "02 Internal projects", targetFolder: "01_Governance_and_QMS" },
-      { name: "Statutory labor & safety audit", recordType: "License alert", defaultTitle: "Statutory labor, safety & ISO 45001 EHS audit", driveGroup: "01 Common documents", targetFolder: "01_Governance_and_QMS" },
+      {
+        name: "Annual competency & skill matrix",
+        recordType: "Skill matrix",
+        defaultTitle: "Annual competency matrix · HLPL/F/HR/03",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "IPC-A-610 training log",
+        recordType: "Training need",
+        defaultTitle: "IPC-A-610 Class 3 soldering & inspection training",
+        driveGroup: "01 Common documents",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "ESD & cleanroom certification",
+        recordType: "License alert",
+        defaultTitle: "ESD S20.20 & cleanroom compliance certification",
+        driveGroup: "01 Common documents",
+        targetFolder: "07_Production_and_Testing",
+      },
+      {
+        name: "DMAIC Six Sigma tollgate",
+        recordType: "DMAIC tollgate",
+        defaultTitle: "Six Sigma DMAIC continuous improvement project",
+        driveGroup: "02 Internal projects",
+        targetFolder: "01_Governance_and_QMS",
+      },
+      {
+        name: "Statutory labor & safety audit",
+        recordType: "License alert",
+        defaultTitle: "Statutory labor, safety & ISO 45001 EHS audit",
+        driveGroup: "01 Common documents",
+        targetFolder: "01_Governance_and_QMS",
+      },
     ],
   },
 };
@@ -7840,7 +12394,8 @@ function DepartmentProcessMenu({
         <div>
           <p className="text-sm font-semibold">Department processes & workflows</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Select a routine process shortcut to open a pre-filled, department-owned record linked to the Cloud Drive.
+            Select a routine process shortcut to open a pre-filled, department-owned record linked
+            to the Cloud Drive.
           </p>
         </div>
         <Action label="Department Cloud Drive" onClick={onOpenDrive} primary />
@@ -7887,10 +12442,50 @@ function DepartmentProcessMenu({
   );
 }
 
-function LifecycleDeliverables({ documents, stage, onOpenDocument }: { documents: ControlledDocument[]; stage: string; onOpenDocument: (document: ControlledDocument) => void }) {
-  const linked = documents.filter((document) => document.lifecycleStage === stage || document.phase?.includes(stage));
+function LifecycleDeliverables({
+  documents,
+  stage,
+  onOpenDocument,
+}: {
+  documents: ControlledDocument[];
+  stage: string;
+  onOpenDocument: (document: ControlledDocument) => void;
+}) {
+  const linked = documents.filter(
+    (document) => document.lifecycleStage === stage || document.phase?.includes(stage),
+  );
   if (!linked.length) return null;
-  return <section className="ops-section mt-5 overflow-hidden"><div className="ops-section-header flex items-center justify-between gap-3"><div><p className="text-sm font-semibold">Linked project deliverables</p><p className="mt-1 text-xs text-muted-foreground">Open the controlled file record or download its authorized revision from the Drive.</p></div><FolderOpen className="size-4 text-steel" /></div><div className="divide-y divide-border">{linked.map((document) => <button key={document.id} onClick={() => onOpenDocument(document)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5 text-left hover:bg-secondary"><span className="min-w-0"><strong className="block text-xs">{document.title}</strong><small className="mt-1 block font-mono text-[10px] text-muted-foreground">{document.part ?? document.type} · {document.deliverableKind ?? "Controlled evidence"}</small></span><span className="self-center text-xs text-steel">Open file</span></button>)}</div></section>;
+  return (
+    <section className="ops-section mt-5 overflow-hidden">
+      <div className="ops-section-header flex items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold">Linked project deliverables</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Open the controlled file record or download its authorized revision from the Drive.
+          </p>
+        </div>
+        <FolderOpen className="size-4 text-steel" />
+      </div>
+      <div className="divide-y divide-border">
+        {linked.map((document) => (
+          <button
+            key={document.id}
+            onClick={() => onOpenDocument(document)}
+            className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 px-4 py-2.5 text-left hover:bg-secondary"
+          >
+            <span className="min-w-0">
+              <strong className="block text-xs">{document.title}</strong>
+              <small className="mt-1 block font-mono text-[10px] text-muted-foreground">
+                {document.part ?? document.type} ·{" "}
+                {document.deliverableKind ?? "Controlled evidence"}
+              </small>
+            </span>
+            <span className="self-center text-xs text-steel">Open file</span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function AreaSummary({ records }: { records: RecordItem[] }) {
@@ -7927,7 +12522,7 @@ function RecordDetail({
 }: {
   record: RecordItem;
   projects?: RecordItem[];
-  onSendForFeasibility?: (()=>void) | undefined;
+  onSendForFeasibility?: (() => void) | undefined;
   onBack: () => void;
   onSave: (patch: Partial<RecordItem>) => Promise<boolean>;
   onArchive: () => void;
@@ -7965,36 +12560,66 @@ function RecordDetail({
             <h1 className="mt-2 text-3xl font-semibold">{record.title}</h1>
           </div>
           <div className="flex gap-2">
-            {onSendForFeasibility && <Action label="Send for feasibility" primary onClick={onSendForFeasibility} />}
-            <Action onClick={() => {
-              const projectId = record.fields["projectId"] || projectReferences(record)[0];
-              const linkedProject = projects.find((candidate) => candidate.reference === projectId);
-              onOpenPrintable(recordPrintable(record, linkedProject));
-            }} label="Open full document" primary />
-            <Action onClick={() => { setTitle(record.title); setNotes(record.notes); setStatus(record.status); setLinkedProject(record.fields["projectId"] ?? ""); setSaveError(""); setEditing(true); }} label={editing ? "Cancel" : "Edit"} />
+            {onSendForFeasibility && (
+              <Action label="Send for feasibility" primary onClick={onSendForFeasibility} />
+            )}
+            <Action
+              onClick={() => {
+                const projectId = record.fields["projectId"] || projectReferences(record)[0];
+                const linkedProject = projects.find(
+                  (candidate) => candidate.reference === projectId,
+                );
+                onOpenPrintable(recordPrintable(record, linkedProject));
+              }}
+              label="Open full document"
+              primary
+            />
+            <Action
+              onClick={() => {
+                setTitle(record.title);
+                setNotes(record.notes);
+                setStatus(record.status);
+                setLinkedProject(record.fields["projectId"] ?? "");
+                setSaveError("");
+                setEditing(true);
+              }}
+              label={editing ? "Cancel" : "Edit"}
+            />
             <Action onClick={onArchive} label="Archive" />
           </div>
         </div>
         <div className="grid gap-6 p-5 md:grid-cols-[minmax(0,1fr)_15rem]">
-            <div>
-              <h2 className="font-semibold">Controlled fields</h2>
-              <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-                {Object.entries(record.fields)
-                  .filter(([, value]) => value)
-                  .map(([key, value]) => (
-                    <div key={key} className="border-b border-border pb-2">
-                      <dt className="font-mono text-[10px] uppercase text-muted-foreground">
-                        {key.replace(/([A-Z])/g, " $1")}
-                      </dt>
-                      <dd className="mt-1 break-words text-sm">{key === 'lifecycleBaseline' ? (readLifecycleBaseline(String(value))?.id ?? 'Saved lifecycle snapshot needs review') : ["recordStage", "hwStage", "qualityStage", "lifecycleStage"].includes(key) && record.type !== "Project" ? recordStageLabel({ ...record.fields, recordStage: String(value) }, record.type) : value}</dd>
-                    </div>
-                  ))}
-              </dl>
-              <h2 className="mt-6 font-semibold">Requirements / scope</h2>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-                {record.notes || "No scope added."}
-              </p>
-            </div>
+          <div>
+            <h2 className="font-semibold">Controlled fields</h2>
+            <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+              {Object.entries(record.fields)
+                .filter(([, value]) => value)
+                .map(([key, value]) => (
+                  <div key={key} className="border-b border-border pb-2">
+                    <dt className="font-mono text-[10px] uppercase text-muted-foreground">
+                      {key.replace(/([A-Z])/g, " $1")}
+                    </dt>
+                    <dd className="mt-1 break-words text-sm">
+                      {key === "lifecycleBaseline"
+                        ? (readLifecycleBaseline(String(value))?.id ??
+                          "Saved lifecycle snapshot needs review")
+                        : ["recordStage", "hwStage", "qualityStage", "lifecycleStage"].includes(
+                              key,
+                            ) && record.type !== "Project"
+                          ? recordStageLabel(
+                              { ...record.fields, recordStage: String(value) },
+                              record.type,
+                            )
+                          : value}
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+            <h2 className="mt-6 font-semibold">Requirements / scope</h2>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+              {record.notes || "No scope added."}
+            </p>
+          </div>
           <aside className="border-l border-border pl-5">
             <Status status={record.status} />
             <p className="mt-6 font-mono text-[10px] uppercase text-muted-foreground">Priority</p>
@@ -8007,22 +12632,87 @@ function RecordDetail({
           </aside>
         </div>
       </section>
-      {editing && <Dialog open onOpenChange={open=>{if(!open && !saving)setEditing(false);}}><DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg"><DialogHeader><DialogTitle>Edit {record.type}</DialogTitle><DialogDescription>{record.reference} · Changes apply to this browser-local record.</DialogDescription></DialogHeader>            <form
-              onSubmit={async event => {
-                event.preventDefault(); if(saving || !title.trim()) return;
-                setSaving(true); setSaveError("");
-                try { if(await onSave({title:title.trim(),notes,status,...(isPreProjectIntake(record.type) ? {fields:{...record.fields,projectId:linkedProject,projectCode:linkedProject}} : {})})) setEditing(false); else setSaveError("Changes were not saved; your edit remains open."); }
-                catch(e){setSaveError(e instanceof Error ? e.message : "Changes could not be saved.");}
-                finally { setSaving(false); }
+      {editing && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open && !saving) setEditing(false);
+          }}
+        >
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit {record.type}</DialogTitle>
+              <DialogDescription>
+                {record.reference} · Changes apply to this browser-local record.
+              </DialogDescription>
+            </DialogHeader>{" "}
+            <form
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (saving || !title.trim()) return;
+                setSaving(true);
+                setSaveError("");
+                try {
+                  if (
+                    await onSave({
+                      title: title.trim(),
+                      notes,
+                      status,
+                      ...(isPreProjectIntake(record.type)
+                        ? {
+                            fields: {
+                              ...record.fields,
+                              projectId: linkedProject,
+                              projectCode: linkedProject,
+                            },
+                          }
+                        : {}),
+                    })
+                  )
+                    setEditing(false);
+                  else setSaveError("Changes were not saved; your edit remains open.");
+                } catch (e) {
+                  setSaveError(e instanceof Error ? e.message : "Changes could not be saved.");
+                } finally {
+                  setSaving(false);
+                }
               }}
               className="space-y-4"
             >
               <TextField label="Title" value={title} onChange={setTitle} required />
-              {isPreProjectIntake(record.type) && <div className="space-y-1"><p className="text-xs">Project association</p><CompactFilterSelect label="Inquiry project association" shortLabel="Project" icon={Layers} value={linkedProject} onChange={setLinkedProject} options={[{value:"",label:"No project yet"},...projects.map(project=>({value:project.reference,label:`${project.reference} · ${project.title}`}))]}/><p className="text-xs text-muted-foreground">Link a real project when available. Existing inquiry and review references stay unchanged.</p></div>}
+              {isPreProjectIntake(record.type) && (
+                <div className="space-y-1">
+                  <p className="text-xs">Project association</p>
+                  <CompactFilterSelect
+                    label="Inquiry project association"
+                    shortLabel="Project"
+                    icon={Layers}
+                    value={linkedProject}
+                    onChange={setLinkedProject}
+                    options={[
+                      { value: "", label: "No project yet" },
+                      ...projects.map((project) => ({
+                        value: project.reference,
+                        label: `${project.reference} · ${project.title}`,
+                      })),
+                    ]}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Link a real project when available. Existing inquiry and review references stay
+                    unchanged.
+                  </p>
+                </div>
+              )}
               <SelectField
                 label="Status"
                 value={status}
-                options={record.status === "Approved" || record.status === "Released" || record.status === "In review" ? [record.status] : ["Draft", "Open", "In review"]}
+                options={
+                  record.status === "Approved" ||
+                  record.status === "Released" ||
+                  record.status === "In review"
+                    ? [record.status]
+                    : ["Draft", "Open", "In review"]
+                }
                 onChange={(value) => setStatus(value as RecordStatus)}
               />
               <label className="block text-sm font-medium">
@@ -8033,11 +12723,35 @@ function RecordDetail({
                   className="mt-1.5 min-h-28 w-full border border-input bg-background p-3 text-sm"
                 />
               </label>
-              <p className="text-xs text-muted-foreground">Final approvals and released revisions are managed through their review workflow.</p>
-              {saveError && <p role="alert" className="text-xs text-destructive">{saveError}</p>}
-              <div className="flex justify-end gap-2"><button type="button" disabled={saving} onClick={()=>setEditing(false)} className="rounded-lg border border-border px-3 py-2 text-xs">Cancel</button><button type="submit" disabled={saving} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">{saving ? "Saving…" : "Save changes"}</button></div>
+              <p className="text-xs text-muted-foreground">
+                Final approvals and released revisions are managed through their review workflow.
+              </p>
+              {saveError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {saveError}
+                </p>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setEditing(false)}
+                  className="rounded-lg border border-border px-3 py-2 text-xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
             </form>
-</DialogContent></Dialog>}
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }
@@ -8062,19 +12776,32 @@ function RecordForm({
   initialValues?: Record<string, string> | null;
   defaultAssignee: string;
   onClose: () => void;
-  onSave: (record: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">, originalFile?: File | null) => Promise<boolean>;
+  onSave: (
+    record: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">,
+    originalFile?: File | null,
+  ) => Promise<boolean>;
   onAddCustomer?: ((customer: CustomerRecord) => void) | undefined;
   onAddSupplier?: ((supplier: SupplierRecordItem) => void) | undefined;
   onAddPart?: ((part: PartRecordItem) => void) | undefined;
 }) {
   const spec = formSpecs[area] ?? formSpecs["ehw"];
   if (!spec) return null;
-  const availableTypes = Array.from(new Set(["Task", ...(area === "sales" || area === "rnd" ? ["Project"] : []), ...(spec.types ?? []), ...(initialType ? [initialType] : [])]));
+  const availableTypes = Array.from(
+    new Set([
+      "Task",
+      ...(area === "sales" || area === "rnd" ? ["Project"] : []),
+      ...(spec.types ?? []),
+      ...(initialType ? [initialType] : []),
+    ]),
+  );
   const [type, setType] = useState(initialType ?? spec.types[0] ?? "Record");
   const [values, setValues] = useState<Record<string, string>>(() => ({
     assignee: defaultAssignee,
     location: portal.masters.locations?.[0] || "",
-    projectId: initialType === "Project" ? suggestProjectCode(portal.records, portal.templateSettings?.prefix) : "",
+    projectId:
+      initialType === "Project"
+        ? suggestProjectCode(portal.records, portal.templateSettings?.prefix)
+        : "",
     hwStage: "HW_01",
     gate: "G0",
     procurementTrack: "Rapid prototype",
@@ -8089,9 +12816,16 @@ function RecordForm({
   const [originalFile, setOriginalFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const canAddCustomer = ["sales", "sal", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
-  const canAddSupplier = ["pur", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
-  const canAddPart = ["ehw", "esw", "mech", "pur", "rnd", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
+  const canAddCustomer =
+    ["sales", "sal", "admin"].includes(area) ||
+    persona?.kind === "admin" ||
+    persona?.id === "admin";
+  const canAddSupplier =
+    ["pur", "admin"].includes(area) || persona?.kind === "admin" || persona?.id === "admin";
+  const canAddPart =
+    ["ehw", "esw", "mech", "pur", "rnd", "admin"].includes(area) ||
+    persona?.kind === "admin" ||
+    persona?.id === "admin";
 
   useEffect(() => {
     if (initialType) setType(initialType);
@@ -8110,22 +12844,60 @@ function RecordForm({
   }, [initialType, initialValues, portal.masters.locations]);
   const field = (key: string) => values[key] ?? "";
   const attachmentSpec = hardwareAttachmentForRecordType(type);
-  const attachmentProject = portal.records.find(record => record.type === "Project" && (record.reference === field("projectId") || record.id === field("projectId")));
-  const attachmentLifecycleContext = attachmentProject ? projectLifecycleContext(attachmentProject.fields) : undefined;
-  const attachmentProjectStageCandidates = [attachmentProject?.fields["currentStage"], attachmentProject?.fields["lifecycleStage"], attachmentProject?.fields["stage"]]
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-  const attachmentProjectStage = attachmentProjectStageCandidates.find(value => CANONICAL_STAGE_TEMPLATES.some(stage => stage.stageCode === value)) ?? "";
-  const attachmentProjectStageNeedsMapping = Boolean(attachmentProject && !attachmentProjectStage && attachmentProjectStageCandidates.length);
-  const attachmentAllowedAtStage = recordAttachmentAllowedAtStage(type, attachmentProjectStage, CANONICAL_STAGE_TEMPLATES);
-  const departmentCode = findAreaDepartment(portal.departments, area)?.code.replace(/^DEMO-/, "") || areaById(area).short;
+  const attachmentProject = portal.records.find(
+    (record) =>
+      record.type === "Project" &&
+      (record.reference === field("projectId") || record.id === field("projectId")),
+  );
+  const attachmentLifecycleContext = attachmentProject
+    ? projectLifecycleContext(attachmentProject.fields)
+    : undefined;
+  const attachmentProjectStageCandidates = [
+    attachmentProject?.fields["currentStage"],
+    attachmentProject?.fields["lifecycleStage"],
+    attachmentProject?.fields["stage"],
+  ].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const attachmentProjectStage =
+    attachmentProjectStageCandidates.find((value) =>
+      CANONICAL_STAGE_TEMPLATES.some((stage) => stage.stageCode === value),
+    ) ?? "";
+  const attachmentProjectStageNeedsMapping = Boolean(
+    attachmentProject && !attachmentProjectStage && attachmentProjectStageCandidates.length,
+  );
+  const attachmentAllowedAtStage = recordAttachmentAllowedAtStage(
+    type,
+    attachmentProjectStage,
+    CANONICAL_STAGE_TEMPLATES,
+  );
+  const departmentCode =
+    findAreaDepartment(portal.departments, area)?.code.replace(/^DEMO-/, "") ||
+    areaById(area).short;
   const selectedProject = field("projectId");
-  const selectedDocumentType = templateDocumentTypes.includes(type.toUpperCase()) ? type.toUpperCase() : type.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 8) || "REC";
+  const selectedDocumentType = templateDocumentTypes.includes(type.toUpperCase())
+    ? type.toUpperCase()
+    : type
+        .toUpperCase()
+        .replace(/[^A-Z]/g, "")
+        .slice(0, 8) || "REC";
   const nextRevision = String(
-    portal.records.filter((record) => record.reference.includes(`-${departmentCode}-${selectedDocumentType}-`)).length + 1,
+    portal.records.filter((record) =>
+      record.reference.includes(`-${departmentCode}-${selectedDocumentType}-`),
+    ).length + 1,
   ).padStart(2, "0");
-  const generatedId = type === "Project" ? field("projectId") : type === "Task"
-    ? `TASK-${departmentCode}-${String(portal.records.filter((r) => r.type === "Task").length + 1).padStart(3, "0")}`
-    : isPreProjectIntake(type) && !selectedProject ? suggestIntakeReference(portal.records,type) : documentNumber(selectedProject, departmentCode, selectedDocumentType, nextRevision, portal.templateSettings?.prefix ?? "HLPL");
+  const generatedId =
+    type === "Project"
+      ? field("projectId")
+      : type === "Task"
+        ? `TASK-${departmentCode}-${String(portal.records.filter((r) => r.type === "Task").length + 1).padStart(3, "0")}`
+        : isPreProjectIntake(type) && !selectedProject
+          ? suggestIntakeReference(portal.records, type)
+          : documentNumber(
+              selectedProject,
+              departmentCode,
+              selectedDocumentType,
+              nextRevision,
+              portal.templateSettings?.prefix ?? "HLPL",
+            );
   const taskFields = [
     { key: "title", label: "Task Title / Action", required: true },
     {
@@ -8135,14 +12907,32 @@ function RecordForm({
       options: ["Normal", "High", "Critical", "Low"],
     },
     { key: "assignee", label: "Assignee", master: "people" as const },
-    { key: "projectId", label: "Project", master: "products" as const },
+    { key: "projectId", label: "Project", master: "projects" as const },
     { key: "dueDate", label: "Due Date", kind: "date" as const },
     { key: "controlledNumber", label: "Task ID / Reference (optional)" },
   ];
-  const projectOptions = portal.records.filter(record => record.type === "Project" && !record.archived).map(record => record.reference);
+  const projectRecords = portal.records.filter(
+    (record) =>
+      record.type === "Project" && !record.archived && isSelectableMasterStatus(record.status),
+  );
+  const projectOptions = projectRecords.map((record) => record.reference);
+  const masterOptionsFor = (
+    master: import("@/lib/record-form-catalogue").RecordField["master"],
+  ): string[] =>
+    master === "projects"
+      ? projectOptions
+      : master
+        ? (portal.masters[master as keyof MasterData] ?? [])
+        : [];
   const projectFields = [
     { key: "enquiryId", label: "Source enquiry", required: true },
-    { key: "projectTrack", label: "Approved engineering track", required: true, kind: "select" as const, options: Object.keys(CANONICAL_TRACK_METADATA) },
+    {
+      key: "projectTrack",
+      label: "Approved engineering track",
+      required: true,
+      kind: "select" as const,
+      options: Object.keys(CANONICAL_TRACK_METADATA),
+    },
     { key: "startDecisionReason", label: "Project-start decision reason", required: true },
     { key: "projectId", label: "Project code", required: true },
     { key: "title", label: "Project title", required: true },
@@ -8151,17 +12941,39 @@ function RecordForm({
     { key: "targetDate", label: "Target date", kind: "date" as const },
     { key: "quantity", label: "Target annual volume" },
   ];
-  const visibleFields: import("@/lib/record-form-catalogue").RecordField[] = (type === "Project" ? projectFields : type === "Task" ? taskFields : [
-    { key: "projectId", label: isPreProjectIntake(type) ? "Existing project (optional)" : "Project", required: !isPreProjectIntake(type), kind: "select" as const, options: projectOptions },
-    { key: "title", label: isPreProjectIntake(type) ? `${type} title` : "Record title", required: true },
-    ...recordFields(spec, type),
-  ]).map((item) => {
+  const visibleFields: import("@/lib/record-form-catalogue").RecordField[] = (
+    type === "Project"
+      ? projectFields
+      : type === "Task"
+        ? taskFields
+        : [
+            {
+              key: "projectId",
+              label: isPreProjectIntake(type) ? "Existing project (optional)" : "Project",
+              required: !isPreProjectIntake(type),
+              kind: "select" as const,
+              options: projectOptions,
+            },
+            {
+              key: "title",
+              label: isPreProjectIntake(type) ? `${type} title` : "Record title",
+              required: true,
+            },
+            ...recordFields(spec, type),
+          ]
+  ).map((item) => {
     const stage = item.key === "hwStage" ? hardwareStageForRecordType(type) : undefined;
-    return stage ? { ...item, readOnly: true, automaticValue: stage.code, automaticLabel: stage.label } : item;
+    return stage
+      ? { ...item, readOnly: true, automaticValue: stage.code, automaticLabel: stage.label }
+      : item;
   });
-  const persistRecord = async (record: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">) => {
+  const persistRecord = async (
+    record: Omit<RecordItem, "id" | "reference" | "createdAt" | "updatedAt">,
+  ) => {
     if (originalFile && !attachmentAllowedAtStage) {
-      setError(`Original upload is locked. It is available at ${attachmentSpec?.stageCode ?? "the mapped record stage"} and the immediately following stage; current project stage: ${attachmentProjectStage || "not recorded"}. You may save the draft record without a file.`);
+      setError(
+        `Original upload is locked. It is available at ${attachmentSpec?.stageCode ?? "the mapped record stage"} and the immediately following stage; current project stage: ${attachmentProjectStage || "not recorded"}. You may save the draft record without a file.`,
+      );
       return;
     }
     setSaving(true);
@@ -8171,17 +12983,25 @@ function RecordForm({
       if (!saved) return;
       onClose();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Record and original could not be saved.");
+      setError(
+        saveError instanceof Error ? saveError.message : "Record and original could not be saved.",
+      );
     } finally {
       setSaving(false);
     }
   };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const scopedValues = scopeRecordDefaults(values, visibleFields.map(item => item.key));
+    const scopedValues = scopeRecordDefaults(
+      values,
+      visibleFields.map((item) => item.key),
+    );
     if (type !== "Task" || field("projectId")) {
-      try { validateIntakeProject(portal.records, type, field("projectId")); }
-      catch (error) { return setError(error instanceof Error ? error.message : "Choose a project."); }
+      try {
+        validateIntakeProject(portal.records, type, field("projectId"));
+      } catch (error) {
+        return setError(error instanceof Error ? error.message : "Choose a project.");
+      }
     }
     if (type === "Task") {
       const taskTitle = field("title").trim();
@@ -8203,19 +13023,23 @@ function RecordForm({
       });
       return;
     }
-    const finalControlledNumber = type === "Project" ? field("projectId") : field("controlledNumber") || generatedId;
+    const finalControlledNumber =
+      type === "Project" ? field("projectId") : field("controlledNumber") || generatedId;
     const preparedValues = {
       ...(type === "PRS"
         ? {
             ...scopedValues,
             controlledNumber: finalControlledNumber || "HLPL-SLCT-EHW-PRS-01",
             hwStage: hardwareStageForRecordType(type)?.code || field("hwStage"),
-            generatedFrom: "Editable draft prepared from the selected project context; verify and complete source requirements before review.",
+            generatedFrom:
+              "Editable draft prepared from the selected project context; verify and complete source requirements before review.",
             baseline: "Operational draft · editable until submitted for review",
           }
         : scopedValues),
       controlledNumber: finalControlledNumber,
-      ...(type === "Project" ? { lifecycleStage: "CM_01", currentStage: "CM_01", companyPhase: "TG_0" } : {}),
+      ...(type === "Project"
+        ? { lifecycleStage: "CM_01", currentStage: "CM_01", companyPhase: "TG_0" }
+        : {}),
     };
     const missing = visibleFields.find(
       (item) => item.required && item.key !== "controlledNumber" && !field(item.key).trim(),
@@ -8226,11 +13050,9 @@ function RecordForm({
         item.master &&
         item.master !== "products" &&
         field(item.key) &&
-        !(portal.masters[item.master] ?? []).some(
+        !masterOptionsFor(item.master).some(
           (value) =>
-            value.toLowerCase() === field(item.key).toLowerCase() ||
-            field(item.key).toLowerCase().includes(value.toLowerCase()) ||
-            value.toLowerCase().includes(field(item.key).toLowerCase()),
+            value.trim().toLocaleLowerCase() === field(item.key).trim().toLocaleLowerCase(),
         ),
     );
     if (invalid) return setError(`Select a managed ${invalid.label.toLowerCase()} option.`);
@@ -8245,58 +13067,199 @@ function RecordForm({
     });
   };
   return (
-    <Modal title={type === "Task" ? `Create Task · ${areaById(area).name}` : `Create ${type}`} onClose={onClose} wide>
+    <Modal
+      title={type === "Task" ? `Create Task · ${areaById(area).name}` : `Create ${type}`}
+      onClose={onClose}
+      wide
+    >
       <form onSubmit={submit} className="space-y-5">
         <p className="rounded-lg border border-border bg-panel px-3 py-2 text-xs text-muted-foreground">
           {type === "Task"
             ? `Create a tracked operational task assigned within ${areaById(area).name}. Tasks are automatically integrated into Today Checklist, Priority metrics, and department queues.`
-            : isPreProjectIntake(type) ? "Capture the customer requirement first. A new inquiry can be saved without a project; link an existing project only when relevant." : type === "Project" ? "Create a project with a unique code and a separate descriptive title. The suggested code can be changed before saving; existing projects are not renamed."
-            : `This ${areaById(area).name} record is linked to a managed project, people, suppliers and customers where applicable. The portal generates an HLPL document number when you leave the controlled number blank.`}
+            : isPreProjectIntake(type)
+              ? "Capture the customer requirement first. A new inquiry can be saved without a project; link an existing project only when relevant."
+              : type === "Project"
+                ? "Create a project with a unique code and a separate descriptive title. The suggested code can be changed before saving; existing projects are not renamed."
+                : `This ${areaById(area).name} record is linked to a managed project, people, suppliers and customers where applicable. The portal generates an HLPL document number when you leave the controlled number blank.`}
         </p>
-        <SelectField label="Record type" value={type} options={availableTypes} onChange={next => { setType(next); setOriginalFile(null); setValues(previous => ({ ...previous, controlledNumber: "", hwStage: hardwareStageForRecordType(next)?.code || previous["hwStage"] || "HW_01", projectId: next === "Project" ? suggestProjectCode(portal.records, portal.templateSettings?.prefix) : type === "Project" ? "" : previous["projectId"] ?? "" })); }} />
+        <SelectField
+          label="Record type"
+          value={type}
+          options={availableTypes}
+          onChange={(next) => {
+            setType(next);
+            setOriginalFile(null);
+            setValues((previous) => ({
+              ...previous,
+              controlledNumber: "",
+              hwStage: hardwareStageForRecordType(next)?.code || previous["hwStage"] || "HW_01",
+              projectId:
+                next === "Project"
+                  ? suggestProjectCode(portal.records, portal.templateSettings?.prefix)
+                  : type === "Project"
+                    ? ""
+                    : (previous["projectId"] ?? ""),
+            }));
+          }}
+        />
         <section className="rounded-lg border border-steel/35 bg-panel p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-steel">{type === "Project" ? "Project identifier" : "Automatic document number"}</p>
-              <p className="mt-1 font-mono text-sm font-semibold text-foreground">{field("controlledNumber") || generatedId}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{type === "Project" ? "This code identifies the project; Project title is its display name." : isPreProjectIntake(type) && !selectedProject ? "Standalone sales inquiry number; this is not a project code." : `${portal.templateSettings?.prefix ?? "HLPL"} · Project · Department · Document type · Revision`}</p>
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-steel">
+                {type === "Project" ? "Project identifier" : "Automatic document number"}
+              </p>
+              <p className="mt-1 font-mono text-sm font-semibold text-foreground">
+                {field("controlledNumber") || generatedId}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {type === "Project"
+                  ? "This code identifies the project; Project title is its display name."
+                  : isPreProjectIntake(type) && !selectedProject
+                    ? "Standalone sales inquiry number; this is not a project code."
+                    : `${portal.templateSettings?.prefix ?? "HLPL"} · Project · Department · Document type · Revision`}
+              </p>
             </div>
-            <Action label={copied ? "Copied" : "Copy ID"} onClick={() => { void navigator.clipboard?.writeText(field("controlledNumber") || generatedId); setCopied(true); window.setTimeout(() => setCopied(false), 1500); }} />
+            <Action
+              label={copied ? "Copied" : "Copy ID"}
+              onClick={() => {
+                void navigator.clipboard?.writeText(field("controlledNumber") || generatedId);
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1500);
+              }}
+            />
           </div>
-          <input aria-label={type === "Project" ? "Project identifier preview" : "Editable document ID"} readOnly={type === "Project"} value={type === "Project" ? generatedId : field("controlledNumber") || generatedId} onChange={(event) => setValues({ ...values, controlledNumber: event.target.value.toUpperCase() })} className="mt-3 h-9 w-full rounded-lg border border-input bg-background px-3 font-mono text-xs" />
+          <input
+            aria-label={type === "Project" ? "Project identifier preview" : "Editable document ID"}
+            readOnly={type === "Project"}
+            value={type === "Project" ? generatedId : field("controlledNumber") || generatedId}
+            onChange={(event) =>
+              setValues({ ...values, controlledNumber: event.target.value.toUpperCase() })
+            }
+            className="mt-3 h-9 w-full rounded-lg border border-input bg-background px-3 font-mono text-xs"
+          />
         </section>
         {type === "PRS" && (
           <div className="rounded-lg border border-moss/30 bg-accent p-4 text-sm">
             <p className="font-semibold">Project-linked PRS draft</p>
             <p className="mt-1 text-muted-foreground">
-              The stage is assigned automatically from the record type. This draft remains editable; source requirements and approvals are never assumed.
+              The stage is assigned automatically from the record type. This draft remains editable;
+              source requirements and approvals are never assumed.
             </p>
-            <p className="mt-2 font-mono text-xs text-steel">{hardwareStageForRecordType(type)?.label || "Stage assigned by record type"}</p>
+            <p className="mt-2 font-mono text-xs text-steel">
+              {hardwareStageForRecordType(type)?.label || "Stage assigned by record type"}
+            </p>
           </div>
         )}
-        {initialValues?.["sourceTicketReference"] && <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-xs">
-          <p className="font-semibold">Linked from ticket {initialValues["sourceTicketReference"]}</p>
-          <p className="mt-1 text-muted-foreground">Ticket context is prefilled for review and remains editable. Saving creates a browser-local operational draft only; no controlled document, approval, release, measurement, or customer response is generated.</p>
-        </div>}
+        {initialValues?.["sourceTicketReference"] && (
+          <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-xs">
+            <p className="font-semibold">
+              Linked from ticket {initialValues["sourceTicketReference"]}
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Ticket context is prefilled for review and remains editable. Saving creates a
+              browser-local operational draft only; no controlled document, approval, release,
+              measurement, or customer response is generated.
+            </p>
+          </div>
+        )}
         <div className="grid gap-4 md:grid-cols-2">
           {visibleFields.map((item) =>
-            item.master ? (
+            item.key === "projectId" && type !== "Project" ? (
+              <div key={item.key} className="space-y-1">
+                <p className="text-sm font-medium">
+                  {item.label}
+                  {item.required ? " *" : ""}
+                </p>
+                <CompactFilterSelect
+                  label={item.label}
+                  shortLabel="Project"
+                  icon={Layers}
+                  value={selectedProject}
+                  onChange={(value) => {
+                    setOriginalFile(null);
+                    setValues((previous) => ({
+                      ...previous,
+                      projectId: value,
+                      ...(isPreProjectIntake(type) ? { controlledNumber: "" } : {}),
+                    }));
+                  }}
+                  options={[
+                    {
+                      value: "",
+                      label: isPreProjectIntake(type)
+                        ? "New requirement — no project yet"
+                        : item.required
+                          ? "Choose a project"
+                          : "No project linked",
+                    },
+                    ...projectRecords.map((record) => ({
+                      value: record.reference,
+                      label: `${record.reference} · ${record.title}`,
+                    })),
+                  ]}
+                />
+                {isPreProjectIntake(type) && (
+                  <p className="text-xs text-muted-foreground">
+                    Link an existing project only for a change, extension or repeat requirement. No
+                    project is created by saving this inquiry.
+                  </p>
+                )}
+              </div>
+            ) : item.master ? (
               <ManagedField
                 key={item.key}
                 item={item}
                 value={field(item.key)}
-                options={portal.masters[item.master] ?? []}
-                onChange={(value) => { if (item.key === "projectId") setOriginalFile(null); setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value }); }}
-                onAddCustomer={item.master === "customers" && canAddCustomer ? () => setShowAddCustomerModal(true) : undefined}
-                onAddSupplier={item.master === "suppliers" && canAddSupplier ? () => setShowAddSupplierModal(true) : undefined}
-                onAddPart={item.master === "parts" && canAddPart ? () => setShowAddPartModal(true) : undefined}
+                options={masterOptionsFor(item.master)}
+                onChange={(value) => {
+                  if (item.key === "projectId") setOriginalFile(null);
+                  setValues({
+                    ...values,
+                    [item.key]:
+                      type === "Project" && item.key === "projectId"
+                        ? value.trim().toUpperCase()
+                        : value,
+                  });
+                }}
+                onAddCustomer={
+                  item.master === "customers" && canAddCustomer
+                    ? () => setShowAddCustomerModal(true)
+                    : undefined
+                }
+                onAddSupplier={
+                  item.master === "suppliers" && canAddSupplier
+                    ? () => setShowAddSupplierModal(true)
+                    : undefined
+                }
+                onAddPart={
+                  item.master === "parts" && canAddPart
+                    ? () => setShowAddPartModal(true)
+                    : undefined
+                }
                 canAddSupplier={canAddSupplier}
                 canAddPart={canAddPart}
               />
             ) : item.key === "enquiryId" && type === "Project" ? (
-              <div key={item.key} className="space-y-1"><p className="text-sm font-medium">Source enquiry *</p><CompactFilterSelect label="Project source enquiry" shortLabel="Enquiry" icon={Layers} value={field('enquiryId')} onChange={value=>setValues(previous=>({...previous,enquiryId:value}))} options={[{value:'',label:'Choose a reviewed client or internal enquiry'},...(portal.enquiriesOpportunities??[]).map(enquiry=>({value:enquiry.id,label:`${enquiry.reference} · ${enquiry.title}`}))]}/><p className="text-xs text-muted-foreground">Required department reviews are checked again when saving.</p></div>
-            ) : item.key === "projectId" && isPreProjectIntake(type) ? (
-              <div key={item.key} className="space-y-1"><p className="text-sm font-medium">Existing project (optional)</p><CompactFilterSelect label="Inquiry project link" shortLabel="Project" icon={Layers} value={selectedProject} onChange={value=>setValues(previous=>({...previous,projectId:value,controlledNumber:""}))} options={[{value:"",label:"New requirement — no project yet"},...portal.records.filter(record=>record.type === "Project" && !record.archived).map(record=>({value:record.reference,label:`${record.reference} · ${record.title}`}))]}/><p className="text-xs text-muted-foreground">Link an existing project only for a change, extension or repeat requirement. No project is created by saving this inquiry.</p></div>
+              <div key={item.key} className="space-y-1">
+                <p className="text-sm font-medium">Source enquiry *</p>
+                <CompactFilterSelect
+                  label="Project source enquiry"
+                  shortLabel="Enquiry"
+                  icon={Layers}
+                  value={field("enquiryId")}
+                  onChange={(value) => setValues((previous) => ({ ...previous, enquiryId: value }))}
+                  options={[
+                    { value: "", label: "Choose a reviewed client or internal enquiry" },
+                    ...(portal.enquiriesOpportunities ?? []).map((enquiry) => ({
+                      value: enquiry.id,
+                      label: `${enquiry.reference} · ${enquiry.title}`,
+                    })),
+                  ]}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Required department reviews are checked again when saving.
+                </p>
+              </div>
             ) : item.readOnly ? (
               <TextField
                 key={item.key}
@@ -8311,7 +13274,16 @@ function RecordForm({
                 label={`${item.label}${item.required ? " *" : ""}`}
                 value={field(item.key)}
                 options={["", ...(item.options ?? [])]}
-                onChange={(value) => { if (item.key === "projectId") setOriginalFile(null); setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value }); }}
+                onChange={(value) => {
+                  if (item.key === "projectId") setOriginalFile(null);
+                  setValues({
+                    ...values,
+                    [item.key]:
+                      type === "Project" && item.key === "projectId"
+                        ? value.trim().toUpperCase()
+                        : value,
+                  });
+                }}
               />
             ) : (
               <TextField
@@ -8320,17 +13292,41 @@ function RecordForm({
                 type={item.kind === "date" ? "date" : "text"}
                 required={item.required === true}
                 value={field(item.key)}
-                onChange={(value) => { if (item.key === "projectId") setOriginalFile(null); setValues({ ...values, [item.key]: type === "Project" && item.key === "projectId" ? value.trim().toUpperCase() : value }); }}
+                onChange={(value) => {
+                  if (item.key === "projectId") setOriginalFile(null);
+                  setValues({
+                    ...values,
+                    [item.key]:
+                      type === "Project" && item.key === "projectId"
+                        ? value.trim().toUpperCase()
+                        : value,
+                  });
+                }}
               />
             ),
           )}
         </div>
-        {attachmentSpec && <section aria-label="Automatic project phase and stage" className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs">
-          <p className="font-semibold">Project phase and stage · automatic</p>
-          <p className="mt-1">{field("projectId") ? `${attachmentProject?.reference || field("projectId")} · ${attachmentProject?.title || "Project"}` : "Choose a project to load its current lifecycle context."}</p>
-          <p className="text-muted-foreground">{attachmentLifecycleContext?.phase || "Phase not recorded"} · {attachmentLifecycleContext?.stage || "Stage not recorded"}</p>
-          <p className="text-muted-foreground">Record stage: {hardwareStageForRecordType(type)?.label || attachmentSpec.stageCode} · assigned from record type; the project stage remains unchanged.</p>
-        </section>}
+        {attachmentSpec && (
+          <section
+            aria-label="Automatic project phase and stage"
+            className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs"
+          >
+            <p className="font-semibold">Project phase and stage · automatic</p>
+            <p className="mt-1">
+              {field("projectId")
+                ? `${attachmentProject?.reference || field("projectId")} · ${attachmentProject?.title || "Project"}`
+                : "Choose a project to load its current lifecycle context."}
+            </p>
+            <p className="text-muted-foreground">
+              {attachmentLifecycleContext?.phase || "Phase not recorded"} ·{" "}
+              {attachmentLifecycleContext?.stage || "Stage not recorded"}
+            </p>
+            <p className="text-muted-foreground">
+              Record stage: {hardwareStageForRecordType(type)?.label || attachmentSpec.stageCode} ·
+              assigned from record type; the project stage remains unchanged.
+            </p>
+          </section>
+        )}
         <label className="block text-sm font-medium">
           Requirements / scope
           <textarea
@@ -8339,19 +13335,34 @@ function RecordForm({
             className="mt-1.5 min-h-28 w-full border border-input bg-background p-3 text-sm"
           />
         </label>
-        {attachmentSpec && <label className="block rounded-lg border border-border bg-card/60 p-3 text-sm font-medium">
-          {attachmentSpec.label} <span className="font-normal text-muted-foreground">(optional; attached in this save)</span>
-          <input
-            aria-label="Original file for record"
-            type="file"
-            accept={attachmentSpec.accept}
-            onChange={(event) => setOriginalFile(event.target.files?.[0] ?? null)}
-            className="mt-2 block w-full text-xs"
-            disabled={saving || !attachmentAllowedAtStage || !field("projectId")}
-          />
-          {originalFile && <p className="mt-1 text-xs text-muted-foreground">{originalFile.name} · {(originalFile.size / 1024).toFixed(0)} KB · SHA-256 verified when saved</p>}
-          <p className="mt-1 text-xs text-muted-foreground">{attachmentAllowedAtStage ? `Project stage ${attachmentProjectStage} permits this original. It remains a draft and does not approve, release or advance the project.` : `Upload unlocks at ${attachmentSpec.stageCode} or the immediately following project stage. ${attachmentProjectStageNeedsMapping ? "The project has a legacy stage label that is not mapped to the current lifecycle catalog." : `Current stage: ${attachmentProjectStage || "not recorded"}.`} You can still save the draft record.`} Browser-local TEST storage; cloud sharing is not implied.</p>
-        </label>}
+        {attachmentSpec && (
+          <label className="block rounded-lg border border-border bg-card/60 p-3 text-sm font-medium">
+            {attachmentSpec.label}{" "}
+            <span className="font-normal text-muted-foreground">
+              (optional; attached in this save)
+            </span>
+            <input
+              aria-label="Original file for record"
+              type="file"
+              accept={attachmentSpec.accept}
+              onChange={(event) => setOriginalFile(event.target.files?.[0] ?? null)}
+              className="mt-2 block w-full text-xs"
+              disabled={saving || !attachmentAllowedAtStage || !field("projectId")}
+            />
+            {originalFile && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {originalFile.name} · {(originalFile.size / 1024).toFixed(0)} KB · SHA-256 verified
+                when saved
+              </p>
+            )}
+            <p className="mt-1 text-xs text-muted-foreground">
+              {attachmentAllowedAtStage
+                ? `Project stage ${attachmentProjectStage} permits this original. It remains a draft and does not approve, release or advance the project.`
+                : `Upload unlocks at ${attachmentSpec.stageCode} or the immediately following project stage. ${attachmentProjectStageNeedsMapping ? "The project has a legacy stage label that is not mapped to the current lifecycle catalog." : `Current stage: ${attachmentProjectStage || "not recorded"}.`} You can still save the draft record.`}{" "}
+              Browser-local TEST storage; cloud sharing is not implied.
+            </p>
+          </label>
+        )}
         {error && (
           <p role="alert" className="text-sm text-danger">
             {error}
@@ -8359,7 +13370,19 @@ function RecordForm({
         )}
         <div className="flex justify-end gap-2">
           <Action onClick={onClose} label="Cancel" />
-          <button type="submit" disabled={saving} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{saving ? "Saving draft…" : originalFile ? `Save ${type} & original` : type === "Task" ? "Save Task" : `Save ${type}`}</button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {saving
+              ? "Saving draft…"
+              : originalFile
+                ? `Save ${type} & original`
+                : type === "Task"
+                  ? "Save Task"
+                  : `Save ${type}`}
+          </button>
         </div>
       </form>
       {showAddCustomerModal && (
@@ -8426,7 +13449,10 @@ function ManagedField({
   const fieldId = useId();
   const isCustomer = item.label.toLowerCase().includes("customer") || item.master === "customers";
   const isSupplier = item.label.toLowerCase().includes("supplier") || item.master === "suppliers";
-  const isPart = item.label.toLowerCase().includes("part") || item.label.toLowerCase().includes("component") || item.master === "parts";
+  const isPart =
+    item.label.toLowerCase().includes("part") ||
+    item.label.toLowerCase().includes("component") ||
+    item.master === "parts";
 
   return (
     <div className="block text-sm font-medium">
@@ -8441,8 +13467,7 @@ function ManagedField({
             onClick={onAddCustomer}
             className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-primary hover:underline"
           >
-            <UserPlus className="size-3" />
-            + Add Customer
+            <UserPlus className="size-3" />+ Add Customer
           </button>
         )}
         {isSupplier && onAddSupplier && (
@@ -8451,8 +13476,7 @@ function ManagedField({
             onClick={onAddSupplier}
             className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-primary hover:underline"
           >
-            <Truck className="size-3" />
-            + Add Supplier
+            <Truck className="size-3" />+ Add Supplier
           </button>
         )}
         {isSupplier && !onAddSupplier && !canAddSupplier && (
@@ -8466,8 +13490,7 @@ function ManagedField({
             onClick={onAddPart}
             className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-primary hover:underline"
           >
-            <Cpu className="size-3" />
-            + Add Part
+            <Cpu className="size-3" />+ Add Part
           </button>
         )}
         {isPart && !onAddPart && !canAddPart && (
@@ -8476,19 +13499,15 @@ function ManagedField({
           </span>
         )}
       </div>
-      <input
-        id={fieldId}
-        list={`${fieldId}-options`}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={`Search ${item.label.toLowerCase()}`}
-        className="mt-1.5 h-11 w-full border border-input bg-background px-3 text-sm"
-      />
-      <datalist id={`${fieldId}-options`}>
-        {options.map((option) => (
-          <option key={option} value={option} />
-        ))}
-      </datalist>
+      <div id={fieldId} className="mt-1.5">
+        <SharedMasterSelect
+          label={item.label}
+          value={value}
+          options={options.map((option) => ({ value: option, label: option }))}
+          required={item.required === true}
+          onChange={onChange}
+        />
+      </div>
       <span className="mt-1 block text-xs text-muted-foreground">
         {isCustomer
           ? "Select a registered customer or click [+ Add Customer] inline."
@@ -8538,13 +13557,22 @@ function AdminCommandCenter({
   onLoadDemo: () => void;
 }) {
   const [tab, setTab] = useState<
-    "company" | "chronicles" | "lifecycle" | "departments" | "templates" | "roles" | "masters" | "cloud" | "team" | "demo"
+    | "company"
+    | "chronicles"
+    | "lifecycle"
+    | "departments"
+    | "templates"
+    | "roles"
+    | "masters"
+    | "cloud"
+    | "team"
+    | "demo"
   >(
-    initialTab === ("raci" as any) || initialTab === 'chronicles'
+    initialTab === ("raci" as any) || initialTab === "chronicles"
       ? "lifecycle"
       : initialTab === ("settings" as any)
         ? "departments"
-        : (initialTab ?? "company")
+        : (initialTab ?? "company"),
   );
   const [managedDeptId, setManagedDeptId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -8568,6 +13596,20 @@ function AdminCommandCenter({
       .includes(query.toLowerCase()),
   );
   const pageSize = density === "compact" ? 10 : 5;
+  const visibleAdminTabs =
+    sharedMembership && sharedMembership.role !== "admin"
+      ? (["lifecycle"] as const)
+      : ([
+          "company",
+          "lifecycle",
+          "departments",
+          "templates",
+          "roles",
+          "masters",
+          "cloud",
+          "team",
+          "demo",
+        ] as const);
   const current = filtered.slice(page * pageSize, page * pageSize + pageSize);
   const selected =
     portal.departments.find((department) => department.id === activeDepartmentId) ??
@@ -8620,63 +13662,111 @@ function AdminCommandCenter({
   return (
     <Modal title="Administration command center" onClose={onClose} wide>
       <div className="mb-5 flex flex-wrap gap-2 border-b border-border pb-4">
-        {(["company", "lifecycle", "departments", "templates", "roles", "masters", "cloud", "team", "demo"] as const).map(
-          (item) => (
-            <button
-              key={item}
-              onClick={() => {
-                setTab(item);
-                if (item === "departments") setManagedDeptId(null);
-              }}
-              className={`h-9 px-3 text-sm font-semibold capitalize ${tab === item ? "bg-primary text-primary-foreground" : "border border-border"}`}
-            >
-              {item === "company"
-                ? "Company & calendar"
-                : item === "lifecycle"
-                  ? "Phases, stages & RACI"
+        {visibleAdminTabs.map((item) => (
+          <button
+            key={item}
+            onClick={() => {
+              setTab(item);
+              if (item === "departments") setManagedDeptId(null);
+            }}
+            className={`h-9 px-3 text-sm font-semibold capitalize ${tab === item ? "bg-primary text-primary-foreground" : "border border-border"}`}
+          >
+            {item === "company"
+              ? "Company & calendar"
+              : item === "lifecycle"
+                ? "Phases, stages & RACI"
                 : item === "departments"
                   ? "Department governance & SLA"
                   : item === "templates"
                     ? "Template settings"
                     : item === "roles"
                       ? "Roles & permissions"
-                    : item === "masters"
-                      ? "Locations & masters"
-                    : item === "cloud"
-                      ? "Cloud & Supabase sync"
-                    : item === "team"
-                      ? "Competency roster"
-                    : item === "demo"
-                      ? "Demo controls"
-                  : item}
-            </button>
-          ),
-        )}
+                      : item === "masters"
+                        ? "Locations & masters"
+                        : item === "cloud"
+                          ? "Cloud & Supabase sync"
+                          : item === "team"
+                            ? "Competency roster"
+                            : item === "demo"
+                              ? "Demo controls"
+                              : item}
+          </button>
+        ))}
         <span className="ml-auto font-mono text-[10px] uppercase text-muted-foreground">
-          Acting role · Administrator
+          Acting role ·{" "}
+          {sharedMembership
+            ? `${sharedMembership.displayName} · ${sharedMembership.role === "department_lead" ? "Department lead" : sharedMembership.role}`
+            : "Administrator"}
         </span>
       </div>
-      {tab === "lifecycle" && sharedMembership ? (<SharedLifecycleWorkspace scopeKey={sharedMembership.membershipId} mode="settings" onClose={onClose}/>) : tab === "lifecycle" ? (
-        <LifecycleSettingsEditor departments={portal.departments.map(d=>({...d,code:departmentCode(d.code.replace(/^DEMO-/,''))}))} revision={portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()} onActivate={async revision => {
-          const saved = await onUpdate(state => {
-            const previous = state.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision();
-            return { ...state, lifecycleRevisions: [...(state.lifecycleRevisions ?? [previous]), revision], records: state.records.map(record => record.type === "Project" && !record.fields["lifecycleBaseline"] && previous.stages.some(stage => stage.code === (record.fields["currentStage"] || record.fields["stage"])) ? { ...record, fields: { ...record.fields, lifecycleBaseline: pinLifecycleRevision(previous) } } : record) };
-          });
-          if(saved === false) throw new Error("Lifecycle defaults were not saved.");
-          onLog("Lifecycle defaults saved", `New revision ${revision.id}; existing project baselines preserved`);
-        }}/>
-      ) : tab === "chronicles" ? (
-        <><p className="mb-3 text-sm text-muted-foreground">Local draft configuration changes apply to new projects. Existing projects retain their recorded version; changes to an existing baseline require a separate reviewed change. Backend authorization and signer acceptance remain unverified.</p><DepartmentChroniclesManager
-          chronicles={portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES}
-          onUpdateChronicles={(updated) => {
-            const newRaci = deriveRaciMatrixFromChronicles(updated, ai4tStages, raciDepartments);
-            onUpdate((state) => ({
-              ...evolveResponsibilityConfiguration(state, state.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES, updated, new Date().toISOString()),
-              raciMatrix: newRaci,
-            }));
+      {tab === "lifecycle" && sharedMembership ? (
+        <SharedLifecycleWorkspace
+          scopeKey={sharedMembership.membershipId}
+          mode="settings"
+          onClose={onClose}
+        />
+      ) : tab === "lifecycle" ? (
+        <LifecycleSettingsEditor
+          departments={portal.departments.map((d) => ({
+            ...d,
+            code: departmentCode(d.code.replace(/^DEMO-/, "")),
+          }))}
+          revision={portal.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision()}
+          onActivate={async (revision) => {
+            const saved = await onUpdate((state) => {
+              const previous = state.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision();
+              return {
+                ...state,
+                lifecycleRevisions: [...(state.lifecycleRevisions ?? [previous]), revision],
+                records: state.records.map((record) =>
+                  record.type === "Project" &&
+                  !record.fields["lifecycleBaseline"] &&
+                  previous.stages.some(
+                    (stage) =>
+                      stage.code === (record.fields["currentStage"] || record.fields["stage"]),
+                  )
+                    ? {
+                        ...record,
+                        fields: {
+                          ...record.fields,
+                          lifecycleBaseline: pinLifecycleRevision(previous),
+                        },
+                      }
+                    : record,
+                ),
+              };
+            });
+            if (saved === false) throw new Error("Lifecycle defaults were not saved.");
+            onLog(
+              "Lifecycle defaults saved",
+              `New revision ${revision.id}; existing project baselines preserved`,
+            );
           }}
-          onLog={onLog}
-        /></>
+        />
+      ) : tab === "chronicles" ? (
+        <>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Local draft configuration changes apply to new projects. Existing projects retain their
+            recorded version; changes to an existing baseline require a separate reviewed change.
+            Backend authorization and signer acceptance remain unverified.
+          </p>
+          <DepartmentChroniclesManager
+            chronicles={portal.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES}
+            onUpdateChronicles={(updated) => {
+              const newRaci = deriveRaciMatrixFromChronicles(updated, ai4tStages, raciDepartments);
+              onUpdate((state) => ({
+                ...evolveResponsibilityConfiguration(
+                  state,
+                  state.chronicles ?? DEFAULT_DEPARTMENT_CHRONICLES,
+                  updated,
+                  new Date().toISOString(),
+                ),
+                raciMatrix: newRaci,
+              }));
+            }}
+            onLog={onLog}
+          />
+        </>
       ) : tab === "cloud" ? (
         <CloudSyncPanel portal={portal} onUpdate={onUpdate} onLog={onLog} />
       ) : tab === "team" ? (
@@ -8687,7 +13777,12 @@ function AdminCommandCenter({
         <TemplateSettingsEditor
           settings={portal.templateSettings ?? defaultTemplateSettings()}
           onChange={(templateSettings) => onUpdate((state) => ({ ...state, templateSettings }))}
-          onSave={() => onLog("Document template settings saved", "Header, footer, locations and numbering updated")}
+          onSave={() =>
+            onLog(
+              "Document template settings saved",
+              "Header, footer, locations and numbering updated",
+            )
+          }
         />
       ) : tab === "company" ? (
         <div className="space-y-5">
@@ -8749,7 +13844,11 @@ function AdminCommandCenter({
         </div>
       ) : tab === "masters" ? (
         <MasterManager portal={portal} onUpdate={onUpdate} onLog={onLog} />
-      ) : tab === "departments" && sharedMembership ? <SharedDepartmentConfiguration scopeKey={sharedMembership.membershipId}/> : tab === "departments" ? (
+      ) : tab === "roles" && sharedMembership ? (
+        <SharedDepartmentRoleConfiguration scopeKey={sharedMembership.membershipId} />
+      ) : tab === "departments" && sharedMembership ? (
+        <SharedDepartmentConfiguration scopeKey={sharedMembership.membershipId} />
+      ) : tab === "departments" ? (
         managedDeptId ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between border-b border-border pb-3">
@@ -8763,7 +13862,8 @@ function AdminCommandCenter({
                 </button>
                 <span className="text-muted-foreground text-xs font-mono">/</span>
                 <span className="text-xs font-bold text-foreground">
-                  {portal.departments.find((d) => d.id === managedDeptId)?.name} ({portal.departments.find((d) => d.id === managedDeptId)?.code}) Governance & SLA
+                  {portal.departments.find((d) => d.id === managedDeptId)?.name} (
+                  {portal.departments.find((d) => d.id === managedDeptId)?.code}) Governance & SLA
                 </span>
               </div>
             </div>
@@ -8777,133 +13877,135 @@ function AdminCommandCenter({
         ) : (
           <>
             <div className="grid gap-3 border border-border bg-panel p-4 md:grid-cols-3">
-            <TextField
-              label="Department name"
-              value={draft.name}
-              onChange={(name) => setDraft({ ...draft, name })}
-            />
-            <TextField
-              label="Code"
-              value={draft.code}
-              onChange={(code) => setDraft({ ...draft, code })}
-            />
-            <SelectField
-              label="Department type"
-              value={draft.type}
-              options={departmentTypes}
-              onChange={(type) => setDraft({ ...draft, type })}
-            />
-            <TextField
-              label="Department lead"
-              value={draft.lead}
-              onChange={(lead) => setDraft({ ...draft, lead })}
-            />
-            {draft.type === "Other/custom" && (
               <TextField
-                label="Custom type"
-                value={draft.custom}
-                onChange={(custom) => setDraft({ ...draft, custom })}
+                label="Department name"
+                value={draft.name}
+                onChange={(name) => setDraft({ ...draft, name })}
               />
-            )}
-            <Action label="Create department" onClick={createDepartment} primary />
-          </div>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <input
-              aria-label="Filter departments"
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setPage(0);
-              }}
-              placeholder="Filter departments"
-              className="h-10 min-w-52 flex-1 border border-input bg-background px-3 text-sm"
-            />
-            <SelectField
-              label="Row density"
-              value={density}
-              options={["comfortable", "compact"]}
-              onChange={(value) => setDensity(value as "comfortable" | "compact")}
-            />
-          </div>
-          <div className="mt-3 overflow-x-auto border border-border">
-            <table className="w-full min-w-[42rem] text-left text-sm">
-              <thead className="bg-panel font-mono text-[10px] uppercase text-muted-foreground">
-                <tr>
-                  <th className="p-3">Department</th>
-                  <th className="p-3">Type</th>
-                  <th className="p-3">Lead</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {current.map((department) => (
-                  <tr key={department.id} className="border-t border-border">
-                    <td className={`p-3 ${density === "compact" ? "py-2" : "py-4"}`}>
-                      <strong>{department.name}</strong>
-                      <small className="ml-2 font-mono text-muted-foreground">
-                        {department.code}
-                      </small>
-                    </td>
-                    <td className="p-3">{department.departmentType}</td>
-                    <td className="p-3">{department.lead || "No lead assigned"}</td>
-                    <td className="p-3">{department.active ? "Active" : "Inactive"}</td>
-                    <td className="p-3">
-                      <button
-                        onClick={() => onContext(department.id)}
-                        className="font-semibold text-steel"
-                      >
-                        Manage
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setManagedDeptId(department.id)}
-                        className="ml-3 font-semibold text-primary hover:underline"
-                        title="Configure numbering prefix, format, and SLA approval gates"
-                      >
-                        SLA & Rules
-                      </button>
-                      <button
-                        onClick={() => {
-                          onUpdate((state) => ({
-                            ...state,
-                            departments: state.departments.map((item) =>
-                              item.id === department.id ? { ...item, active: !item.active } : item,
-                            ),
-                          }));
-                          onLog(
-                            "Department status changed",
-                            `${department.name} ${department.active ? "deactivated" : "activated"}`,
-                          );
-                        }}
-                        className="ml-3 font-semibold text-danger"
-                      >
-                        {department.active ? "Deactivate" : "Activate"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {!current.length && (
-              <p className="p-8 text-center text-sm text-muted-foreground">
-                No departments match the current filters.
-              </p>
-            )}
-          </div>
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <span>
-              {filtered.length} department{filtered.length === 1 ? "" : "s"}
-            </span>
-            <div className="flex gap-2">
-              <Action label="Previous" onClick={() => setPage(Math.max(0, page - 1))} />
-              <Action
-                label="Next"
-                onClick={() => setPage((page + 1) * pageSize < filtered.length ? page + 1 : page)}
+              <TextField
+                label="Code"
+                value={draft.code}
+                onChange={(code) => setDraft({ ...draft, code })}
+              />
+              <SelectField
+                label="Department type"
+                value={draft.type}
+                options={departmentTypes}
+                onChange={(type) => setDraft({ ...draft, type })}
+              />
+              <TextField
+                label="Department lead"
+                value={draft.lead}
+                onChange={(lead) => setDraft({ ...draft, lead })}
+              />
+              {draft.type === "Other/custom" && (
+                <TextField
+                  label="Custom type"
+                  value={draft.custom}
+                  onChange={(custom) => setDraft({ ...draft, custom })}
+                />
+              )}
+              <Action label="Create department" onClick={createDepartment} primary />
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <input
+                aria-label="Filter departments"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setPage(0);
+                }}
+                placeholder="Filter departments"
+                className="h-10 min-w-52 flex-1 border border-input bg-background px-3 text-sm"
+              />
+              <SelectField
+                label="Row density"
+                value={density}
+                options={["comfortable", "compact"]}
+                onChange={(value) => setDensity(value as "comfortable" | "compact")}
               />
             </div>
-          </div>
-        </>
+            <div className="mt-3 overflow-x-auto border border-border">
+              <table className="w-full min-w-[42rem] text-left text-sm">
+                <thead className="bg-panel font-mono text-[10px] uppercase text-muted-foreground">
+                  <tr>
+                    <th className="p-3">Department</th>
+                    <th className="p-3">Type</th>
+                    <th className="p-3">Lead</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {current.map((department) => (
+                    <tr key={department.id} className="border-t border-border">
+                      <td className={`p-3 ${density === "compact" ? "py-2" : "py-4"}`}>
+                        <strong>{department.name}</strong>
+                        <small className="ml-2 font-mono text-muted-foreground">
+                          {department.code}
+                        </small>
+                      </td>
+                      <td className="p-3">{department.departmentType}</td>
+                      <td className="p-3">{department.lead || "No lead assigned"}</td>
+                      <td className="p-3">{department.active ? "Active" : "Inactive"}</td>
+                      <td className="p-3">
+                        <button
+                          onClick={() => onContext(department.id)}
+                          className="font-semibold text-steel"
+                        >
+                          Manage
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setManagedDeptId(department.id)}
+                          className="ml-3 font-semibold text-primary hover:underline"
+                          title="Configure numbering prefix, format, and SLA approval gates"
+                        >
+                          SLA & Rules
+                        </button>
+                        <button
+                          onClick={() => {
+                            onUpdate((state) => ({
+                              ...state,
+                              departments: state.departments.map((item) =>
+                                item.id === department.id
+                                  ? { ...item, active: !item.active }
+                                  : item,
+                              ),
+                            }));
+                            onLog(
+                              "Department status changed",
+                              `${department.name} ${department.active ? "deactivated" : "activated"}`,
+                            );
+                          }}
+                          className="ml-3 font-semibold text-danger"
+                        >
+                          {department.active ? "Deactivate" : "Activate"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!current.length && (
+                <p className="p-8 text-center text-sm text-muted-foreground">
+                  No departments match the current filters.
+                </p>
+              )}
+            </div>
+            <div className="mt-3 flex items-center justify-between text-sm">
+              <span>
+                {filtered.length} department{filtered.length === 1 ? "" : "s"}
+              </span>
+              <div className="flex gap-2">
+                <Action label="Previous" onClick={() => setPage(Math.max(0, page - 1))} />
+                <Action
+                  label="Next"
+                  onClick={() => setPage((page + 1) * pageSize < filtered.length ? page + 1 : page)}
+                />
+              </div>
+            </div>
+          </>
         )
       ) : (
         <RoleManager portal={portal} onUpdate={onUpdate} onLog={onLog} />
@@ -8920,7 +14022,9 @@ function TeamCompetencyPanel({ members }: { members: TeamMember[] }) {
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-4">
         <div>
           <p className="font-semibold">DEMO competency roster</p>
-          <p className="mt-1 text-sm text-muted-foreground">Illustrative HR/OPS skill-matrix entries only · not personnel records.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Illustrative HR/OPS skill-matrix entries only · not personnel records.
+          </p>
         </div>
         <span className="font-mono text-[10px] uppercase text-steel">HLPL/F/HR/03</span>
       </div>
@@ -8928,19 +14032,40 @@ function TeamCompetencyPanel({ members }: { members: TeamMember[] }) {
         {members.map((member) => (
           <div key={member.name} className="px-4 py-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <button onClick={() => setExpanded(expanded === member.name ? null : member.name)} className="text-left">
+              <button
+                onClick={() => setExpanded(expanded === member.name ? null : member.name)}
+                className="text-left"
+              >
                 <strong className="block">{member.name}</strong>
-                <span className="mt-1 block text-sm text-muted-foreground">{member.role} · {areaById(member.area).short}</span>
+                <span className="mt-1 block text-sm text-muted-foreground">
+                  {member.role} · {areaById(member.area).short}
+                </span>
               </button>
               <div className="flex items-center gap-2">
-                <span className="rounded-md bg-accent px-2 py-1 text-xs font-semibold text-accent-foreground">{member.score}</span>
-                <span className="rounded-md border border-moss/25 bg-card px-2 py-1 text-xs font-semibold text-moss">{member.level}</span>
-                <Action label={tni.includes(member.name) ? "TNI queued" : "Create TNI"} onClick={() => setTni((items) => items.includes(member.name) ? items : [...items, member.name])} />
+                <span className="rounded-md bg-accent px-2 py-1 text-xs font-semibold text-accent-foreground">
+                  {member.score}
+                </span>
+                <span className="rounded-md border border-moss/25 bg-card px-2 py-1 text-xs font-semibold text-moss">
+                  {member.level}
+                </span>
+                <Action
+                  label={tni.includes(member.name) ? "TNI queued" : "Create TNI"}
+                  onClick={() =>
+                    setTni((items) =>
+                      items.includes(member.name) ? items : [...items, member.name],
+                    )
+                  }
+                />
               </div>
             </div>
             {expanded === member.name && (
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {member.skills.map((skill, index) => <p key={skill} className="border border-border bg-panel px-3 py-2 text-sm">{skill}<span className="float-right font-mono text-xs text-steel">{index < 3 ? "4/4" : "3/4"}</span></p>)}
+                {member.skills.map((skill) => (
+                  <p key={skill} className="border border-border bg-panel px-3 py-2 text-sm">
+                    {skill}
+                    <span className="float-right font-mono text-xs text-steel">Not assessed</span>
+                  </p>
+                ))}
               </div>
             )}
           </div>
@@ -9101,29 +14226,52 @@ function RoleManager({
         ))}
       </div>
       <div className="mt-5 space-y-2">
-        {portal.roles.length ? (
-          portal.roles.map((role) => (
-            <div
-              key={role.id}
-              className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-3"
-            >
-              <span>
-                <strong>{role.name}</strong>
-                <small className="ml-2 text-muted-foreground">
-                  {role.assignee} ·{" "}
-                  {portal.departments.find((department) => department.id === role.departmentId)
-                    ?.name ?? "Unknown department"}
-                </small>
-              </span>
-              <span className="font-mono text-[10px] text-muted-foreground">
-                {role.permissions.length} permissions
-              </span>
-            </div>
-          ))
+        {portal.roles.some((role) => role.active) ? (
+          portal.roles
+            .filter((role) => role.active)
+            .map((role) => (
+              <div
+                key={role.id}
+                className="flex flex-wrap items-center justify-between gap-2 border-b border-border py-3"
+              >
+                <span>
+                  <strong>{role.name}</strong>
+                  <small className="ml-2 text-muted-foreground">
+                    {role.assignee} ·{" "}
+                    {portal.departments.find((department) => department.id === role.departmentId)
+                      ?.name ?? "Unknown department"}
+                  </small>
+                </span>
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {role.permissions.length} permissions
+                </span>
+              </div>
+            ))
         ) : (
           <p className="text-sm text-muted-foreground">No department sub-roles configured.</p>
         )}
       </div>
+      {portal.roles.some((role) => !role.active && role.isLegacy) && (
+        <details className="mt-4 border-t border-border pt-3">
+          <summary className="cursor-pointer text-xs font-semibold text-muted-foreground">
+            Historical role assignments · preserved
+          </summary>
+          <div className="mt-2 space-y-2">
+            {portal.roles
+              .filter((role) => !role.active && role.isLegacy)
+              .map((role) => (
+                <div
+                  key={role.id}
+                  className="border-b border-border py-2 text-xs text-muted-foreground"
+                >
+                  {role.name} · {role.assignee} ·{" "}
+                  {portal.departments.find((department) => department.id === role.departmentId)
+                    ?.name ?? "Historical department"}
+                </div>
+              ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -9172,8 +14320,76 @@ function DepartmentSettingsManager({
         Managing {department.name}. These controls define local activity options and controlled
         numbering.
       </p>
-      <label className="mb-4 grid gap-1 text-xs">Main department workspace<select className="h-9 rounded border border-input bg-background px-2 text-sm" value={department.workspaceDepartmentId||''} onChange={e=>{const workspaceDepartmentId=e.target.value||null;onUpdate(state=>({...state,departments:state.departments.map(d=>d.id===department.id?{...d,workspaceDepartmentId}:d)}));onLog('Department workspace grouping updated',department.code);}}><option value="">Own department workspace</option>{departments.filter(d=>d.active&&d.id!==department.id&&!d.workspaceDepartmentId&&!departments.some(child=>child.workspaceDepartmentId===department.id)).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>
-      <fieldset className="mb-4 rounded-lg border border-border bg-panel p-4"><legend className="px-1 text-sm font-semibold">Workspace responsibilities</legend><p className="mb-3 text-xs text-muted-foreground">Selected responsibilities share this department workspace, with separate ticket tabs.</p><div className="flex flex-wrap gap-4">{(['service','it'] as const).map(key=><label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={configuredTicketGroups(department.settings.ticketGroups,department.code).includes(key)} onChange={event=>{const current=configuredTicketGroups(department.settings.ticketGroups,department.code);const ticketGroups=event.target.checked?[...current,key]:current.filter(item=>item!==key);onUpdate(state=>({...state,departments:state.departments.map(item=>item.id===department.id?{...item,settings:{...item.settings,ticketGroups}}:item)}));onLog('Workspace responsibilities updated',department.code);}}/>{key==='service'?'Service & Field':'IT & Facilities'}</label>)}</div></fieldset>
+      <label className="mb-4 grid gap-1 text-xs">
+        Main department workspace
+        <select
+          className="h-9 rounded border border-input bg-background px-2 text-sm"
+          value={department.workspaceDepartmentId || ""}
+          onChange={(e) => {
+            const workspaceDepartmentId = e.target.value || null;
+            onUpdate((state) => ({
+              ...state,
+              departments: state.departments.map((d) =>
+                d.id === department.id ? { ...d, workspaceDepartmentId } : d,
+              ),
+            }));
+            onLog("Department workspace grouping updated", department.code);
+          }}
+        >
+          <option value="">Own department workspace</option>
+          {departments
+            .filter(
+              (d) =>
+                d.active &&
+                d.id !== department.id &&
+                !d.workspaceDepartmentId &&
+                !departments.some((child) => child.workspaceDepartmentId === department.id),
+            )
+            .map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+        </select>
+      </label>
+      <fieldset className="mb-4 rounded-lg border border-border bg-panel p-4">
+        <legend className="px-1 text-sm font-semibold">Workspace responsibilities</legend>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Selected responsibilities share this department workspace, with separate ticket tabs.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          {(["service", "it"] as const).map((key) => (
+            <label key={key} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={configuredTicketGroups(
+                  department.settings.ticketGroups,
+                  department.code,
+                ).includes(key)}
+                onChange={(event) => {
+                  const current = configuredTicketGroups(
+                    department.settings.ticketGroups,
+                    department.code,
+                  );
+                  const ticketGroups = event.target.checked
+                    ? [...current, key]
+                    : current.filter((item) => item !== key);
+                  onUpdate((state) => ({
+                    ...state,
+                    departments: state.departments.map((item) =>
+                      item.id === department.id
+                        ? { ...item, settings: { ...item.settings, ticketGroups } }
+                        : item,
+                    ),
+                  }));
+                  onLog("Workspace responsibilities updated", department.code);
+                }}
+              />
+              {key === "service" ? "Service & Field" : "IT & Facilities"}
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <div className="grid gap-3 border border-border bg-panel p-4 md:grid-cols-3">
         <SelectField
           label="Setting group"
@@ -9252,51 +14468,41 @@ function CloudSyncPanel({
 }) {
   const [pingStatus, setPingStatus] = useState<"idle" | "checking" | "connected" | "error">("idle");
   const [latency, setLatency] = useState<number | null>(null);
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
 
   const supabaseUrl = import.meta.env["VITE_SUPABASE_URL"];
   const supabaseProjectId = import.meta.env["VITE_SUPABASE_PROJECT_ID"];
 
   const pingSupabase = async () => {
     setPingStatus("checking");
+    setConnectionMessage(null);
     const start = performance.now();
     try {
-      const { data, error } = await supabase.from("departments").select("id").limit(1);
+      const { error } = await supabase.from("departments").select("id").limit(1);
+      if (error) throw error;
       const elapsed = Math.round(performance.now() - start);
       setLatency(elapsed || 36);
       setPingStatus("connected");
-      onLog("Cloud connection verified", `Supabase cluster pinged successfully (${elapsed || 36}ms latency)`);
+      onLog(
+        "Database connectivity verified",
+        `Supabase departments query succeeded (${elapsed || 36}ms latency)`,
+      );
     } catch (err) {
       const elapsed = Math.round(performance.now() - start);
-      setLatency(elapsed || 42);
-      setPingStatus("connected");
-      onLog("Cloud connection verified", `Supabase cloud endpoint pinged (${elapsed || 42}ms latency)`);
-    }
-  };
-
-  const executeSync = async () => {
-    setSyncing(true);
-    setSyncMessage(null);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      const timestamp = new Date().toLocaleTimeString();
-      setLastSyncTime(timestamp);
-      setSyncMessage(
-        `Cloud sync completed successfully at ${timestamp}. ${portal.records.length} operational records, ${portal.documents.length} controlled documents, and ${portal.audit.length} audit trail events synchronized with Lovable Cloud Postgres.`
+      setLatency(null);
+      setPingStatus("error");
+      const detail = err instanceof Error ? err.message : "Supabase query failed.";
+      setConnectionMessage(
+        `Connection check failed (${elapsed}ms): ${detail}. No local data was synchronized.`,
       );
-      onLog("Cloud sync executed", `Dual-track persistence sync verified for ${portal.records.length} records`);
-    } catch (err) {
-      setSyncMessage("Sync completed in offline-first mode. All local records preserved.");
-    } finally {
-      setSyncing(false);
+      onLog("Cloud connection check failed", detail);
     }
   };
 
   const exportBackup = () => {
     try {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(portal, null, 2));
+      const dataStr =
+        "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(portal, null, 2));
       const downloadAnchor = document.createElement("a");
       downloadAnchor.setAttribute("href", dataStr);
       downloadAnchor.setAttribute("download", `HLPL-SCMS-Backup-${businessDate()}.json`);
@@ -9315,10 +14521,11 @@ function CloudSyncPanel({
         <div>
           <h3 className="text-base font-bold tracking-tight text-foreground flex items-center gap-2">
             <Cloud className="size-5 text-primary" />
-            Supabase Shared Persistence & Cloud Sync
+            Supabase Connection & Local Backup
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Enterprise dual-track architecture: high-speed browser-local storage paired with managed Lovable Cloud Postgres (RLS) & private document storage.
+            Check database access or export this browser's local snapshot. Local samples are not
+            uploaded here; shared TEST records use the authenticated workspace.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -9327,8 +14534,10 @@ function CloudSyncPanel({
               pingStatus === "connected"
                 ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
                 : pingStatus === "checking"
-                ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
-                : "bg-muted text-muted-foreground border border-border"
+                  ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                  : pingStatus === "error"
+                    ? "bg-destructive/10 text-destructive border border-destructive/20"
+                    : "bg-muted text-muted-foreground border border-border"
             }`}
           >
             <span
@@ -9336,29 +14545,29 @@ function CloudSyncPanel({
                 pingStatus === "connected"
                   ? "bg-emerald-500 animate-pulse"
                   : pingStatus === "checking"
-                  ? "bg-amber-500 animate-pulse"
-                  : "bg-muted-foreground"
+                    ? "bg-amber-500 animate-pulse"
+                    : pingStatus === "error"
+                      ? "bg-destructive"
+                      : "bg-muted-foreground"
               }`}
             />
             {pingStatus === "connected"
-              ? `Connected (${latency}ms)`
+              ? `Database reachable (${latency}ms)`
               : pingStatus === "checking"
-              ? "Testing..."
-              : "Standby / Ready"}
+                ? "Testing..."
+                : pingStatus === "error"
+                  ? "Connection failed"
+                  : "Standby / Ready"}
           </span>
         </div>
       </div>
 
-      {syncMessage && (
-        <div className="flex items-start gap-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-600 dark:text-emerald-400">
-          <CheckCircle2 className="size-4 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-semibold">Sync Successful</p>
-            <p className="mt-0.5 opacity-90">{syncMessage}</p>
-          </div>
-          <button onClick={() => setSyncMessage(null)} className="text-muted-foreground hover:text-foreground text-xs">
-            Dismiss
-          </button>
+      {connectionMessage && (
+        <div
+          role="status"
+          className="rounded-lg border border-destructive/30 bg-destructive/5 p-3.5 text-xs text-foreground"
+        >
+          {connectionMessage}
         </div>
       )}
 
@@ -9369,8 +14578,11 @@ function CloudSyncPanel({
             <span className="font-mono text-[10px] uppercase tracking-wider">Cloud Host</span>
             <Server className="size-3.5" />
           </div>
-          <p className="font-mono text-xs font-bold text-foreground truncate" title={supabaseUrl}>
-            {supabaseUrl.replace("https://", "")}
+          <p
+            className="font-mono text-xs font-bold text-foreground truncate"
+            title={supabaseUrl || "Supabase URL is not configured"}
+          >
+            {supabaseUrl ? supabaseUrl.replace("https://", "") : "Not configured"}
           </p>
           <p className="text-[10px] text-muted-foreground">Supabase Managed Postgres</p>
         </div>
@@ -9381,7 +14593,7 @@ function CloudSyncPanel({
             <Database className="size-3.5" />
           </div>
           <p className="font-mono text-xs font-bold text-foreground truncate">
-            {supabaseProjectId}
+            {supabaseProjectId || "Not configured"}
           </p>
           <p className="text-[10px] text-muted-foreground">Lovable Cloud Backend</p>
         </div>
@@ -9408,28 +14620,32 @@ function CloudSyncPanel({
       {/* Telemetry Counters */}
       <div className="rounded-lg border border-border bg-panel p-4 space-y-3">
         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          Local State Telemetry & Synchronized Entities
+          Browser-local State Snapshot
         </h4>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded border border-border bg-background p-3">
             <p className="text-[11px] text-muted-foreground">Operational Records</p>
             <p className="mt-1 text-lg font-bold text-foreground">{portal.records.length}</p>
-            <p className="text-[10px] text-emerald-500 font-medium">Auto-migrated v2</p>
+            <p className="text-[10px] text-muted-foreground font-medium">This browser only</p>
           </div>
           <div className="rounded border border-border bg-background p-3">
             <p className="text-[11px] text-muted-foreground">Controlled Documents</p>
             <p className="mt-1 text-lg font-bold text-foreground">{portal.documents.length}</p>
-            <p className="text-[10px] text-blue-500 font-medium">Vault Indexed</p>
+            <p className="text-[10px] text-muted-foreground font-medium">This browser only</p>
           </div>
           <div className="rounded border border-border bg-background p-3">
             <p className="text-[11px] text-muted-foreground">Audit Log Entries</p>
             <p className="mt-1 text-lg font-bold text-foreground">{portal.audit.length}</p>
-            <p className="text-[10px] text-indigo-500 font-medium">Immutable Trail</p>
+            <p className="text-[10px] text-muted-foreground font-medium">Local audit entries</p>
           </div>
           <div className="rounded border border-border bg-background p-3">
-            <p className="text-[11px] text-muted-foreground">Department Hubs</p>
-            <p className="mt-1 text-lg font-bold text-foreground">{portal.departments.length}</p>
-            <p className="text-[10px] text-emerald-500 font-medium">All 11 Configured</p>
+            <p className="text-[11px] text-muted-foreground">Active Department Hubs</p>
+            <p className="mt-1 text-lg font-bold text-foreground">
+              {portal.departments.filter((department) => department.active).length}
+            </p>
+            <p className="text-[10px] text-emerald-500 font-medium">
+              Active configured departments
+            </p>
           </div>
         </div>
       </div>
@@ -9443,19 +14659,27 @@ function CloudSyncPanel({
           <div className="rounded border border-border/70 bg-panel/50 p-3 space-y-1.5">
             <div className="flex items-center gap-1.5">
               <HardDrive className="size-4 text-primary" />
-              <strong className="text-xs text-foreground">Track 1: Offline Browser-Local Storage</strong>
+              <strong className="text-xs text-foreground">
+                Track 1: Offline Browser-Local Storage
+              </strong>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Active operational prototypes, sandbox records, and automated test runs execute directly in localStorage / IndexedDB. Ensures zero latency, offline readiness, and resilient demo walkthroughs without requiring cloud logins.
+              Sample projects and browser-local drafts stay in this browser. They are not
+              automatically synchronized to the shared database; use the authenticated Shared TEST
+              workspace for account-backed records.
             </p>
           </div>
           <div className="rounded border border-border/70 bg-panel/50 p-3 space-y-1.5">
             <div className="flex items-center gap-1.5">
               <Cloud className="size-4 text-emerald-500" />
-              <strong className="text-xs text-foreground">Track 2: Supabase Managed Postgres (Cloud Backbone)</strong>
+              <strong className="text-xs text-foreground">
+                Track 2: Supabase Managed Postgres (Cloud Backbone)
+              </strong>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Centralized enterprise database handling multi-tenant records (<code className="text-[10px] bg-muted px-1 py-0.5 rounded">operational_records</code>), private document binaries in Supabase Storage, and recorded audit events.
+              Authenticated Shared TEST actions use Supabase Postgres, private document storage, and
+              server-recorded audit events. This page does not copy browser-local sample data into
+              that workspace.
             </p>
           </div>
         </div>
@@ -9474,15 +14698,6 @@ function CloudSyncPanel({
           </button>
 
           <button
-            onClick={executeSync}
-            disabled={syncing}
-            className="inline-flex h-9 items-center gap-1.5 bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            <Cloud className="size-3.5" />
-            {syncing ? "Synchronizing State..." : "Sync Local State to Cloud"}
-          </button>
-
-          <button
             onClick={exportBackup}
             className="inline-flex h-9 items-center gap-1.5 border border-border bg-background px-3 text-xs font-semibold text-foreground hover:bg-accent"
           >
@@ -9491,11 +14706,9 @@ function CloudSyncPanel({
           </button>
         </div>
 
-        {lastSyncTime && (
-          <span className="font-mono text-[10px] text-muted-foreground">
-            Last Synced: {lastSyncTime}
-          </span>
-        )}
+        <span className="font-mono text-[10px] text-muted-foreground">
+          Local samples are not synced
+        </span>
       </div>
     </div>
   );
@@ -9834,9 +15047,13 @@ function SharedIndex({
   allowedProjectIds = [],
   onSelect,
   onSelectDocument,
-  compact = false, queryValue, onQueryChange,
+  compact = false,
+  queryValue,
+  onQueryChange,
 }: {
-  compact?: boolean; queryValue?: string; onQueryChange?: (query: string) => void;
+  compact?: boolean;
+  queryValue?: string;
+  onQueryChange?: (query: string) => void;
   records: RecordItem[];
   documents: ControlledDocument[];
   departments: Department[];
@@ -9859,10 +15076,35 @@ function SharedIndex({
   return (
     <div className="space-y-4">
       <ResponsiveFilterBar label="Search filters" activeCount={kind !== "All" ? 1 : 0}>
-        <div className="filter-search"><Search /><input autoFocus={compact} aria-label="Search records and documents" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search documents, tasks, projects…" /></div>
-        <CompactFilterSelect label="Record type" shortLabel="Type" icon={Layers} value={kind} onChange={setKind} options={["All","Documents","Projects","Tasks","Processes","Clients","Audits"].map(value => ({value,label:value}))} />
+        <div className="filter-search">
+          <Search />
+          <input
+            autoFocus={compact}
+            aria-label="Search records and documents"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search documents, tasks, projects…"
+          />
+        </div>
+        <CompactFilterSelect
+          label="Record type"
+          shortLabel="Type"
+          icon={Layers}
+          value={kind}
+          onChange={setKind}
+          options={["All", "Documents", "Projects", "Tasks", "Processes", "Clients", "Audits"].map(
+            (value) => ({ value, label: value }),
+          )}
+        />
       </ResponsiveFilterBar>
-      {compact && <p className="text-xs text-muted-foreground">{found.records.length + found.documents.length} matching items{found.records.length > 30 || found.documents.length > 30 ? " · Narrow your search to see more specific results" : ""}</p>}
+      {compact && (
+        <p className="text-xs text-muted-foreground">
+          {found.records.length + found.documents.length} matching items
+          {found.records.length > 30 || found.documents.length > 30
+            ? " · Narrow your search to see more specific results"
+            : ""}
+        </p>
+      )}
       <div className="border border-border bg-card">
         <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-3 border-b border-border px-4 py-3 font-mono text-[10px] uppercase text-muted-foreground">
           <span>Record</span>
@@ -9911,16 +15153,81 @@ function SharedIndex({
     </div>
   );
 }
-function PMSSWorkspace({portal,project,projects,selectedProjectId,onSelectProject,onBack,onOpenInputs,onOpenRecord,onOpenDocument}:{
- portal:PortalState;project:RecordItem|undefined;projects:RecordItem[];selectedProjectId:string;
- onSelectProject:(id:string)=>void;onBack:()=>void;onOpenInputs?: (()=>void)|undefined;onOpenRecord:(id:string)=>void;onOpenDocument:(id:string)=>void;
- onOpenDecisionLog?: (()=>void)|undefined;onUpdate:(patch:Record<string,string>)=>void;onLog:(action:string,detail:string)=>void;
+function PMSSWorkspace({
+  portal,
+  project,
+  projects,
+  selectedProjectId,
+  onSelectProject,
+  onBack,
+  onOpenInputs,
+  onOpenRecord,
+  onOpenDocument,
+}: {
+  portal: PortalState;
+  project: RecordItem | undefined;
+  projects: RecordItem[];
+  selectedProjectId: string;
+  onSelectProject: (id: string) => void;
+  onBack: () => void;
+  onOpenInputs?: (() => void) | undefined;
+  onOpenRecord: (id: string) => void;
+  onOpenDocument: (id: string) => void;
+  onOpenDecisionLog?: (() => void) | undefined;
+  onUpdate: (patch: Record<string, string>) => void;
+  onLog: (action: string, detail: string) => void;
 }) {
- const related=project?portal.records.filter(r=>projectReferences(r).some(ref=>[project.id,project.reference].includes(ref))):[];
- const docs=project?portal.documents.filter(d=>d.linkedRecordRefs?.some(ref=>[project.id,project.reference,...related.map(r=>r.id),...related.map(r=>r.reference)].includes(ref))):[];
- return <div className="space-y-4"><button onClick={onBack} className="rounded border border-border px-3 py-2 text-sm">Back to workspace</button>
- <label className="block text-sm">Project<select className="ml-3 rounded border border-input bg-background p-2" value={selectedProjectId} onChange={e=>onSelectProject(e.target.value)}>{projects.map(p=><option key={p.id} value={p.reference}>{p.reference} · {p.title}</option>)}</select></label>
- {project?<ProjectMasterSpecSheet project={project} records={related} documents={docs} onOpenInputs={onOpenInputs} canViewCommercial={false} onOpenRecord={onOpenRecord} onOpenDocument={onOpenDocument}/>:<p>Select an available project.</p>}</div>;
+  const related = project
+    ? portal.records.filter((r) =>
+        projectReferences(r).some((ref) => [project.id, project.reference].includes(ref)),
+      )
+    : [];
+  const docs = project
+    ? portal.documents.filter((d) =>
+        d.linkedRecordRefs?.some((ref) =>
+          [
+            project.id,
+            project.reference,
+            ...related.map((r) => r.id),
+            ...related.map((r) => r.reference),
+          ].includes(ref),
+        ),
+      )
+    : [];
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="rounded border border-border px-3 py-2 text-sm">
+        Back to workspace
+      </button>
+      <label className="block text-sm">
+        Project
+        <select
+          className="ml-3 rounded border border-input bg-background p-2"
+          value={selectedProjectId}
+          onChange={(e) => onSelectProject(e.target.value)}
+        >
+          {projects.map((p) => (
+            <option key={p.id} value={p.reference}>
+              {p.reference} · {p.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      {project ? (
+        <ProjectMasterSpecSheet
+          project={project}
+          records={related}
+          documents={docs}
+          onOpenInputs={onOpenInputs}
+          canViewCommercial={false}
+          onOpenRecord={onOpenRecord}
+          onOpenDocument={onOpenDocument}
+        />
+      ) : (
+        <p>Select an available project.</p>
+      )}
+    </div>
+  );
 }
 function IndexWorkspace({
   records,
@@ -9955,7 +15262,11 @@ function IndexWorkspace({
       <PageHeader
         eyebrow="Access-checked shared view"
         title={projectsOnly ? "Manage Projects" : "Records index"}
-        description={projectsOnly ? "Select a project to open its existing information, lifecycle and permitted work." : "Find permitted clients, projects, department records and documents."}
+        description={
+          projectsOnly
+            ? "Select a project to open its existing information, lifecycle and permitted work."
+            : "Find permitted clients, projects, department records and documents."
+        }
         actions={null}
       />
       <section className="border border-border bg-panel p-4 md:p-5">
@@ -9973,28 +15284,29 @@ function IndexWorkspace({
   );
 }
 function DemoMarker() {
-  return <span className="inline-flex rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-warning" title="Fictional sample records stored only in this browser. No customer, production, certification or shared records are represented.">TEST DATA</span>;
+  return (
+    <span
+      className="inline-flex rounded border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-warning"
+      title="Fictional sample records stored only in this browser. No customer, production, certification or shared records are represented."
+    >
+      TEST DATA
+    </span>
+  );
 }
-function DemoDataPanel({
-  loaded,
-  onLoad,
-}: {
-  loaded: boolean;
-  onLoad: () => void;
-}) {
+function DemoDataPanel({ loaded, onLoad }: { loaded: boolean; onLoad: () => void }) {
   return (
     <div className="space-y-5">
       <DemoMarker />
       <div className="border border-border bg-panel p-4">
         <h3 className="font-semibold">Fictional test data</h3>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Loads a fictional integrated-device lifecycle sample
-          requirement, design, sourcing, material kit, serialised prototype units, test, NCR/CAPA,
-          covering enquiry, hardware, firmware, software, sourcing, prototype validation and service
-          follow-up. Values and workflow outcomes are illustrative; no customer acceptance, issued
-          certificate, production release, purchase, invoice or shipment is represented. The sample
-          is stored in this browser only. Reset sample restores the browser state saved before loading;
-          it does not affect shared TEST or production records.
+          Loads a fictional integrated-device lifecycle sample requirement, design, sourcing,
+          material kit, serialised prototype units, test, NCR/CAPA, covering enquiry, hardware,
+          firmware, software, sourcing, prototype validation and service follow-up. Values and
+          workflow outcomes are illustrative; no customer acceptance, issued certificate, production
+          release, purchase, invoice or shipment is represented. The sample is stored in this
+          browser only. Reset sample restores the browser state saved before loading; it does not
+          affect shared TEST or production records.
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           {loaded ? (
@@ -10107,22 +15419,30 @@ function DocumentsPanel({
       {/* High-Information KPI Summary Strip (Modeled after Project Analysis) */}
       <section className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div className="rounded-lg border border-border bg-card p-3">
-          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Total Controlled Documents</p>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Total Controlled Documents
+          </p>
           <p className="mt-1 text-xl font-bold text-foreground">{documents.length}</p>
           <span className="text-[10px] text-muted-foreground">Traceable records</span>
         </div>
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
-          <p className="font-mono text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Approved / Released</p>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+            Approved / Released
+          </p>
           <p className="mt-1 text-xl font-bold text-foreground">{approvedCount}</p>
           <span className="text-[10px] text-muted-foreground">Audit cleared & released</span>
         </div>
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-          <p className="font-mono text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400">In Gate Review</p>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400">
+            In Gate Review
+          </p>
           <p className="mt-1 text-xl font-bold text-foreground">{inReviewCount}</p>
           <span className="text-[10px] text-muted-foreground">Pending human sign-off</span>
         </div>
         <div className="rounded-lg border border-moss/25 bg-accent/60 p-3">
-          <p className="font-mono text-[10px] uppercase tracking-wider text-moss">Private Cloud Storage</p>
+          <p className="font-mono text-[10px] uppercase tracking-wider text-moss">
+            Private Cloud Storage
+          </p>
           <p className="mt-1 text-sm font-bold text-foreground">Authorization required</p>
           <span className="text-[10px] text-muted-foreground">Department signed links</span>
         </div>
@@ -10131,7 +15451,8 @@ function DocumentsPanel({
       {/* Top Actions Bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-3">
         <p className="text-xs text-muted-foreground">
-          Symmetrical multi-department repository. All deliverables are indexed by project, category, and SHA-256 checksum.
+          Symmetrical multi-department repository. All deliverables are indexed by project,
+          category, and SHA-256 checksum.
         </p>
         <Action label="Auto-Draft Document Templates" primary onClick={onOpenDraftHub} />
       </div>
@@ -10163,7 +15484,9 @@ const sha256 = async (file: File) => {
 };
 
 const formatBytes = (size: number) =>
-  size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  size < 1024 * 1024
+    ? `${Math.max(1, Math.round(size / 1024))} KB`
+    : `${(size / (1024 * 1024)).toFixed(1)} MB`;
 
 const formatLabel = (file: Pick<LocalControlledFile, "name" | "type">) => {
   const extension = file.name.split(".").pop()?.toUpperCase();
@@ -10174,14 +15497,14 @@ const formatLabel = (file: Pick<LocalControlledFile, "name" | "type">) => {
 
 const downloadLocalControlledFile = async (file: LocalControlledFile) => {
   const blob = file.storage === "indexeddb" ? await getLocalAttachment(file.id) : null;
-  if (!blob && !file.content) throw new Error("This browser-local attachment is no longer available.");
+  if (!blob && !file.content)
+    throw new Error("This browser-local attachment is no longer available.");
   const anchor = window.document.createElement("a");
-  anchor.href =
-    blob
-      ? URL.createObjectURL(blob)
-      : file.encoding === "text"
+  anchor.href = blob
+    ? URL.createObjectURL(blob)
+    : file.encoding === "text"
       ? URL.createObjectURL(new Blob([file.content ?? ""], { type: file.type }))
-      : file.content ?? "";
+      : (file.content ?? "");
   anchor.download = file.name;
   anchor.click();
   if (blob || file.encoding === "text") {
@@ -10196,24 +15519,84 @@ export type DriveGroup =
   | "03 Client projects"
   | "04 Other department work";
 
-export const canonicalDriveGroups: { id: DriveGroup; label: string; icon: string; description: string }[] = [
-  { id: "All Deliverables", label: "All Deliverables", icon: "📂", description: "Complete multi-department engineering and audit repository" },
-  { id: "01 Common documents", label: "01 Common documents", icon: "📄", description: "SOPs, QMS procedures, authority matrices, customer registers and templates" },
-  { id: "02 Internal projects", label: "02 Internal projects", icon: "🔬", description: "Internal R&D, automated test jigs, golden units and platform baselines" },
-  { id: "03 Client projects", label: "03 Client projects", icon: "🚗", description: "Deliverables linked to customer projects" },
-  { id: "04 Other department work", label: "04 Other department work", icon: "🛡️", description: "Supplier PPAPs, calibration certs, DVP&R environmental logs and 8D CAPA" },
+export const canonicalDriveGroups: {
+  id: DriveGroup;
+  label: string;
+  icon: string;
+  description: string;
+}[] = [
+  {
+    id: "All Deliverables",
+    label: "All Deliverables",
+    icon: "📂",
+    description: "Complete multi-department engineering and audit repository",
+  },
+  {
+    id: "01 Common documents",
+    label: "01 Common documents",
+    icon: "📄",
+    description: "SOPs, QMS procedures, authority matrices, customer registers and templates",
+  },
+  {
+    id: "02 Internal projects",
+    label: "02 Internal projects",
+    icon: "🔬",
+    description: "Internal R&D, automated test jigs, golden units and platform baselines",
+  },
+  {
+    id: "03 Client projects",
+    label: "03 Client projects",
+    icon: "🚗",
+    description: "Deliverables linked to customer projects",
+  },
+  {
+    id: "04 Other department work",
+    label: "04 Other department work",
+    icon: "🛡️",
+    description: "Supplier PPAPs, calibration certs, DVP&R environmental logs and 8D CAPA",
+  },
 ];
 
-export function driveGroupFor(document: ControlledDocument): "01 Common documents" | "02 Internal projects" | "03 Client projects" | "04 Other department work" {
-  if (document.uploadScope) return ({ common: "01 Common documents", internal: "02 Internal projects", client: "03 Client projects", department: "04 Other department work" } as const)[document.uploadScope];
-  const combined = `${document.title} ${document.type} ${document.group ?? ""} ${document.part ?? ""} ${document.device ?? ""}`.toLowerCase();
-  if (/governance|qms|sop|procedure|mnda|nda template|matrix|authority|handover|enquiry intake|register\.xlsx/i.test(combined)) {
+export function driveGroupFor(
+  document: ControlledDocument,
+):
+  | "01 Common documents"
+  | "02 Internal projects"
+  | "03 Client projects"
+  | "04 Other department work" {
+  if (document.uploadScope)
+    return (
+      {
+        common: "01 Common documents",
+        internal: "02 Internal projects",
+        client: "03 Client projects",
+        department: "04 Other department work",
+      } as const
+    )[document.uploadScope];
+  const combined =
+    `${document.title} ${document.type} ${document.group ?? ""} ${document.part ?? ""} ${document.device ?? ""}`.toLowerCase();
+  if (
+    /governance|qms|sop|procedure|mnda|nda template|matrix|authority|handover|enquiry intake|register\.xlsx/i.test(
+      combined,
+    )
+  ) {
     return "01 Common documents";
   }
-  if (/dvp|ppap|iqc|ipqc|fqc|capa|8d|ncr|cleanroom|calibration|scorecard|audit checklist|laboratory/i.test(combined)) {
+  if (
+    /dvp|ppap|iqc|ipqc|fqc|capa|8d|ncr|cleanroom|calibration|scorecard|audit checklist|laboratory/i.test(
+      combined,
+    )
+  ) {
     return "04 Other department work";
   }
-  if (/ai4t|slct|xlink|tata|select|sor|quotation|schematic|gerber|bom|invoice|tac certificate|pdi|hsi|step enclosure/i.test(combined) || document.device?.includes("Tata") || document.device?.includes("Select") || document.part?.startsWith("HLPL-")) {
+  if (
+    /ai4t|slct|xlink|tata|select|sor|quotation|schematic|gerber|bom|invoice|tac certificate|pdi|hsi|step enclosure/i.test(
+      combined,
+    ) ||
+    document.device?.includes("Tata") ||
+    document.device?.includes("Select") ||
+    document.part?.startsWith("HLPL-")
+  ) {
     return "03 Client projects";
   }
   return "02 Internal projects";
@@ -10231,12 +15614,18 @@ const driveFolders = [
 ] as const;
 
 function driveFolderFor(document: ControlledDocument) {
-  if (/schematic|gerber|pcb|bom|dfmea/i.test(`${document.title} ${document.type}`)) return "03_Hardware_Deliverables_ECAD";
-  if (/step|cad|enclosure|mechanical/i.test(`${document.title} ${document.type}`)) return "04_Mechanical_Deliverables_MCAD";
-  if (/firmware|binary|hsi|software/i.test(`${document.title} ${document.type}`)) return "05_Firmware_and_Software";
-  if (/dvp|quality|ppap|audit|certificate/i.test(`${document.title} ${document.type}`)) return "06_Quality_and_Compliance";
-  if (/control plan|pdi|eol|production|manufactur/i.test(`${document.title} ${document.type}`)) return "07_Production_and_Testing";
-  if (/sor|nda|quotation|invoice|contract/i.test(`${document.title} ${document.type}`)) return "01_Governance_and_QMS";
+  if (/schematic|gerber|pcb|bom|dfmea/i.test(`${document.title} ${document.type}`))
+    return "03_Hardware_Deliverables_ECAD";
+  if (/step|cad|enclosure|mechanical/i.test(`${document.title} ${document.type}`))
+    return "04_Mechanical_Deliverables_MCAD";
+  if (/firmware|binary|hsi|software/i.test(`${document.title} ${document.type}`))
+    return "05_Firmware_and_Software";
+  if (/dvp|quality|ppap|audit|certificate/i.test(`${document.title} ${document.type}`))
+    return "06_Quality_and_Compliance";
+  if (/control plan|pdi|eol|production|manufactur/i.test(`${document.title} ${document.type}`))
+    return "07_Production_and_Testing";
+  if (/sor|nda|quotation|invoice|contract/i.test(`${document.title} ${document.type}`))
+    return "01_Governance_and_QMS";
   return "02_Product_Platforms";
 }
 
@@ -10255,8 +15644,8 @@ function HardwareDeliverablesDrive({
   initialProjectId,
   onUploadOpenConsumed,
   onExternalUpload,
-  sharedStorage=false,
-  hideProjectFilter=false,
+  sharedStorage = false,
+  hideProjectFilter = false,
 }: {
   documents: ControlledDocument[];
   departments: Department[];
@@ -10271,7 +15660,7 @@ function HardwareDeliverablesDrive({
   openUploadOnMount?: boolean;
   initialProjectId?: string | undefined;
   onUploadOpenConsumed?: (() => void) | undefined;
-  onExternalUpload?: ((file:File|null)=>void) | undefined;
+  onExternalUpload?: ((file: File | null) => void) | undefined;
   sharedStorage?: boolean;
   hideProjectFilter?: boolean;
 }) {
@@ -10283,60 +15672,129 @@ function HardwareDeliverablesDrive({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [projectFilter, setProjectFilter] = useState("all");
-  const actorDepartment = persona?.departmentId ? findAreaDepartment(departments, persona.departmentId) : undefined;
-  const uploadDepartments = departments.filter(d => d.active && (persona?.kind === "admin" || d.id === actorDepartment?.id));
-  const ownWork = (portal?.records ?? []).filter(r => !r.archived && (persona?.kind === "admin" ? !departmentContext || r.departmentId === departmentContext : r.area === persona?.departmentId));
-  const permittedProjectKeys = new Set([...ownWork.flatMap(projectReferences), ...documents.filter(canDepartmentAccessForChoice).flatMap(d => d.linkedRecordRefs ?? [])]);
-  function canDepartmentAccessForChoice(document: ControlledDocument) { return Boolean(persona && canDepartmentAccessDocument(document, persona, departmentContext)); }
-  const uploadProjects = (portal?.records ?? []).filter(r => r.type === "Project" && !r.archived && (persona?.kind === "admin" && !departmentContext || permittedProjectKeys.has(r.id) || permittedProjectKeys.has(r.reference)));
-  const uploadDisabled = Boolean(uploadReadOnlyReason || (!onExternalUpload && (!onDocumentCreated || !uploadDepartments.length)) || !persona || persona.kind === "client");
+  const actorDepartment = persona?.departmentId
+    ? findAreaDepartment(departments, persona.departmentId)
+    : undefined;
+  const uploadDepartments = departments.filter(
+    (d) => d.active && (persona?.kind === "admin" || d.id === actorDepartment?.id),
+  );
+  const ownWork = (portal?.records ?? []).filter(
+    (r) =>
+      !r.archived &&
+      (persona?.kind === "admin"
+        ? !departmentContext || r.departmentId === departmentContext
+        : r.area === persona?.departmentId),
+  );
+  const permittedProjectKeys = new Set([
+    ...ownWork.flatMap(projectReferences),
+    ...documents.filter(canDepartmentAccessForChoice).flatMap((d) => d.linkedRecordRefs ?? []),
+  ]);
+  function canDepartmentAccessForChoice(document: ControlledDocument) {
+    return Boolean(persona && canDepartmentAccessDocument(document, persona, departmentContext));
+  }
+  const uploadProjects = (portal?.records ?? []).filter(
+    (r) =>
+      r.type === "Project" &&
+      !r.archived &&
+      isSelectableMasterStatus(r.status) &&
+      ((persona?.kind === "admin" && !departmentContext) ||
+        permittedProjectKeys.has(r.id) ||
+        permittedProjectKeys.has(r.reference)),
+  );
+  const uploadDisabled = Boolean(
+    uploadReadOnlyReason ||
+    (!onExternalUpload && (!onDocumentCreated || !uploadDepartments.length)) ||
+    !persona ||
+    persona.kind === "client",
+  );
 
   const canSee = (document: ControlledDocument) =>
     canDepartmentAccessDocument(
       document,
-      persona ?? { id: "admin", label: "Executive Admin / MD", person: "Full master access", kind: "admin" },
-      departmentContext
+      persona ?? {
+        id: "admin",
+        label: "Executive Admin / MD",
+        person: "Full master access",
+        kind: "admin",
+      },
+      departmentContext,
     );
 
   const countByGroup = (grp: DriveGroup) =>
-    documents.filter((doc) => canSee(doc) && (grp === "All Deliverables" || driveGroupFor(doc) === grp)).length;
+    documents.filter(
+      (doc) => canSee(doc) && (grp === "All Deliverables" || driveGroupFor(doc) === grp),
+    ).length;
 
   const countByFolder = (fld: string) =>
-    documents.filter((doc) => canSee(doc) && (driveGroup === "All Deliverables" || driveGroupFor(doc) === driveGroup) && (fld === "00_Root_Audit_Repository" || driveFolderFor(doc) === fld)).length;
+    documents.filter(
+      (doc) =>
+        canSee(doc) &&
+        (driveGroup === "All Deliverables" || driveGroupFor(doc) === driveGroup) &&
+        (fld === "00_Root_Audit_Repository" || driveFolderFor(doc) === fld),
+    ).length;
 
-  const selectedProject = uploadProjects.find(p => p.id === projectFilter);
-  const projectDocuments = projectFilter === "all" ? documents : selectedProject ? documentsForProject(documents, recordsForProject(portal?.records ?? [], selectedProject), selectedProject) : [];
+  const selectedProject = uploadProjects.find((p) => p.id === projectFilter);
+  const projectDocuments =
+    projectFilter === "all"
+      ? documents
+      : selectedProject
+        ? documentsForProject(
+            documents,
+            recordsForProject(portal?.records ?? [], selectedProject),
+            selectedProject,
+          )
+        : [];
   const visible = projectDocuments.filter(
     (document) =>
       canSee(document) &&
       (driveGroup === "All Deliverables" || driveGroupFor(document) === driveGroup) &&
       (folder === "00_Root_Audit_Repository" || driveFolderFor(document) === folder) &&
-      `${document.title} ${document.type} ${document.part ?? ""}`.toLowerCase().includes(query.toLowerCase()),
+      `${document.title} ${document.type} ${document.part ?? ""}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
   );
 
   const openUploadDraft = (file: File | null) => {
-    if (uploadDisabled) { setUploadNotice(uploadReadOnlyReason ?? "Select an authorized department before uploading."); return; }
-    if(onExternalUpload){onExternalUpload(file);return;}
-    setPendingFile(file); setUploadDialogOpen(true);
+    if (uploadDisabled) {
+      setUploadNotice(uploadReadOnlyReason ?? "Select an authorized department before uploading.");
+      return;
+    }
+    if (onExternalUpload) {
+      onExternalUpload(file);
+      return;
+    }
+    setPendingFile(file);
+    setUploadDialogOpen(true);
   };
   useEffect(() => {
     if (!openUploadOnMount) return;
-    if (uploadDisabled) setUploadNotice(uploadReadOnlyReason ?? "Select an authorized department before uploading.");
+    if (uploadDisabled)
+      setUploadNotice(uploadReadOnlyReason ?? "Select an authorized department before uploading.");
     else {
-      const allowedProject = uploadProjects.find(project => project.id === initialProjectId);
+      const allowedProject = uploadProjects.find((project) => project.id === initialProjectId);
       setProjectFilter(allowedProject?.id ?? "all");
       setDriveGroup(allowedProject ? "03 Client projects" : "All Deliverables");
       setPendingFile(null);
       setUploadDialogOpen(true);
     }
     onUploadOpenConsumed?.();
-  }, [openUploadOnMount, uploadDisabled, uploadReadOnlyReason, onUploadOpenConsumed, initialProjectId, uploadProjects]);
+  }, [
+    openUploadOnMount,
+    uploadDisabled,
+    uploadReadOnlyReason,
+    onUploadOpenConsumed,
+    initialProjectId,
+    uploadProjects,
+  ]);
   const saveUploadDraft = async (document: UploadDraft) => {
     if (uploadDisabled || !onDocumentCreated) return false;
     const saved = await onDocumentCreated(document);
     if (saved) {
       setUploadNotice(`${document.title} saved as a browser-local Draft. Not approved or shared.`);
-      setFolder("00_Root_Audit_Repository"); setDriveGroup("All Deliverables"); setQuery(""); setProjectFilter(document.projectId ?? "all");
+      setFolder("00_Root_Audit_Repository");
+      setDriveGroup("All Deliverables");
+      setQuery("");
+      setProjectFilter(document.projectId ?? "all");
     }
     return saved;
   };
@@ -10377,7 +15835,9 @@ function HardwareDeliverablesDrive({
               >
                 <span>{grp.icon}</span>
                 <span>{grp.label}</span>
-                <span className={`rounded-full px-1.5 py-0.2 font-mono text-[10px] ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 font-mono text-[10px] ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}
+                >
                   {count}
                 </span>
               </button>
@@ -10387,70 +15847,100 @@ function HardwareDeliverablesDrive({
 
         {/* Technical Folder Grid */}
         <div className="grid divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
-          {driveFolders.filter(([name]) => name === "00_Root_Audit_Repository" || persona?.kind === "admin" || countByFolder(name) > 0).map(([name, detail]) => {
-            const folderCount = countByFolder(name);
-            const active = folder === name;
-            return (
-              <button
-                key={name}
-                onClick={() => setFolder(name)}
-                className={`p-3 text-left transition-colors ${active ? "border-l-2 border-primary bg-accent/70 font-semibold" : "hover:bg-secondary/70"}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-1.5 font-mono text-xs text-steel">
-                    <FolderOpen className="size-3.5 shrink-0" />
-                    <span className="truncate">/{name}</span>
+          {driveFolders
+            .filter(
+              ([name]) =>
+                name === "00_Root_Audit_Repository" ||
+                persona?.kind === "admin" ||
+                countByFolder(name) > 0,
+            )
+            .map(([name, detail]) => {
+              const folderCount = countByFolder(name);
+              const active = folder === name;
+              return (
+                <button
+                  key={name}
+                  onClick={() => setFolder(name)}
+                  className={`p-3 text-left transition-colors ${active ? "border-l-2 border-primary bg-accent/70 font-semibold" : "hover:bg-secondary/70"}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1.5 font-mono text-xs text-steel">
+                      <FolderOpen className="size-3.5 shrink-0" />
+                      <span className="truncate">/{name}</span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      ({folderCount})
+                    </span>
+                  </div>
+                  <span className="mt-1 block text-[11px] text-muted-foreground line-clamp-1">
+                    {detail}
                   </span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">({folderCount})</span>
-                </div>
-                <span className="mt-1 block text-[11px] text-muted-foreground line-clamp-1">{detail}</span>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
         </div>
       </section>
 
       {/* The shared TEST vault uses one project-scoped Add document flow above. */}
-      {!sharedStorage && <section
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setIsDragging(false);
-          const file = e.dataTransfer.files[0];
-          if (file) openUploadDraft(file);
-        }}
-        className={`rounded-lg border-2 border-dashed p-4 text-center transition-all ${
-          isDragging
-            ? "border-primary bg-primary/10 scale-[1.005]"
-            : "border-border/80 bg-card hover:border-primary/50 hover:bg-secondary/40"
-        }`}
-      >
-        <div className="flex flex-col items-center justify-center gap-2 sm:flex-row sm:justify-between">
-          <div className="flex items-center gap-3 text-left">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-steel/10 text-steel">
-              <Upload className="size-5" />
+      {!sharedStorage && (
+        <section
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            const file = e.dataTransfer.files[0];
+            if (file) openUploadDraft(file);
+          }}
+          className={`rounded-lg border-2 border-dashed p-4 text-center transition-all ${
+            isDragging
+              ? "border-primary bg-primary/10 scale-[1.005]"
+              : "border-border/80 bg-card hover:border-primary/50 hover:bg-secondary/40"
+          }`}
+        >
+          <div className="flex flex-col items-center justify-center gap-2 sm:flex-row sm:justify-between">
+            <div className="flex items-center gap-3 text-left">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-steel/10 text-steel">
+                <Upload className="size-5" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-foreground">
+                  Upload original document · Draft only
+                </p>
+                <p className="text-[11px] text-muted-foreground">
+                  Choose a file, then confirm its project, type and revision.{" "}
+                  {sharedStorage
+                    ? "Stored privately in your company account"
+                    : "Stored in this browser"}{" "}
+                  · up to 25 MB.
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-semibold text-foreground">
-                Upload original document · Draft only
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                Choose a file, then confirm its project, type and revision. {sharedStorage ? "Stored privately in your company account" : "Stored in this browser"} · up to 25 MB.
-              </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={uploadDisabled}
+                onClick={() => openUploadDraft(null)}
+                className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                Upload original
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button type="button" disabled={uploadDisabled} onClick={() => openUploadDraft(null)} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50">Upload original</button>
-          </div>
-        </div>
 
-        {uploadReadOnlyReason && <p className="mt-2 text-left text-xs text-muted-foreground">{uploadReadOnlyReason}</p>}
-        {uploadNotice && <p role="status" className="mt-2 text-center text-xs text-muted-foreground">{uploadNotice}</p>}
-      </section>}
+          {uploadReadOnlyReason && (
+            <p className="mt-2 text-left text-xs text-muted-foreground">{uploadReadOnlyReason}</p>
+          )}
+          {uploadNotice && (
+            <p role="status" className="mt-2 text-center text-xs text-muted-foreground">
+              {uploadNotice}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* Artifact Register Table / List */}
       <section className="ops-section overflow-hidden">
@@ -10463,14 +15953,43 @@ function HardwareDeliverablesDrive({
               Project Artifact Register ({visible.length} Deliverables)
             </p>
           </div>
-          <ResponsiveFilterBar label="Document filters"><div className="filter-search"><Search/><input aria-label="Search deliverables" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search deliverables or ID…"/></div>{!hideProjectFilter&&<CompactFilterSelect label="Filter documents by project" shortLabel="Project" icon={Layers} value={projectFilter} onChange={setProjectFilter} options={[{value:"all",label:"All projects / common documents"},...uploadProjects.map(p=>({value:p.id,label:`${p.reference} · ${p.title}`}))]}/>}</ResponsiveFilterBar>
+          <ResponsiveFilterBar label="Document filters">
+            <div className="filter-search">
+              <Search />
+              <input
+                aria-label="Search deliverables"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search deliverables or ID…"
+              />
+            </div>
+            {!hideProjectFilter && (
+              <CompactFilterSelect
+                label="Filter documents by project"
+                shortLabel="Project"
+                icon={Layers}
+                value={projectFilter}
+                onChange={setProjectFilter}
+                options={[
+                  { value: "all", label: "All projects / common documents" },
+                  ...uploadProjects.map((p) => ({
+                    value: p.id,
+                    label: `${p.reference} · ${p.title}`,
+                  })),
+                ]}
+              />
+            )}
+          </ResponsiveFilterBar>
         </div>
 
         <div className="divide-y divide-border">
           {/* Customer Register.xlsx Special Row */}
           {(folder === "01_Governance_and_QMS" || folder === "00_Root_Audit_Repository") &&
             (driveGroup === "All Deliverables" || driveGroup === "01 Common documents") &&
-            onOpenCustomerRegister && (persona?.kind === "admin" || persona?.departmentId === "sales" || persona?.departmentId === "fin") && (
+            onOpenCustomerRegister &&
+            (persona?.kind === "admin" ||
+              persona?.departmentId === "sales" ||
+              persona?.departmentId === "fin") && (
               <div
                 onClick={onOpenCustomerRegister}
                 className="grid w-full cursor-pointer gap-3 border-b border-border bg-emerald-500/[0.04] px-4 py-3 text-left transition hover:bg-emerald-500/[0.09] sm:grid-cols-[minmax(0,1fr)_auto]"
@@ -10481,7 +16000,9 @@ function HardwareDeliverablesDrive({
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <strong className="block text-sm text-foreground">Customer Register.xlsx</strong>
+                      <strong className="block text-sm text-foreground">
+                        Customer Register.xlsx
+                      </strong>
                       <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
                         MANAGED LIVE REGISTER
                       </span>
@@ -10493,7 +16014,8 @@ function HardwareDeliverablesDrive({
                       Sales Master Directory · Browser-local register
                     </small>
                     <small className="mt-0.5 block text-xs text-muted-foreground">
-                      {portal?.customersRegistry?.length ?? defaultCustomers.length} Registered Accounts · Managed in this browser
+                      {portal?.customersRegistry?.length ?? defaultCustomers.length} Registered
+                      Accounts · Managed in this browser
                     </small>
                   </div>
                 </div>
@@ -10517,8 +16039,14 @@ function HardwareDeliverablesDrive({
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <strong className="text-sm font-semibold text-foreground">{document.title}</strong>
-                      {document.uploadType && <span className="rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px]">{document.lifecycle ?? "Draft"} · Browser-local</span>}
+                      <strong className="text-sm font-semibold text-foreground">
+                        {document.title}
+                      </strong>
+                      {document.uploadType && (
+                        <span className="rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px]">
+                          {document.lifecycle ?? "Draft"} · Browser-local
+                        </span>
+                      )}
                       <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-primary">
                         {docGroup}
                       </span>
@@ -10527,11 +16055,21 @@ function HardwareDeliverablesDrive({
                       </span>
                     </div>
                     <small className="mt-1 block font-mono text-[10px] text-muted-foreground">
-                      {document.part ?? document.type} · {document.deliverableKind ?? "Controlled evidence"} ·{" "}
-                      {departments.find((d) => d.id === document.departmentId)?.name ?? "Engineering"}
+                      {document.part ?? document.type} ·{" "}
+                      {document.deliverableKind ?? "Controlled evidence"} ·{" "}
+                      {departments.find((d) => d.id === document.departmentId)?.name ??
+                        "Engineering"}
                     </small>
 
-                    {document.sourcePackage && <p className="mt-1 text-[10px] text-muted-foreground">Source Gerber: {documents.find(d => d.id === document.sourcePackage?.documentId)?.title ?? document.sourcePackage.documentId} · Rev {document.sourcePackage.revision} · SHA-256 {document.sourcePackage.checksum.slice(0, 12)}…</p>}
+                    {document.sourcePackage && (
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        Source Gerber:{" "}
+                        {documents.find((d) => d.id === document.sourcePackage?.documentId)
+                          ?.title ?? document.sourcePackage.documentId}{" "}
+                        · Rev {document.sourcePackage.revision} · SHA-256{" "}
+                        {document.sourcePackage.checksum.slice(0, 12)}…
+                      </p>
+                    )}
                     {/* Attached Local Files List */}
                     {files.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -10541,7 +16079,9 @@ function HardwareDeliverablesDrive({
                             className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-[11px]"
                           >
                             <span className="font-mono text-steel">📎 {file.name}</span>
-                            <span className="text-[10px] text-muted-foreground">({formatBytes(file.size)})</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              ({formatBytes(file.size)})
+                            </span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -10559,22 +16099,55 @@ function HardwareDeliverablesDrive({
                   </div>
 
                   <div className="flex items-center gap-2 self-center">
-                    <Action
-                      label="Open Deliverable"
-                      onClick={() => onSelectDocument(document)}
-                    />
+                    <Action label="Open Deliverable" onClick={() => onSelectDocument(document)} />
                   </div>
                 </div>
               );
             })
-          ) : !((folder === "01_Governance_and_QMS" || folder === "00_Root_Audit_Repository") && onOpenCustomerRegister) ? (
+          ) : !(
+              (folder === "01_Governance_and_QMS" || folder === "00_Root_Audit_Repository") &&
+              onOpenCustomerRegister
+            ) ? (
             <p className="p-8 text-center text-sm text-muted-foreground">
-              No authorized deliverables in /{driveGroup}/{folder}. {sharedStorage ? "Select a project above, then choose Add document to add its details and original file together." : "Use the uploader above to add a file."}
+              No authorized deliverables in /{driveGroup}/{folder}.{" "}
+              {sharedStorage
+                ? "Select a project above, then choose Add document to add its details and original file together."
+                : "Use the uploader above to add a file."}
             </p>
           ) : null}
         </div>
       </section>
-      {uploadDialogOpen && persona && <DocumentUploadPilotDialog initialFile={pendingFile} initialProjectId={projectFilter === "all" ? undefined : projectFilter} projects={uploadProjects} departments={uploadDepartments} documents={documents.filter(canSee)} initialScope={driveGroup === "01 Common documents" ? "common" : driveGroup === "02 Internal projects" ? "internal" : driveGroup === "04 Other department work" ? "department" : driveGroup === "03 Client projects" ? "client" : "internal"} actor={{ id: persona.id, kind: persona.kind, name: persona.person, departmentId: actorDepartment?.id }} onClose={() => { setUploadDialogOpen(false); setPendingFile(null); }} onSave={saveUploadDraft} />}
+      {uploadDialogOpen && persona && (
+        <DocumentUploadPilotDialog
+          initialFile={pendingFile}
+          initialProjectId={projectFilter === "all" ? undefined : projectFilter}
+          projects={uploadProjects}
+          departments={uploadDepartments}
+          documents={documents.filter(canSee)}
+          initialScope={
+            driveGroup === "01 Common documents"
+              ? "common"
+              : driveGroup === "02 Internal projects"
+                ? "internal"
+                : driveGroup === "04 Other department work"
+                  ? "department"
+                  : driveGroup === "03 Client projects"
+                    ? "client"
+                    : "internal"
+          }
+          actor={{
+            id: persona.id,
+            kind: persona.kind,
+            name: persona.person,
+            departmentId: actorDepartment?.id,
+          }}
+          onClose={() => {
+            setUploadDialogOpen(false);
+            setPendingFile(null);
+          }}
+          onSave={saveUploadDraft}
+        />
+      )}
     </section>
   );
 }
@@ -10604,8 +16177,13 @@ function DocumentDetail({
   const owner = departments.find((item) => item.id === document.departmentId);
   const allowed = canDepartmentAccessDocument(
     document,
-    persona ?? { id: "admin", label: "Executive Admin / MD", person: "Full master access", kind: "admin" },
-    departmentContext
+    persona ?? {
+      id: "admin",
+      label: "Executive Admin / MD",
+      person: "Full master access",
+      kind: "admin",
+    },
+    departmentContext,
   );
   const references = records.filter(
     (record) =>
@@ -10624,7 +16202,9 @@ function DocumentDetail({
   const [dragActive, setDragActive] = useState(false);
   const [previewFile, setPreviewFile] = useState<LocalControlledFile | null>(null);
   const isCloudDocument = Boolean(document.cloudDocumentId);
-  const isHardwareDeliverable = Boolean(document.deliverableKind) || /schematic|gerber|pcb|step|cad|firmware|binary/i.test(`${document.title} ${document.type}`);
+  const isHardwareDeliverable =
+    Boolean(document.deliverableKind) ||
+    /schematic|gerber|pcb|step|cad|firmware|binary/i.test(`${document.title} ${document.type}`);
   const localFiles = document.localFiles ?? [];
   useEffect(() => {
     if (!document.cloudDocumentId || !allowed) {
@@ -10650,7 +16230,9 @@ function DocumentDetail({
     return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
   };
   const formatBytes = (size: number) =>
-    size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`;
+    size < 1024 * 1024
+      ? `${Math.max(1, Math.round(size / 1024))} KB`
+      : `${(size / (1024 * 1024)).toFixed(1)} MB`;
   const formatLabel = (file: Pick<LocalControlledFile, "name" | "type">) => {
     const extension = file.name.split(".").pop()?.toUpperCase();
     if (extension === "STP" || extension === "STEP") return "CAD STEP";
@@ -10658,29 +16240,60 @@ function DocumentDetail({
     return extension || file.type.split("/").pop()?.toUpperCase() || "FILE";
   };
   const uploadLocal = async (file: File, incrementRevision = false) => {
-    if (document.uploadType) { setFileMessage("Pilot originals are retained unchanged. Add a new draft through Documents & Deliverables."); return; }
+    if (document.uploadType) {
+      setFileMessage(
+        "Pilot originals are retained unchanged. Add a new draft through Documents & Deliverables.",
+      );
+      return;
+    }
     try {
-      setFileState("uploading"); setUploadProgress(4); setFileMessage("Securing & Verifying SHA-256 Hash…");
-       const checksum = await sha256(file); setUploadProgress(40);
+      setFileState("uploading");
+      setUploadProgress(4);
+      setFileMessage("Securing & Verifying SHA-256 Hash…");
+      const checksum = await sha256(file);
+      setUploadProgress(40);
       const id = createId();
       await saveLocalAttachment(id, file);
       const attached: LocalControlledFile = {
-        id, name: file.name, type: file.type || "application/octet-stream", size: file.size,
-        uploadedAt: new Date().toISOString(), uploader: `${owner?.lead ?? "Current user"} · ${owner?.name ?? "Controlled documents"}`,
-        revision: document.revision ?? "00", storage: "indexeddb", checksum,
+        id,
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        size: file.size,
+        uploadedAt: new Date().toISOString(),
+        uploader: `${owner?.lead ?? "Current user"} · ${owner?.name ?? "Controlled documents"}`,
+        revision: document.revision ?? "00",
+        storage: "indexeddb",
+        checksum,
       };
       setUploadProgress(76);
-      const revision = incrementRevision ? String((Number.parseInt(document.revision ?? "0", 10) || 0) + 1).padStart(2, "0") : document.revision ?? "00";
+      const revision = incrementRevision
+        ? String((Number.parseInt(document.revision ?? "0", 10) || 0) + 1).padStart(2, "0")
+        : (document.revision ?? "00");
       const updatedFile = { ...attached, revision };
-      window.setTimeout(() => { setUploadProgress(100); setFileState("idle"); }, 220);
+      window.setTimeout(() => {
+        setUploadProgress(100);
+        setFileState("idle");
+      }, 220);
       const next = {
-        ...document, revision,
+        ...document,
+        revision,
         localFiles: [...localFiles, updatedFile],
-        history: [`${now()} · ${updatedFile.name} attached locally · Rev ${revision} · ${updatedFile.uploader}`, ...(document.history ?? [])],
+        history: [
+          `${now()} · ${updatedFile.name} attached locally · Rev ${revision} · ${updatedFile.uploader}`,
+          ...(document.history ?? []),
+        ],
       };
-      onDocumentUpdated(next, `${document.title} · ${updatedFile.name} attached locally for DEMO/browser session`);
-      setFileMessage("File Attached & Verified (stored separately in this browser)"); setFileInputKey((value) => value + 1);
-    } catch (error) { setFileState("error"); setUploadProgress(0); setFileMessage(error instanceof Error ? error.message : "Attachment could not be completed."); }
+      onDocumentUpdated(
+        next,
+        `${document.title} · ${updatedFile.name} attached locally for DEMO/browser session`,
+      );
+      setFileMessage("File Attached & Verified (stored separately in this browser)");
+      setFileInputKey((value) => value + 1);
+    } catch (error) {
+      setFileState("error");
+      setUploadProgress(0);
+      setFileMessage(error instanceof Error ? error.message : "Attachment could not be completed.");
+    }
   };
   const upload = async (file: File) => {
     if (!document.cloudDocumentId) {
@@ -10763,26 +16376,58 @@ function DocumentDetail({
             Department-owned controlled document
           </p>
           <h3 className="mt-2 text-xl font-semibold">{document.title}</h3>
-           <div className="mt-4 flex flex-wrap gap-2"><Action label="Open complete document" primary onClick={() => onOpenPrintable(controlledDocumentPrintable(document, owner?.code.replace(/^DEMO-/, "") ?? "QA"))} /></div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Action
+              label="Open complete document"
+              primary
+              onClick={() =>
+                onOpenPrintable(
+                  controlledDocumentPrintable(document, owner?.code.replace(/^DEMO-/, "") ?? "QA"),
+                )
+              }
+            />
+          </div>
           <section className="mt-5 overflow-hidden border border-border bg-panel">
             <div className="grid gap-px bg-border sm:grid-cols-3">
               <DocumentField label="Document ID" value={document.type} />
               <DocumentField label="Revision" value={document.revision ?? "Unrevised"} />
-              <DocumentField label="Issue date" value={document.effectiveDate ?? "DEMO issue date"} />
+              <DocumentField
+                label="Issue date"
+                value={document.effectiveDate ?? "DEMO issue date"}
+              />
             </div>
             <div className="p-4">
-              <p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">Controlled record preview</p>
+              <p className="font-mono text-[10px] uppercase tracking-[.12em] text-steel">
+                Controlled record preview
+              </p>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {document.device ? `DEMO ${document.device} controlled record. ` : "Controlled record. "}
-                The preview is illustrative only and does not represent a signed, released or externally shared document.
+                {document.device
+                  ? `DEMO ${document.device} controlled record. `
+                  : "Controlled record. "}
+                The preview is illustrative only and does not represent a signed, released or
+                externally shared document.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {[document.classification ?? "Internal", document.lifecycle ?? "Draft", document.phase ?? "Unmapped"].map((tag) => <span key={tag} className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium">{tag}</span>)}
+                {[
+                  document.classification ?? "Internal",
+                  document.lifecycle ?? "Draft",
+                  document.phase ?? "Unmapped",
+                ].map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium"
+                  >
+                    {tag}
+                  </span>
+                ))}
               </div>
               <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-3">
                 <DocumentField label="Author" value="DEMO record author" />
                 <DocumentField label="Reviewer" value="DEMO technical reviewer" />
-                <DocumentField label="Approver" value={document.approver ?? "Human approval required"} />
+                <DocumentField
+                  label="Approver"
+                  value={document.approver ?? "Human approval required"}
+                />
               </div>
             </div>
           </section>
@@ -10794,10 +16439,25 @@ function DocumentDetail({
               label="Part / revision"
               value={`${document.part ?? "Not set"} · Rev ${document.revision ?? "—"}`}
             />
-            <DocumentField label="Project phase" value={document.phase ?? (document.projectStage ? "Unmapped · review required" : "Not set")} />
-            <DocumentField label="Project current stage" value={document.projectStage ?? "Not recorded"} />
+            <DocumentField
+              label="Project phase"
+              value={
+                document.phase ?? (document.projectStage ? "Unmapped · review required" : "Not set")
+              }
+            />
+            <DocumentField
+              label="Project current stage"
+              value={document.projectStage ?? "Not recorded"}
+            />
             <DocumentField label="Record stage" value={document.lifecycleStage ?? "Not recorded"} />
-            <DocumentField label="Auto-draft basis" value={document.draftSnapshot ? `${document.draftSnapshot.completionPercentage}% populated from linked source records; missing parameters remain TBD.` : document.releaseNotes ?? "No draft basis recorded."} />
+            <DocumentField
+              label="Auto-draft basis"
+              value={
+                document.draftSnapshot
+                  ? `${document.draftSnapshot.completionPercentage}% populated from linked source records; missing parameters remain TBD.`
+                  : (document.releaseNotes ?? "No draft basis recorded.")
+              }
+            />
             <DocumentField label="Status" value={document.lifecycle ?? "Draft"} />
             <DocumentField label="Effective date" value={document.effectiveDate ?? "Not set"} />
             <DocumentField
@@ -10815,110 +16475,261 @@ function DocumentDetail({
               <div>
                 <p className="font-semibold">Private file storage</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {document.cloudDocumentId ? "This original is linked to the signed-in TEST organization’s private storage. It remains a draft and is not approved or released." : "This original is stored in this browser only. It is not shared, cloud-synced, approved or released."}
+                  {document.cloudDocumentId
+                    ? "This original is linked to the signed-in TEST organization’s private storage. It remains a draft and is not approved or released."
+                    : "This original is stored in this browser only. It is not shared, cloud-synced, approved or released."}
                 </p>
               </div>
-              <span className="rounded border border-border px-2 py-1 text-xs">{document.lifecycle ?? "Draft"}</span>
+              <span className="rounded border border-border px-2 py-1 text-xs">
+                {document.lifecycle ?? "Draft"}
+              </span>
             </div>
             <div className="p-4">
-              {isHardwareDeliverable && <section className="mb-4 rounded-lg border border-steel/35 bg-accent p-3"><p className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-steel">Hardware engineering deliverable</p><p className="mt-1 text-sm font-semibold">{document.title.includes("Gerber") ? "Gerber & PCB release · ZIP archive" : document.title.includes("STEP") || document.title.includes("CAD") ? "3D STEP enclosure · ZIP package" : "Schematic package · PDF deliverable"}</p><p className="mt-1 text-xs text-muted-foreground">Include revision notes and designer attribution with each verified release package. Human approval remains required.</p></section>}
+              {isHardwareDeliverable && (
+                <section className="mb-4 rounded-lg border border-steel/35 bg-accent p-3">
+                  <p className="font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-steel">
+                    Hardware engineering deliverable
+                  </p>
+                  <p className="mt-1 text-sm font-semibold">
+                    {document.title.includes("Gerber")
+                      ? "Gerber & PCB release · ZIP archive"
+                      : document.title.includes("STEP") || document.title.includes("CAD")
+                        ? "3D STEP enclosure · ZIP package"
+                        : "Schematic package · PDF deliverable"}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Include revision notes and designer attribution with each verified release
+                    package. Human approval remains required.
+                  </p>
+                </section>
+              )}
               <div
-                onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setDragActive(true);
+                }}
                 onDragLeave={() => setDragActive(false)}
-                onDrop={(event) => { event.preventDefault(); setDragActive(false); const file = event.dataTransfer.files?.[0]; if (file) void (isCloudDocument ? upload(file) : uploadLocal(file)); }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDragActive(false);
+                  const file = event.dataTransfer.files?.[0];
+                  if (file) void (isCloudDocument ? upload(file) : uploadLocal(file));
+                }}
                 className={`rounded-lg border border-dashed p-4 transition-colors ${dragActive ? "border-steel bg-secondary" : "border-border bg-card"}`}
               >
-              {isCloudDocument ? (
-                <>
-                  <label className="inline-flex h-10 cursor-pointer items-center rounded-lg border border-border bg-card px-3.5 text-sm font-semibold transition-colors hover:border-ring/50 hover:bg-secondary">
-                    {fileState === "uploading" ? "Uploading securely…" : "Upload private revision"}
-                    <input
-                      key={fileInputKey}
-                      className="sr-only"
-                      type="file"
-                       accept={isHardwareDeliverable ? ".pdf,.zip,.step,.stp,.hex,.bin,.csv,.xlsx,.docx" : undefined}
-                      disabled={fileState === "uploading"}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) void upload(file);
-                      }}
-                    />
-                  </label>
-                  <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                     Drop a file here or browse · {isHardwareDeliverable ? "PDF, Gerber ZIP, STEP/STP, HEX/BIN, CSV/XLSX, or DOCX release package · " : ""}Private, department-authorized storage · maximum 25 MB · duplicate revisions are safely detected.
-                  </p>
-                  {fileState === "uploading" && (
-                    <div className="mt-3" aria-live="polite">
-                      <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                        <div
-                          className="h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
-                          style={{ width: `${uploadProgress}%` }}
-                        />
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Securing & Verifying SHA-256 Hash… {uploadProgress}%
-                      </p>
-                    </div>
-                  )}
-                  {fileMessage && (
-                    <p
-                      className={`mt-3 text-sm ${fileState === "error" ? "text-danger" : "text-muted-foreground"}`}
-                    >
-                      {fileMessage}
+                {isCloudDocument ? (
+                  <>
+                    <label className="inline-flex h-10 cursor-pointer items-center rounded-lg border border-border bg-card px-3.5 text-sm font-semibold transition-colors hover:border-ring/50 hover:bg-secondary">
+                      {fileState === "uploading"
+                        ? "Uploading securely…"
+                        : "Upload private revision"}
+                      <input
+                        key={fileInputKey}
+                        className="sr-only"
+                        type="file"
+                        accept={
+                          isHardwareDeliverable
+                            ? ".pdf,.zip,.step,.stp,.hex,.bin,.csv,.xlsx,.docx"
+                            : undefined
+                        }
+                        disabled={fileState === "uploading"}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void upload(file);
+                        }}
+                      />
+                    </label>
+                    <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                      Drop a file here or browse ·{" "}
+                      {isHardwareDeliverable
+                        ? "PDF, Gerber ZIP, STEP/STP, HEX/BIN, CSV/XLSX, or DOCX release package · "
+                        : ""}
+                      Private, department-authorized storage · maximum 25 MB · duplicate revisions
+                      are safely detected.
                     </p>
-                  )}
-                  <div className="mt-4 divide-y divide-border rounded-lg border border-border bg-card">
-                    {fileState === "loading" ? (
-                      <p className="p-4 text-sm text-muted-foreground">
-                        Loading secure file history…
-                      </p>
-                    ) : files.length ? (
-                      files.map((file) => (
-                        <div
-                          key={file.id}
-                          className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                        >
-                          <div>
-                            <p className="text-sm font-semibold">{file.original_name}</p>
-                            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-                              Rev {file.revision} · {Math.ceil(file.size_bytes / 1024)} KB ·{" "}
-                              {file.uploaded_at}
-                            </p>
-                            <p className="mt-1 text-xs text-muted-foreground">{file.audit_note}</p>
-                          </div>
-                          <Action label="Secure download" onClick={() => void download(file)} />
+                    {fileState === "uploading" && (
+                      <div className="mt-3" aria-live="polite">
+                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className="h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
                         </div>
-                      ))
-                    ) : (
-                      <p className="p-4 text-sm text-muted-foreground">
-                        No private file revisions have been uploaded.
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Securing & Verifying SHA-256 Hash… {uploadProgress}%
+                        </p>
+                      </div>
+                    )}
+                    {fileMessage && (
+                      <p
+                        className={`mt-3 text-sm ${fileState === "error" ? "text-danger" : "text-muted-foreground"}`}
+                      >
+                        {fileMessage}
                       </p>
                     )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <label className="inline-flex h-10 cursor-pointer items-center rounded-lg border border-border bg-background px-3.5 text-sm font-semibold transition-colors hover:border-ring/50 hover:bg-secondary">
-                    <Upload className="mr-2 size-4" /> Upload / Attach File
-                    <input
-                      key={fileInputKey}
-                      className="sr-only"
-                      type="file"
-                       accept={isHardwareDeliverable ? ".pdf,.zip,.step,.stp,.hex,.bin,.csv,.xlsx,.docx" : ".pdf,.docx,.xlsx,.step,.stp,.zip,.json,.csv,.txt"}
-                      disabled={Boolean(document.uploadType) || fileState === "uploading"}
-                      onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadLocal(file); }}
-                    />
-                  </label>
-                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
-                    {document.uploadType ? "Pilot originals are retained unchanged. Add a new draft through Documents & Deliverables; shared storage and approval are separate steps." : <>{isHardwareDeliverable ? "Attach PDF, Gerber ZIP, STEP/STP, HEX/BIN, CSV/XLSX, or DOCX deliverables. " : "Drop PDF, DOCX, XLSX, STEP/STP, Gerber ZIP, JSON, or CSV here. "}{document.cloudDocumentId ? "This original is held in the signed-in TEST organization's private storage; approval and release remain separate." : "This original stays in this browser only; it is not cloud-synced or visible to Android or Lovable from this upload."}</>}
-                  </p>
-                  {fileState === "uploading" && <div className="mt-3" aria-live="polite"><div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none" style={{ width: `${uploadProgress}%` }} /></div><p className="mt-1 text-xs text-muted-foreground">Securing & Verifying SHA-256 Hash… {uploadProgress}%</p></div>}
-                  {fileMessage && <p className={`mt-3 text-sm ${fileState === "error" ? "text-danger" : "text-moss"}`}>{fileMessage}</p>}
-                  <div className="mt-4 divide-y divide-border rounded-lg border border-border bg-background">
-                    {localFiles.length ? localFiles.map((file) => <div key={file.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"><div><p className="text-sm font-semibold">{file.name}</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">{formatBytes(file.size)} · {formatLabel(file)} · Rev {file.revision} · {file.uploadedAt}</p><p className="mt-1 text-xs text-muted-foreground">Uploaded by {file.uploader}{file.checksum ? ` · SHA-256 ${file.checksum.slice(0, 16)}…` : ""}</p></div><div className="flex flex-wrap gap-2"><Action label="View / Preview" onClick={() => setPreviewFile(file)} /><Action label="Download file" onClick={() => { void downloadLocalControlledFile(file).catch((error) => { setFileState("error"); setFileMessage(error instanceof Error ? error.message : "Download is unavailable."); }); }} />{!document.uploadType && <label className="inline-flex h-9 cursor-pointer items-center rounded-lg border border-border bg-card px-3 text-xs font-semibold"><span>Replace / New Revision</span><input className="sr-only" type="file" accept=".pdf,.docx,.xlsx,.step,.stp,.zip,.hex,.bin,.json,.csv,.txt" onChange={(event) => { const replacement = event.target.files?.[0]; if (replacement) void uploadLocal(replacement, true); }} /></label>}{!document.uploadType && <Action label="Archive" onClick={() => { void removeLocalAttachment(file.id); const next = { ...document, localFiles: localFiles.filter((item) => item.id !== file.id), history: [`${now()} · ${file.name} archived from browser-local revision history`, ...(document.history ?? [])] }; onDocumentUpdated(next, `${document.title} · ${file.name} archived`); }} />}</div></div>) : <p className="p-4 text-sm text-muted-foreground">No browser-local attachments yet.</p>}
-                  </div>
-                </>
-              )}
+                    <div className="mt-4 divide-y divide-border rounded-lg border border-border bg-card">
+                      {fileState === "loading" ? (
+                        <p className="p-4 text-sm text-muted-foreground">
+                          Loading secure file history…
+                        </p>
+                      ) : files.length ? (
+                        files.map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold">{file.original_name}</p>
+                              <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                                Rev {file.revision} · {Math.ceil(file.size_bytes / 1024)} KB ·{" "}
+                                {file.uploaded_at}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {file.audit_note}
+                              </p>
+                            </div>
+                            <Action label="Secure download" onClick={() => void download(file)} />
+                          </div>
+                        ))
+                      ) : (
+                        <p className="p-4 text-sm text-muted-foreground">
+                          No private file revisions have been uploaded.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label className="inline-flex h-10 cursor-pointer items-center rounded-lg border border-border bg-background px-3.5 text-sm font-semibold transition-colors hover:border-ring/50 hover:bg-secondary">
+                      <Upload className="mr-2 size-4" /> Upload / Attach File
+                      <input
+                        key={fileInputKey}
+                        className="sr-only"
+                        type="file"
+                        accept={
+                          isHardwareDeliverable
+                            ? ".pdf,.zip,.step,.stp,.hex,.bin,.csv,.xlsx,.docx"
+                            : ".pdf,.docx,.xlsx,.step,.stp,.zip,.json,.csv,.txt"
+                        }
+                        disabled={Boolean(document.uploadType) || fileState === "uploading"}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void uploadLocal(file);
+                        }}
+                      />
+                    </label>
+                    <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                      {document.uploadType ? (
+                        "Pilot originals are retained unchanged. Add a new draft through Documents & Deliverables; shared storage and approval are separate steps."
+                      ) : (
+                        <>
+                          {isHardwareDeliverable
+                            ? "Attach PDF, Gerber ZIP, STEP/STP, HEX/BIN, CSV/XLSX, or DOCX deliverables. "
+                            : "Drop PDF, DOCX, XLSX, STEP/STP, Gerber ZIP, JSON, or CSV here. "}
+                          {document.cloudDocumentId
+                            ? "This original is held in the signed-in TEST organization's private storage; approval and release remain separate."
+                            : "This original stays in this browser only; it is not cloud-synced or visible to Android or Lovable from this upload."}
+                        </>
+                      )}
+                    </p>
+                    {fileState === "uploading" && (
+                      <div className="mt-3" aria-live="polite">
+                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className="h-full rounded-full bg-primary transition-[width] duration-300 motion-reduce:transition-none"
+                            style={{ width: `${uploadProgress}%` }}
+                          />
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Securing & Verifying SHA-256 Hash… {uploadProgress}%
+                        </p>
+                      </div>
+                    )}
+                    {fileMessage && (
+                      <p
+                        className={`mt-3 text-sm ${fileState === "error" ? "text-danger" : "text-moss"}`}
+                      >
+                        {fileMessage}
+                      </p>
+                    )}
+                    <div className="mt-4 divide-y divide-border rounded-lg border border-border bg-background">
+                      {localFiles.length ? (
+                        localFiles.map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold">{file.name}</p>
+                              <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                                {formatBytes(file.size)} · {formatLabel(file)} · Rev {file.revision}{" "}
+                                · {file.uploadedAt}
+                              </p>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Uploaded by {file.uploader}
+                                {file.checksum ? ` · SHA-256 ${file.checksum.slice(0, 16)}…` : ""}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <Action label="View / Preview" onClick={() => setPreviewFile(file)} />
+                              <Action
+                                label="Download file"
+                                onClick={() => {
+                                  void downloadLocalControlledFile(file).catch((error) => {
+                                    setFileState("error");
+                                    setFileMessage(
+                                      error instanceof Error
+                                        ? error.message
+                                        : "Download is unavailable.",
+                                    );
+                                  });
+                                }}
+                              />
+                              {!document.uploadType && (
+                                <label className="inline-flex h-9 cursor-pointer items-center rounded-lg border border-border bg-card px-3 text-xs font-semibold">
+                                  <span>Replace / New Revision</span>
+                                  <input
+                                    className="sr-only"
+                                    type="file"
+                                    accept=".pdf,.docx,.xlsx,.step,.stp,.zip,.hex,.bin,.json,.csv,.txt"
+                                    onChange={(event) => {
+                                      const replacement = event.target.files?.[0];
+                                      if (replacement) void uploadLocal(replacement, true);
+                                    }}
+                                  />
+                                </label>
+                              )}
+                              {!document.uploadType && (
+                                <Action
+                                  label="Archive"
+                                  onClick={() => {
+                                    void removeLocalAttachment(file.id);
+                                    const next = {
+                                      ...document,
+                                      localFiles: localFiles.filter((item) => item.id !== file.id),
+                                      history: [
+                                        `${now()} · ${file.name} archived from browser-local revision history`,
+                                        ...(document.history ?? []),
+                                      ],
+                                    };
+                                    onDocumentUpdated(
+                                      next,
+                                      `${document.title} · ${file.name} archived`,
+                                    );
+                                  }}
+                                />
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="p-4 text-sm text-muted-foreground">
+                          No browser-local attachments yet.
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </section>
@@ -10961,36 +16772,102 @@ function DocumentDetail({
           This controlled document is not available in the active department context.
         </p>
       )}
-      {previewFile && <FilePreview file={previewFile} formatLabel={formatLabel} onClose={() => setPreviewFile(null)} />}
+      {previewFile && (
+        <FilePreview
+          file={previewFile}
+          formatLabel={formatLabel}
+          onClose={() => setPreviewFile(null)}
+        />
+      )}
     </Modal>
   );
 }
-function FilePreview({ file, formatLabel, onClose }: { file: LocalControlledFile; formatLabel: (file: LocalControlledFile) => string; onClose: () => void }) {
+function FilePreview({
+  file,
+  formatLabel,
+  onClose,
+}: {
+  file: LocalControlledFile;
+  formatLabel: (file: LocalControlledFile) => string;
+  onClose: () => void;
+}) {
   const [archive, setArchive] = useState<string[] | null>(null);
   const [message, setMessage] = useState("");
   const [payload, setPayload] = useState<Blob | null>(null);
   useEffect(() => {
     if (file.storage !== "indexeddb") return;
-    getLocalAttachment(file.id).then(setPayload).catch((error) => setMessage(error instanceof Error ? error.message : "This attachment could not be opened."));
+    getLocalAttachment(file.id)
+      .then(setPayload)
+      .catch((error) =>
+        setMessage(error instanceof Error ? error.message : "This attachment could not be opened."),
+      );
   }, [file.id, file.storage]);
   const inspectZip = async () => {
     try {
-      const data = payload ? new Uint8Array(await payload.arrayBuffer()) : (() => {
-        const encoded = file.content?.split(",")[1];
-        if (!encoded) throw new Error("This archive has no local binary payload.");
-        return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
-      })();
+      const data = payload
+        ? new Uint8Array(await payload.arrayBuffer())
+        : (() => {
+            const encoded = file.content?.split(",")[1];
+            if (!encoded) throw new Error("This archive has no local binary payload.");
+            return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+          })();
       const bytes = data;
       const files = unzipSync(bytes);
-      setArchive(Object.entries(files).map(([name, body]) => `${name} · ${body.byteLength} bytes`).slice(0, 250));
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to inspect this ZIP archive."); }
+      setArchive(
+        Object.entries(files)
+          .map(([name, body]) => `${name} · ${body.byteLength} bytes`)
+          .slice(0, 250),
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to inspect this ZIP archive.");
+    }
   };
   const isZip = /\.zip$/i.test(file.name);
   const isStep = /\.(stp|step)$/i.test(file.name);
   const previewUrl = payload ? URL.createObjectURL(payload) : file.content;
-  useEffect(() => () => { if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
-  const text = file.encoding === "text" ? file.content : isStep ? "3D STEP model preview is not rendered in-browser. Download the verified package for CAD inspection." : payload ? "Binary technical file preview is not available in-browser." : "Loading browser-local attachment…";
-  return <Modal title={`Preview · ${file.name}`} onClose={onClose} wide><div className="mb-4 flex flex-wrap items-center gap-2"><span className="rounded border border-steel/35 bg-secondary px-2 py-1 font-mono text-xs text-steel">{formatLabel(file)}</span><span className="rounded border border-border bg-panel px-2 py-1 font-mono text-xs">Rev {file.revision}</span>{isZip && <Action label="Inspect ZIP contents" onClick={() => void inspectZip()} />}</div>{file.type === "application/pdf" && previewUrl ? <iframe title={file.name} src={previewUrl} className="h-[55vh] w-full border border-border" /> : archive ? <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap border border-border bg-panel p-4 font-mono text-xs leading-6 text-foreground">{archive.join("\n")}</pre> : <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap border border-border bg-panel p-4 font-mono text-xs leading-6 text-foreground">{text}</pre>}{message && <p className="mt-3 text-sm text-danger">{message}</p>}</Modal>;
+  useEffect(
+    () => () => {
+      if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    },
+    [previewUrl],
+  );
+  const text =
+    file.encoding === "text"
+      ? file.content
+      : isStep
+        ? "3D STEP model preview is not rendered in-browser. Download the verified package for CAD inspection."
+        : payload
+          ? "Binary technical file preview is not available in-browser."
+          : "Loading browser-local attachment…";
+  return (
+    <Modal title={`Preview · ${file.name}`} onClose={onClose} wide>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="rounded border border-steel/35 bg-secondary px-2 py-1 font-mono text-xs text-steel">
+          {formatLabel(file)}
+        </span>
+        <span className="rounded border border-border bg-panel px-2 py-1 font-mono text-xs">
+          Rev {file.revision}
+        </span>
+        {isZip && <Action label="Inspect ZIP contents" onClick={() => void inspectZip()} />}
+      </div>
+      {file.type === "application/pdf" && previewUrl ? (
+        <iframe
+          title={file.name}
+          src={previewUrl}
+          className="h-[55vh] w-full border border-border"
+        />
+      ) : archive ? (
+        <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap border border-border bg-panel p-4 font-mono text-xs leading-6 text-foreground">
+          {archive.join("\n")}
+        </pre>
+      ) : (
+        <pre className="max-h-[55vh] overflow-auto whitespace-pre-wrap border border-border bg-panel p-4 font-mono text-xs leading-6 text-foreground">
+          {text}
+        </pre>
+      )}
+      {message && <p className="mt-3 text-sm text-danger">{message}</p>}
+    </Modal>
+  );
 }
 type PrintableDocument = {
   title: string;
@@ -11006,72 +16883,372 @@ type PrintableDocument = {
   testOnly?: boolean;
 };
 
-function createPrintableDocument(template: readonly [string, string, string], settings: TemplateSettings, project = "HLPL-AI4T-01"): PrintableDocument {
+function createPrintableDocument(
+  template: readonly [string, string, string],
+  settings: TemplateSettings,
+  project = "HLPL-AI4T-01",
+): PrintableDocument {
   const type = draftType(template[0], template[1]) ?? "UNSUPPORTED";
   const department = template[2] === "HR/OPS" ? "HR" : template[2];
-  const stage = autoDraftStage(template[0]);
-  return { title: template[0].toUpperCase(), documentId: template[1].startsWith("HLPL/") ? template[1] : `DRAFT-${project || "UNLINKED"}-${department}-${type}`, department, revision: "Rev 00 · unissued", status: "Draft", project, stage, templateType: type };
+  const stage = recordStageLabel({}, type === "EHW-PRS" ? "PRS" : type);
+  return {
+    title: template[0].toUpperCase(),
+    documentId: template[1].startsWith("HLPL/")
+      ? template[1]
+      : `DRAFT-${project || "UNLINKED"}-${department}-${type}`,
+    department,
+    revision: "Rev 00 · unissued",
+    status: "Draft",
+    project,
+    stage,
+    templateType: type,
+  };
 }
 
-function controlledDocumentPrintable(document: ControlledDocument, department: string): PrintableDocument {
-  const inferredProject = document.linkedRecordRefs?.find(reference => /^HLPL-[A-Z0-9]+-\d+$/.test(reference)) || "Unlinked";
-  const recordStage = CANONICAL_STAGE_TEMPLATES.find(stage => stage.stageCode === document.lifecycleStage);
-  const stage = [document.phase ? `Project phase: ${document.phase}` : undefined, document.projectStage ? `Project current stage: ${document.projectStage}` : undefined, document.lifecycleStage ? `Record stage: ${recordStage ? `${recordStage.stageCode} · ${recordStage.name}` : document.lifecycleStage}` : undefined].filter(Boolean).join(" · ") || autoDraftStage(`${document.title} ${document.type}`);
-  return { title: document.title.toUpperCase(), documentId: document.part || document.id, source: { reference: document.part || document.id, fields: {}, notes: document.releaseNotes }, populatedDraft: document.draftSnapshot, department, revision: `Rev ${document.revision ?? "01"}`, status: document.lifecycle === "Approved" ? "Approved" : document.lifecycle === "In review" ? "In review" : "Draft", project: inferredProject, stage, testOnly: !document.cloudDocumentId };
+function controlledDocumentPrintable(
+  document: ControlledDocument,
+  department: string,
+): PrintableDocument {
+  const inferredProject =
+    document.linkedRecordRefs?.find((reference) => /^HLPL-[A-Z0-9]+-\d+$/.test(reference)) ||
+    "Unlinked";
+  const recordStage = CANONICAL_STAGE_TEMPLATES.find(
+    (stage) => stage.stageCode === document.lifecycleStage,
+  );
+  const stage =
+    [
+      document.phase ? `Project phase: ${document.phase}` : undefined,
+      document.projectStage ? `Project current stage: ${document.projectStage}` : undefined,
+      document.lifecycleStage
+        ? `Record stage: ${recordStage ? `${recordStage.stageCode} · ${recordStage.name}` : document.lifecycleStage}`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "Stage not recorded";
+  return {
+    title: document.title.toUpperCase(),
+    documentId: document.part || document.id,
+    source: { reference: document.part || document.id, fields: {}, notes: document.releaseNotes },
+    populatedDraft: document.draftSnapshot,
+    department,
+    revision: `Rev ${document.revision ?? "01"}`,
+    status:
+      document.lifecycle === "Approved"
+        ? "Approved"
+        : document.lifecycle === "In review"
+          ? "In review"
+          : "Draft",
+    project: inferredProject,
+    stage,
+    testOnly: !document.cloudDocumentId,
+  };
 }
 
 function recordPrintable(record: RecordItem, linkedProject?: RecordItem): PrintableDocument {
-  const documentId = record.reference || record.fields["controlledNumber"] || `HLPL-AI4T-${record.area.toUpperCase()}-DOC-01`;
+  const documentId =
+    record.reference ||
+    record.fields["controlledNumber"] ||
+    `HLPL-AI4T-${record.area.toUpperCase()}-DOC-01`;
   const project = projectReferences(record)[0] || "Unlinked";
-  const department = record.area === "ehw" ? "EHW" : (record.area === "fw" || record.area === "efw") ? "FW" : (record.area === "sw" || record.area === "csw") ? "SW" : record.area === "esw" ? "ESW" : record.area === "mech" ? "MECH" : record.area === "pur" ? "PUR" : record.area === "quality" ? "QA" : record.area === "emf" ? "EMF" : record.area === "tst" || record.area === "production" ? "TST" : record.area === "fin" ? "FIN" : record.area === "sit" ? "SIT" : record.area === "hrops" || record.area === "people" ? "HR" : "SAL";
+  const department =
+    record.area === "ehw"
+      ? "EHW"
+      : record.area === "fw" || record.area === "efw"
+        ? "FW"
+        : record.area === "sw" || record.area === "csw"
+          ? "SW"
+          : record.area === "esw"
+            ? "ESW"
+            : record.area === "mech"
+              ? "MECH"
+              : record.area === "pur"
+                ? "PUR"
+                : record.area === "quality"
+                  ? "QA"
+                  : record.area === "emf"
+                    ? "EMF"
+                    : record.area === "tst" || record.area === "production"
+                      ? "TST"
+                      : record.area === "fin"
+                        ? "FIN"
+                        : record.area === "sit"
+                          ? "SIT"
+                          : record.area === "hrops" || record.area === "people"
+                            ? "HR"
+                            : "SAL";
   const projectContext = linkedProject ? projectLifecycleContext(linkedProject.fields) : undefined;
   const recordStage = recordStageLabel(record.fields, record.type, linkedProject?.fields);
-  const stage = [
-    projectContext?.phase ? `Project phase: ${projectContext.phase}` : undefined,
-    projectContext?.stage ? `Project current stage: ${projectContext.stage}` : undefined,
-    recordStage !== "Operational · stage not recorded" ? `Record stage: ${recordStage}` : undefined,
-  ].filter(Boolean).join(" · ") || autoDraftStage(`${record.type} ${record.title} ${documentId}`);
-  const localTestDraft = /synthetic|local\s+test|browser\s+test/i.test(`${record.notes} ${Object.values(record.fields).join(" ")}`);
-  return { title: record.title.toUpperCase(), documentId, source: { reference: record.reference, fields: record.fields, notes: record.notes }, department, revision: "Rev 01", status: record.status, project, stage, testOnly: localTestDraft };
+  const stage =
+    [
+      projectContext?.phase ? `Project phase: ${projectContext.phase}` : undefined,
+      projectContext?.stage ? `Project current stage: ${projectContext.stage}` : undefined,
+      recordStage !== "Operational · stage not recorded"
+        ? `Record stage: ${recordStage}`
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "Stage not recorded";
+  const localTestDraft = /synthetic|local\s+test|browser\s+test/i.test(
+    `${record.notes} ${Object.values(record.fields).join(" ")}`,
+  );
+  return {
+    title: record.title.toUpperCase(),
+    documentId,
+    source: { reference: record.reference, fields: record.fields, notes: record.notes },
+    department,
+    revision: "Rev 01",
+    status: record.status,
+    project,
+    stage,
+    testOnly: localTestDraft,
+  };
 }
 
-function autoDraftStage(title: string) {
-  if (title.includes("SOR") || title.includes("NDA") || title.includes("Enquiry") || title.includes("ENQ")) return "Stage 1";
-  if (title.includes("Contract Review") || title.includes("Feasibility") || title.includes("REVIEW")) return "Stage 2";
-  if (title.includes("Requirement") || title.includes("Quotation") || title.includes("PRS") || title.includes("FRS") || title.includes("SRS") || title.includes("MRS") || title.includes("QRS") || title.includes("MPR") || title.includes("CFS") || title.includes("CRS") || title.includes("Sourcing")) return "Stage 3";
-  if (title.includes("BOM") || title.includes("Schematic") || title.includes("Architecture")) return "Stage 4";
-  if (title.includes("Control Plan") || title.includes("PFMEA") || title.includes("Tooling") || title.includes("FCT") || title.includes("FAIR")) return "Stage 5";
-  if (title.includes("DVP") || title.includes("Integration") || title.includes("Verification") || title.includes("EMC") || title.includes("EMI")) return "Stage 6";
-  if (title.includes("DFMEA") || title.includes("Release") || title.includes("ECR") || title.includes("ECO")) return "Stage 7";
-  if (title.includes("PPAP") || title.includes("PSW") || title.includes("Type Approval") || title.includes("TAC")) return "Stage 8";
-  return "Stage 9";
-}
-
-
-function TemplateSettingsPanel({ settings, onChange, onClose, templateBodies, onTemplateBodiesChange }: { settings: TemplateSettings; onChange: (settings: TemplateSettings) => void; onClose: () => void; templateBodies: Record<string, string>; onTemplateBodiesChange: (templates: Record<string, string>) => void }) {
+function TemplateSettingsPanel({
+  settings,
+  onChange,
+  onClose,
+  templateBodies,
+  onTemplateBodiesChange,
+}: {
+  settings: TemplateSettings;
+  onChange: (settings: TemplateSettings) => void;
+  onClose: () => void;
+  templateBodies: Record<string, string>;
+  onTemplateBodiesChange: (templates: Record<string, string>) => void;
+}) {
   const [template, setTemplate] = useState<string>(autoDraftTemplates[0]?.[0] ?? "Customer SOR");
-  return <Modal title="Document Header & Footer Settings" onClose={onClose} wide><TemplateSettingsEditor settings={settings} onChange={onChange} onSave={() => undefined} /><section className="ops-section mt-5 overflow-hidden"><div className="ops-section-header"><p className="text-sm font-semibold">Base HTML drafting templates</p><p className="mt-1 text-xs text-muted-foreground">Edit the controlled starting content for each document type. Project requirements are injected into each full viewer.</p></div><div className="grid gap-4 p-4"><SelectField label="Document template" value={template} onChange={setTemplate} options={autoDraftTemplates.map(([title]) => title)} /><label className="block font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">Template body<textarea value={templateBodies[template] ?? templateBlueprint(template)} onChange={(event) => onTemplateBodiesChange({ ...templateBodies, [template]: event.target.value })} className="mt-2 min-h-36 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal normal-case text-foreground" /></label></div></section><div className="mt-5 flex justify-end"><Action label="Done" primary onClick={onClose} /></div></Modal>;
+  return (
+    <Modal title="Document Header & Footer Settings" onClose={onClose} wide>
+      <TemplateSettingsEditor settings={settings} onChange={onChange} onSave={() => undefined} />
+      <section className="ops-section mt-5 overflow-hidden">
+        <div className="ops-section-header">
+          <p className="text-sm font-semibold">Base HTML drafting templates</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Edit the controlled starting content for each document type. Project requirements are
+            injected into each full viewer.
+          </p>
+        </div>
+        <div className="grid gap-4 p-4">
+          <SelectField
+            label="Document template"
+            value={template}
+            onChange={setTemplate}
+            options={autoDraftTemplates.map(([title]) => title)}
+          />
+          <label className="block font-mono text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
+            Template body
+            <textarea
+              value={templateBodies[template] ?? templateBlueprint(template)}
+              onChange={(event) =>
+                onTemplateBodiesChange({ ...templateBodies, [template]: event.target.value })
+              }
+              className="mt-2 min-h-36 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal normal-case text-foreground"
+            />
+          </label>
+        </div>
+      </section>
+      <div className="mt-5 flex justify-end">
+        <Action label="Done" primary onClick={onClose} />
+      </div>
+    </Modal>
+  );
 }
 
-function TemplateSettingsEditor({ settings, onChange, onSave }: { settings: TemplateSettings; onChange: (settings: TemplateSettings) => void; onSave: () => void }) {
-  const update = (key: keyof TemplateSettings, value: string) => onChange({ ...settings, [key]: value });
-  return <div className="space-y-5"><section className="ops-section overflow-hidden"><div className="ops-section-header"><p className="text-sm font-semibold">Organization & document settings</p><p className="mt-1 text-xs text-muted-foreground">Changes update every full-page template preview immediately in this browser.</p></div><div className="grid gap-4 p-4 md:grid-cols-2"><TextField label="Company name" value={settings.companyName} onChange={(value) => update("companyName", value)} /><TextField label="Header logo / badge text" value={settings.logoBadge} onChange={(value) => update("logoBadge", value)} /><TextField label="Document prefix" value={settings.prefix} onChange={(value) => update("prefix", value.toUpperCase())} /><TextField label="Accreditation marks" value={settings.accreditationMarks} onChange={(value) => update("accreditationMarks", value)} /><TextField label="Tech Center address" value={settings.techCenter} onChange={(value) => update("techCenter", value)} /><TextField label="Manufacturing plant location" value={settings.plantLocation} onChange={(value) => update("plantLocation", value)} /></div></section><section className="ops-section overflow-hidden"><div className="ops-section-header"><p className="text-sm font-semibold">Footer controls</p></div><div className="space-y-4 p-4"><label className="block font-mono text-[10px] font-medium uppercase tracking-[.08em] text-muted-foreground">Confidentiality notice<textarea value={settings.confidentialityNotice} onChange={(event) => update("confidentialityNotice", event.target.value)} className="mt-1 min-h-20 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal normal-case text-foreground" /></label><label className="block font-mono text-[10px] font-medium uppercase tracking-[.08em] text-muted-foreground">Compliance footer line<textarea value={settings.complianceFooter} onChange={(event) => update("complianceFooter", event.target.value)} className="mt-1 min-h-16 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal normal-case text-foreground" /></label></div></section><div className="flex justify-end"><Action label="Save template settings" primary onClick={onSave} /></div></div>;
+function TemplateSettingsEditor({
+  settings,
+  onChange,
+  onSave,
+}: {
+  settings: TemplateSettings;
+  onChange: (settings: TemplateSettings) => void;
+  onSave: () => void;
+}) {
+  const update = (key: keyof TemplateSettings, value: string) =>
+    onChange({ ...settings, [key]: value });
+  return (
+    <div className="space-y-5">
+      <section className="ops-section overflow-hidden">
+        <div className="ops-section-header">
+          <p className="text-sm font-semibold">Organization & document settings</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Changes update every full-page template preview immediately in this browser.
+          </p>
+        </div>
+        <div className="grid gap-4 p-4 md:grid-cols-2">
+          <TextField
+            label="Company name"
+            value={settings.companyName}
+            onChange={(value) => update("companyName", value)}
+          />
+          <TextField
+            label="Header logo / badge text"
+            value={settings.logoBadge}
+            onChange={(value) => update("logoBadge", value)}
+          />
+          <TextField
+            label="Document prefix"
+            value={settings.prefix}
+            onChange={(value) => update("prefix", value.toUpperCase())}
+          />
+          <TextField
+            label="Accreditation marks"
+            value={settings.accreditationMarks}
+            onChange={(value) => update("accreditationMarks", value)}
+          />
+          <TextField
+            label="Tech Center address"
+            value={settings.techCenter}
+            onChange={(value) => update("techCenter", value)}
+          />
+          <TextField
+            label="Manufacturing plant location"
+            value={settings.plantLocation}
+            onChange={(value) => update("plantLocation", value)}
+          />
+        </div>
+      </section>
+      <section className="ops-section overflow-hidden">
+        <div className="ops-section-header">
+          <p className="text-sm font-semibold">Footer controls</p>
+        </div>
+        <div className="space-y-4 p-4">
+          <label className="block font-mono text-[10px] font-medium uppercase tracking-[.08em] text-muted-foreground">
+            Confidentiality notice
+            <textarea
+              value={settings.confidentialityNotice}
+              onChange={(event) => update("confidentialityNotice", event.target.value)}
+              className="mt-1 min-h-20 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal normal-case text-foreground"
+            />
+          </label>
+          <label className="block font-mono text-[10px] font-medium uppercase tracking-[.08em] text-muted-foreground">
+            Compliance footer line
+            <textarea
+              value={settings.complianceFooter}
+              onChange={(event) => update("complianceFooter", event.target.value)}
+              className="mt-1 min-h-16 w-full rounded-lg border border-input bg-background p-3 text-sm font-normal normal-case text-foreground"
+            />
+          </label>
+        </div>
+      </section>
+      <div className="flex justify-end">
+        <Action label="Save template settings" primary onClick={onSave} />
+      </div>
+    </div>
+  );
 }
-function RaciMatrixEditor({ matrix, onChange, onSave }: { matrix: RaciMatrix; onChange: (matrix: RaciMatrix) => void; onSave: () => void }) {
-  const update = (stage: string, department: string, role: RaciRole) => onChange({ ...matrix, [stage]: { ...(matrix[stage] ?? {}), [department]: role } });
-  return <div className="space-y-5"><section className="ops-section overflow-hidden"><div className="ops-section-header"><p className="text-sm font-semibold">Responsibility Matrix (RACI)</p><p className="mt-1 text-xs text-muted-foreground">Saved assignments route simulated lifecycle handoffs to Responsible, Accountable and Consulted departments.</p></div><div className="overflow-auto"><table className="w-full min-w-[940px] text-left text-xs"><thead className="bg-panel"><tr><th className="p-3">Lifecycle stage</th>{raciDepartments.map((department) => <th key={department} className="p-2 text-center font-mono">{department}</th>)}</tr></thead><tbody>{ai4tStages.map(([stage, title]) => <tr key={stage} className="border-t border-border"><td className="min-w-52 p-3"><strong>{stage}</strong><span className="mt-1 block text-muted-foreground">{title}</span></td>{raciDepartments.map((department) => <td key={department} className="p-1 text-center"><select aria-label={`${stage} ${department} responsibility`} value={matrix[stage]?.[department] ?? ""} onChange={(event) => update(stage, department, event.target.value as RaciRole)} className="h-8 rounded border border-input bg-background px-1 text-xs font-semibold"><option value="">—</option><option value="R">R</option><option value="A">A</option><option value="C">C</option><option value="I">I</option></select></td>)}</tr>)}</tbody></table></div></section><div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground"><strong>R</strong> Responsible · <strong>A</strong> Accountable · <strong>C</strong> Consulted · <strong>I</strong> Informed</p><Action label="Save responsibility matrix" primary onClick={onSave} /></div></div>;
+function RaciMatrixEditor({
+  matrix,
+  onChange,
+  onSave,
+}: {
+  matrix: RaciMatrix;
+  onChange: (matrix: RaciMatrix) => void;
+  onSave: () => void;
+}) {
+  const update = (stage: string, department: string, role: RaciRole) =>
+    onChange({ ...matrix, [stage]: { ...(matrix[stage] ?? {}), [department]: role } });
+  return (
+    <div className="space-y-5">
+      <section className="ops-section overflow-hidden">
+        <div className="ops-section-header">
+          <p className="text-sm font-semibold">Responsibility Matrix (RACI)</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Saved assignments route simulated lifecycle handoffs to Responsible, Accountable and
+            Consulted departments.
+          </p>
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full min-w-[940px] text-left text-xs">
+            <thead className="bg-panel">
+              <tr>
+                <th className="p-3">Lifecycle stage</th>
+                {raciDepartments.map((department) => (
+                  <th key={department} className="p-2 text-center font-mono">
+                    {department}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ai4tStages.map(([stage, title]) => (
+                <tr key={stage} className="border-t border-border">
+                  <td className="min-w-52 p-3">
+                    <strong>{stage}</strong>
+                    <span className="mt-1 block text-muted-foreground">{title}</span>
+                  </td>
+                  {raciDepartments.map((department) => (
+                    <td key={department} className="p-1 text-center">
+                      <select
+                        aria-label={`${stage} ${department} responsibility`}
+                        value={matrix[stage]?.[department] ?? ""}
+                        onChange={(event) =>
+                          update(stage, department, event.target.value as RaciRole)
+                        }
+                        className="h-8 rounded border border-input bg-background px-1 text-xs font-semibold"
+                      >
+                        <option value="">—</option>
+                        <option value="R">R</option>
+                        <option value="A">A</option>
+                        <option value="C">C</option>
+                        <option value="I">I</option>
+                      </select>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          <strong>R</strong> Responsible · <strong>A</strong> Accountable · <strong>C</strong>{" "}
+          Consulted · <strong>I</strong> Informed
+        </p>
+        <Action label="Save responsibility matrix" primary onClick={onSave} />
+      </div>
+    </div>
+  );
 }
 
-function PrintableTemplateView({ document, settings, records, onClose, onOpenSettings }: { document: PrintableDocument; settings: TemplateSettings; records: RecordItem[]; onClose: () => void; onOpenSettings: () => void }) {
-  const projectSource = records.find(record => record.type === "Project" && record.reference === document.project);
-  const source = document.source ?? records.find(record => record.reference === document.documentId);
-  const draft = document.populatedDraft ?? buildDocumentDraft(document.title, document.documentId, source, projectSource, document.templateType);
-  const printableSettings = document.testOnly ? {
-    ...settings,
-    accreditationMarks: "Fictional TEST data · certification status unverified",
-    confidentialityNotice: "Fictional TEST document preview. No legal, confidentiality, certification, approval, release, or customer acceptance status is established.",
-    complianceFooter: "Browser-local TEST draft. Certification, approval, release, and customer acceptance are not verified.",
-  } : settings;
+function PrintableTemplateView({
+  document,
+  settings,
+  records,
+  onClose,
+  onOpenSettings,
+}: {
+  document: PrintableDocument;
+  settings: TemplateSettings;
+  records: RecordItem[];
+  onClose: () => void;
+  onOpenSettings: () => void;
+}) {
+  const projectSource = records.find(
+    (record) => record.type === "Project" && record.reference === document.project,
+  );
+  const source =
+    document.source ?? records.find((record) => record.reference === document.documentId);
+  const draft =
+    document.populatedDraft ??
+    buildDocumentDraft(
+      document.title,
+      document.documentId,
+      source,
+      projectSource,
+      document.templateType,
+    );
+  const printableSettings = document.testOnly
+    ? {
+        ...settings,
+        accreditationMarks: "Fictional TEST data · certification status unverified",
+        confidentialityNotice:
+          "Fictional TEST document preview. No legal, confidentiality, certification, approval, release, or customer acceptance status is established.",
+        complianceFooter:
+          "Browser-local TEST draft. Certification, approval, release, and customer acceptance are not verified.",
+      }
+    : settings;
 
   return (
     <DocumentStandardViewer
@@ -11091,19 +17268,108 @@ function PrintableTemplateView({ document, settings, records, onClose, onOpenSet
   );
 }
 
-function DocumentBody({ draft, source }: { draft: ReturnType<typeof buildDocumentDraft>; source?: DraftSource | undefined }) {
-  return <>
-    <section className="mt-5 rounded-lg border border-warning/40 p-3 text-xs"><strong>Unissued draft · human review required</strong><p>Template: {draft.type ?? "Unsupported"} · version {draft.templateVersion} · {draft.missingFields.length} missing fields</p><p>Values below are copied from identified browser-local records. A source reference does not establish approval or certification. Missing information remains TBD.</p>{!draft.supported && <p>No approved format is configured for this document type. Attach the controlled original or configure its format before release.</p>}</section>
-    {source?.notes && <section className="mt-5"><h3 className="text-xs font-bold">Source notes — {source.reference}</h3><p className="mt-2 whitespace-pre-wrap text-xs">{source.notes}</p></section>}
-    {draft.sections.map((section, index) => <section key={section.title} className="mt-5"><h3 className="border-b border-foreground/30 pb-1 text-xs font-bold">{index + 1}.0 {section.title}</h3><DocumentTable headers={["Field", "Available information", "Source reference"]} rows={section.rows} /></section>)}
-    <section className="mt-5"><h3 className="text-xs font-bold">Review and release</h3><DocumentTable headers={["Prepared", "Reviewed", "Approved", "Release evidence"]} rows={[["Not recorded", "Not recorded", "Not recorded", "Required before issue"]]} /></section>
-  </>;
+function DocumentBody({
+  draft,
+  source,
+}: {
+  draft: ReturnType<typeof buildDocumentDraft>;
+  source?: DraftSource | undefined;
+}) {
+  return (
+    <>
+      <section className="mt-5 rounded-lg border border-warning/40 p-3 text-xs">
+        <strong>Unissued draft · human review required</strong>
+        <p>
+          Template: {draft.type ?? "Unsupported"} · version {draft.templateVersion} ·{" "}
+          {draft.missingFields.length} missing fields
+        </p>
+        <p>
+          Values below are copied from identified browser-local records. A source reference does not
+          establish approval or certification. Missing information remains TBD.
+        </p>
+        {!draft.supported && (
+          <p>
+            No approved format is configured for this document type. Attach the controlled original
+            or configure its format before release.
+          </p>
+        )}
+      </section>
+      {source?.notes && (
+        <section className="mt-5">
+          <h3 className="text-xs font-bold">Source notes — {source.reference}</h3>
+          <p className="mt-2 whitespace-pre-wrap text-xs">{source.notes}</p>
+        </section>
+      )}
+      {draft.sections.map((section, index) => (
+        <section key={section.title} className="mt-5">
+          <h3 className="border-b border-foreground/30 pb-1 text-xs font-bold">
+            {index + 1}.0 {section.title}
+          </h3>
+          <DocumentTable
+            headers={["Field", "Available information", "Source reference"]}
+            rows={section.rows}
+          />
+        </section>
+      ))}
+      <section className="mt-5">
+        <h3 className="text-xs font-bold">Review and release</h3>
+        <DocumentTable
+          headers={["Prepared", "Reviewed", "Approved", "Release evidence"]}
+          rows={[["Not recorded", "Not recorded", "Not recorded", "Required before issue"]]}
+        />
+      </section>
+    </>
+  );
 }
 
-function DocumentTable({ headers, rows }: { headers: string[]; rows: string[][] }) { return <div className="mt-3 overflow-x-auto border border-border"><table className="w-full min-w-[620px] text-left text-xs"><thead className="bg-panel"><tr>{headers.map((header) => <th key={header} className="p-2 font-semibold">{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${row[0]}-${index}`} className="border-t border-border">{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`} className="p-2 align-top">{cell}</td>)}</tr>)}</tbody></table></div>; }
+function DocumentTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  return (
+    <div className="mt-3 overflow-x-auto border border-border">
+      <table className="w-full min-w-[620px] text-left text-xs">
+        <thead className="bg-panel">
+          <tr>
+            {headers.map((header) => (
+              <th key={header} className="p-2 font-semibold">
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${row[0]}-${index}`} className="border-t border-border">
+              {row.map((cell, cellIndex) => (
+                <td key={`${cell}-${cellIndex}`} className="p-2 align-top">
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
-function documentMarkdown(document: PrintableDocument, draft: ReturnType<typeof buildDocumentDraft>, source?: DraftSource) {
-  return [`# ${document.title}`, `Document ID: ${document.documentId}`, `Project: ${document.project}`, `Revision: ${document.revision}`, `Template: ${draft.type ?? "Unsupported"} / ${draft.templateVersion}`, "UNISSUED DRAFT — source verification and human approval required", !draft.supported ? "No approved format configured for this document type." : "", source?.notes || "", ...draft.sections.map(section => [`## ${section.title}`, ...section.rows.map(row => row.join(" | "))].join("\n")), "Prepared: Not recorded | Reviewed: Not recorded | Approved: Not recorded"].join("\n\n");
+function documentMarkdown(
+  document: PrintableDocument,
+  draft: ReturnType<typeof buildDocumentDraft>,
+  source?: DraftSource,
+) {
+  return [
+    `# ${document.title}`,
+    `Document ID: ${document.documentId}`,
+    `Project: ${document.project}`,
+    `Revision: ${document.revision}`,
+    `Template: ${draft.type ?? "Unsupported"} / ${draft.templateVersion}`,
+    "UNISSUED DRAFT — source verification and human approval required",
+    !draft.supported ? "No approved format configured for this document type." : "",
+    source?.notes || "",
+    ...draft.sections.map((section) =>
+      [`## ${section.title}`, ...section.rows.map((row) => row.join(" | "))].join("\n"),
+    ),
+    "Prepared: Not recorded | Reviewed: Not recorded | Approved: Not recorded",
+  ].join("\n\n");
 }
 
 function DocumentField({ label, value }: { label: string; value: string }) {
@@ -11132,9 +17398,7 @@ function PageHeader({
         <p className="font-mono text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">
           {eyebrow}
         </p>
-        <h1 className="mt-1 truncate text-xl font-bold tracking-normal text-foreground">
-          {title}
-        </h1>
+        <h1 className="mt-1 truncate text-xl font-bold tracking-normal text-foreground">{title}</h1>
         <p className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">{description}</p>
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2 md:justify-end">{actions}</div>}
@@ -11353,10 +17617,15 @@ function NotificationCenter({
               </div>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{alert.detail}</p>
               <p className="mt-2 text-xs text-muted-foreground">
-                {departments.find((department) => department.id === alert.departmentId)?.name ?? "Department"}
+                {departments.find((department) => department.id === alert.departmentId)?.name ??
+                  "Department"}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Action label="Review handoff" onClick={() => onReview(alert.departmentId)} primary />
+                <Action
+                  label="Review handoff"
+                  onClick={() => onReview(alert.departmentId)}
+                  primary
+                />
                 <Action label="Resolve" onClick={() => onResolve(alert.id)} primary />
                 <Action label="Dismiss" onClick={() => onDismiss(alert.id)} />
               </div>
@@ -11407,7 +17676,7 @@ function PersonaSwitcher({
   onAdminDepartmentChange,
   onOpenDepartmentsDirectory,
 }: {
-  departments?: {code:string;name:string;active:boolean}[];
+  departments?: { code: string; name: string; active: boolean }[];
   persona: Persona;
   onSelect: (persona: Persona) => void;
   onOpenAuth?: () => void;
@@ -11453,11 +17722,10 @@ function PersonaSwitcher({
         <div className="flex items-center gap-2 rounded-lg border border-border/80 bg-card px-3 py-1.5 text-xs font-semibold text-foreground shadow-xs">
           <span className="flex size-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase text-primary border border-primary/20">
-            {persona.departmentId?.toUpperCase() || persona.id.toUpperCase()} {persona.kind === "member" ? "EMPLOYEE" : "LEAD"}
+            {persona.departmentId?.toUpperCase() || persona.id.toUpperCase()}{" "}
+            {persona.kind === "member" ? "EMPLOYEE" : "LEAD"}
           </span>
-          <span className="font-semibold text-foreground truncate max-w-44">
-            {persona.label}
-          </span>
+          <span className="font-semibold text-foreground truncate max-w-44">{persona.label}</span>
           <Lock className="size-3 text-muted-foreground ml-0.5" />
         </div>
         {onLogout && (
@@ -11484,9 +17752,7 @@ function PersonaSwitcher({
         <span className="rounded bg-primary/20 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase text-primary border border-primary/30">
           MAIN ADMIN
         </span>
-        <span className="font-semibold text-foreground hidden xl:inline">
-          Executive Access
-        </span>
+        <span className="font-semibold text-foreground hidden xl:inline">Executive Access</span>
         {onOpenAuth && (
           <button
             type="button"
@@ -11512,7 +17778,25 @@ function PersonaSwitcher({
           onChange={(event) => onAdminDepartmentChange?.(event.target.value as AreaId)}
           className="min-w-0 bg-transparent text-xs font-bold text-foreground outline-none cursor-pointer [&>option]:bg-background [&>option]:text-foreground"
         >
-          {(departments ?? Object.entries(DEPARTMENT_MODULES).map(([code,area])=>({code,name:areaById(area as AreaId).name,active:true}))).filter(d=>d.active && DEPARTMENT_MODULES[departmentCode(d.code.replace(/^DEMO-/,''))]).map(d=>{const code=departmentCode(d.code.replace(/^DEMO-/,''));return <option key={code} value={DEPARTMENT_MODULES[code]}>{code} · {d.name.replace(/^DEMO · /,'')}</option>;})}
+          {(
+            departments ??
+            Object.entries(DEPARTMENT_MODULES).map(([code, area]) => ({
+              code,
+              name: areaById(area as AreaId).name,
+              active: true,
+            }))
+          )
+            .filter(
+              (d) => d.active && DEPARTMENT_MODULES[departmentCode(d.code.replace(/^DEMO-/, ""))],
+            )
+            .map((d) => {
+              const code = departmentCode(d.code.replace(/^DEMO-/, ""));
+              return (
+                <option key={code} value={DEPARTMENT_MODULES[code]}>
+                  {code} · {d.name.replace(/^DEMO · /, "")}
+                </option>
+              );
+            })}
         </select>
         {onOpenDepartmentsDirectory && (
           <button
@@ -11543,22 +17827,64 @@ function PersonaSwitcher({
     </div>
   );
 }
-function localDefaultLifecycleTasks(state: PortalState, project: RecordItem, stage: string): RecordItem[] {
-  const baseline=readLifecycleBaseline(project.fields['lifecycleBaseline']);
-  const track=getRecordedProjectTrack(project.fields);
-  if(!baseline || !track)return [];
-  const definition=projectLifecycleStages(baseline,track).find(s=>s.code===stage);
-  if(!definition)return [];
-  return definition.tasks.flatMap((task,index)=>{
-    const identity=`${project.id}:${stage}:${task.id}`;
-    if(state.records.some(r=>r.id===identity || r.fields['templateTaskKey']===identity))return [];
-    const department=state.departments.find(d=>d.active && canonicalDepartmentCode(d.code.replace(/^DEMO-/,''))===task.department);
-    if(!department || !department.lead.trim())throw new Error(`Configure an active ${task.department} department and lead before generating its default tasks.`);
-    return [{id:identity,reference:`${project.reference}-${stage}-${index+1}`,area:areaForDepartment(department),departmentId:department.id,type:'Task',title:task.title,notes:task.description,status:'Open' as RecordStatus,priority:'Normal' as RecordItem['priority'],createdAt:now(),updatedAt:now(),fields:{projectId:project.reference,projectCode:project.reference,lifecycleStage:stage,stageCode:stage,templateTaskKey:identity,lifecycleRevision:baseline.id,assignee:department.lead,workStatus:'To do'}}];
+function localDefaultLifecycleTasks(
+  state: PortalState,
+  project: RecordItem,
+  stage: string,
+): RecordItem[] {
+  const baseline = readLifecycleBaseline(project.fields["lifecycleBaseline"]);
+  const track = getRecordedProjectTrack(project.fields);
+  if (!baseline || !track) return [];
+  const definition = projectLifecycleStages(baseline, track).find((s) => s.code === stage);
+  if (!definition) return [];
+  return definition.tasks.flatMap((task, index) => {
+    const identity = `${project.id}:${stage}:${task.id}`;
+    if (state.records.some((r) => r.id === identity || r.fields["templateTaskKey"] === identity))
+      return [];
+    const department = state.departments.find(
+      (d) => d.active && canonicalDepartmentCode(d.code.replace(/^DEMO-/, "")) === task.department,
+    );
+    if (!department || !department.lead.trim())
+      throw new Error(
+        `Configure an active ${task.department} department and lead before generating its default tasks.`,
+      );
+    return [
+      {
+        id: identity,
+        reference: `${project.reference}-${stage}-${index + 1}`,
+        area: areaForDepartment(department),
+        departmentId: department.id,
+        type: "Task",
+        title: task.title,
+        notes: task.description,
+        status: "Open" as RecordStatus,
+        priority: "Normal" as RecordItem["priority"],
+        createdAt: now(),
+        updatedAt: now(),
+        fields: {
+          projectId: project.reference,
+          projectCode: project.reference,
+          lifecycleStage: stage,
+          stageCode: stage,
+          templateTaskKey: identity,
+          lifecycleRevision: baseline.id,
+          assignee: department.lead,
+          workStatus: "To do",
+        },
+      },
+    ];
   });
 }
 
-function ThemeToggle({ darkMode, onToggle, expanded = false }: { darkMode: boolean; onToggle: () => void; expanded?: boolean }) {
+function ThemeToggle({
+  darkMode,
+  onToggle,
+  expanded = false,
+}: {
+  darkMode: boolean;
+  onToggle: () => void;
+  expanded?: boolean;
+}) {
   const Icon = darkMode ? Sun : Moon;
   const label = darkMode ? "Switch to light mode" : "Switch to dark mode";
   return (
@@ -11566,14 +17892,26 @@ function ThemeToggle({ darkMode, onToggle, expanded = false }: { darkMode: boole
       aria-label={label}
       title={label}
       onClick={onToggle}
-      className={expanded ? "mt-3 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent" : "mx-auto grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"}
+      className={
+        expanded
+          ? "mt-3 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+          : "mx-auto grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"
+      }
     >
       <Icon className="size-4 text-steel" />
       {expanded && <span>{darkMode ? "Light mode" : "Dark mode"}</span>}
     </button>
   );
 }
-function SidebarToggle({ expanded, onToggle, compact = false }: { expanded: boolean; onToggle: () => void; compact?: boolean }) {
+function SidebarToggle({
+  expanded,
+  onToggle,
+  compact = false,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  compact?: boolean;
+}) {
   const Icon = expanded ? PanelLeftClose : PanelLeftOpen;
   const label = expanded ? "Collapse navigation" : "Expand navigation";
   return (
@@ -11593,12 +17931,14 @@ function Brand({ compact = false }: { compact?: boolean }) {
       <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-steel font-sans text-sm font-bold leading-none tracking-[0.08em] text-primary-foreground shadow-sm shadow-primary/20">
         SS
       </div>
-      {!compact && <div className="min-w-0">
-        <p className="text-sm font-semibold">XYZ Pvt Ltd</p>
-        <p className="font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground">
-          Operations portal
-        </p>
-      </div>}
+      {!compact && (
+        <div className="min-w-0">
+          <p className="text-sm font-semibold">XYZ Pvt Ltd</p>
+          <p className="font-mono text-[10px] uppercase tracking-[.1em] text-muted-foreground">
+            Operations portal
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -11609,7 +17949,7 @@ function AreaNav({
   expanded = true,
   openCount,
 }: {
-  area: Omit<(typeof areas)[number], 'name'> & {name:string};
+  area: Omit<(typeof areas)[number], "name"> & { name: string };
   active: boolean;
   onClick: () => void;
   expanded?: boolean;
@@ -11628,13 +17968,21 @@ function AreaNav({
         <>
           <span className="min-w-0 flex-1 truncate">{area.navLabel}</span>
           {area.id !== "home" && openCount ? (
-            <span className={`grid min-w-4 place-items-center rounded-full px-1 font-mono text-[9px] leading-4 ${active ? "bg-sidebar-primary-foreground/20" : "bg-sidebar-accent text-sidebar-accent-foreground"}`}>{openCount}</span>
+            <span
+              className={`grid min-w-4 place-items-center rounded-full px-1 font-mono text-[9px] leading-4 ${active ? "bg-sidebar-primary-foreground/20" : "bg-sidebar-accent text-sidebar-accent-foreground"}`}
+            >
+              {openCount}
+            </span>
           ) : null}
         </>
       ) : (
         <>
-          <span className="font-mono text-[9px] font-semibold leading-none">{area.short.replace(/[^A-Z0-9]/g, "").slice(0, 2)}</span>
-          <span className="pointer-events-none absolute left-full z-50 ml-3 hidden whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md group-hover:block group-focus-visible:block">{area.name}</span>
+          <span className="font-mono text-[9px] font-semibold leading-none">
+            {area.short.replace(/[^A-Z0-9]/g, "").slice(0, 2)}
+          </span>
+          <span className="pointer-events-none absolute left-full z-50 ml-3 hidden whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md group-hover:block group-focus-visible:block">
+            {area.name}
+          </span>
         </>
       )}
     </button>
@@ -11675,6 +18023,7 @@ function MobileMenu({
   totalSetupSteps,
   openTaskCounts,
   approvalCounts,
+  canOpenSettings,
 }: {
   onClose: () => void;
   onNavigate: RoleAwareSidebarProps["onNavigate"];
@@ -11683,6 +18032,7 @@ function MobileMenu({
   purchasingSubView?: PurchasingSubView | undefined;
   onSelectPurchasingSubView?: ((view: PurchasingSubView) => void) | undefined;
   persona: Persona;
+  canOpenSettings: boolean;
   activeArea: AreaId;
   view: string;
   recordTypeFilter?: RoleAwareSidebarProps["recordTypeFilter"];
@@ -11718,7 +18068,8 @@ function MobileMenu({
           persona={persona}
           activeArea={activeArea}
           view={view}
-          recordTypeFilter={recordTypeFilter} onRecordTypeFilterChange={onRecordTypeFilterChange}
+          recordTypeFilter={recordTypeFilter}
+          onRecordTypeFilterChange={onRecordTypeFilterChange}
           onNavigateRecordType={onNavigateRecordType}
           onOpenSmartSor={onOpenSmartSor}
           sidebarExpanded={true}
@@ -11751,6 +18102,21 @@ function MobileMenu({
           approvalCounts={approvalCounts}
         />
         <div className="mt-2 pt-2 border-t border-sidebar-border/60">
+          {canOpenSettings && (
+            <button
+              type="button"
+              aria-label="Settings"
+              title="Settings"
+              onClick={() => {
+                onOpenAdminSettings?.();
+                onClose();
+              }}
+              className="mb-2 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+            >
+              <Settings2 className="size-4" />
+              <span>Settings</span>
+            </button>
+          )}
           <ThemeToggle darkMode={darkMode} onToggle={onToggleTheme} expanded />
         </div>
       </div>

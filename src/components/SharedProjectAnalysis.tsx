@@ -6,6 +6,7 @@ import { ProjectAnalysisOverview } from "./ProjectAnalysisOverview";
 import type { TestMembership } from "@/lib/test-auth.functions";
 import type { AnalysisRecord, AnalysisDocument } from "@/lib/project-analysis-data";
 import type { Json } from "@/integrations/supabase/types";
+import { isSelectableMasterStatus } from "@/lib/shared-master-options";
 
 export const getCoordination = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -64,7 +65,7 @@ export function SharedProjectAnalysis({
       <ProjectAnalysisOverview
         showReferenceScenarios={false}
         renderProjectInputs={projectId=><ProjectInputsWorkspace key={`${projectId}:${initialSourceId || ""}`} membership={membership} sources={serverRecords} initialSourceId={projectId === "all" ? initialSourceId : projectId}/>}
-        projects={serverRecords.filter((r) => r.type === "Project")}
+        projects={serverRecords.filter((r) => r.type === "Project" && isSelectableMasterStatus(r.status))}
         records={serverRecords}
         documents={serverDocuments}
         onOpenProject={onOpenProject}

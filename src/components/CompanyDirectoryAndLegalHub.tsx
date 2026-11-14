@@ -1,4 +1,5 @@
 import { departmentCode } from "@/lib/department-scope";
+import { DEMO_ORGANIZATION_ROSTER } from "@/lib/demo-organization-roster";
 import { useState, useId } from "react";
 import {
   Users,
@@ -41,190 +42,22 @@ export type DirectoryContact = {
   avatarInitial: string;
 };
 
-export const defaultCompanyDirectory: DirectoryContact[] = [
-  {
-    id: "EMP-001",
-    name: "Avery Vale",
-    departmentCode: "EHW",
-    departmentName: "Embedded Hardware Engineering",
-    designation: "Lead Hardware Architect",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "avery.vale@example.com",
-    deskExtension: "Ext. 201 (Hardware Lab)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 2",
-    primarySkills: ["STM32F4", "ISO 7637-2", "ECAD Altium", "AEC-Q100"],
-    avatarInitial: "AV",
-  },
-  {
-    id: "EMP-002",
-    name: "Elena Rostova",
-    departmentCode: "EHW",
-    departmentName: "Embedded Hardware Engineering",
-    designation: "Senior RF & Power Electronics Engineer",
-    reportingManager: "Avery Vale",
-    workEmail: "elena.rostova@example.com",
-    deskExtension: "Ext. 204 (RF Shielding Room)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 2",
-    primarySkills: ["4G LTE RF", "GNSS Antennas", "SMPS Layout", "EMC Mitigation"],
-    avatarInitial: "ER",
-  },
-  {
-    id: "EMP-003",
-    name: "Devon Lane",
-    departmentCode: "FW",
-    departmentName: "Firmware Engineering",
-    designation: "Firmware Lead",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "devon.lane@example.com",
-    deskExtension: "Ext. 210 (Firmware Lab)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 2",
-    primarySkills: ["CAN J1939", "FreeRTOS", "OTA Bootloader", "C/C++ Bare-Metal", "Zephyr RTOS"],
-    avatarInitial: "DL",
-  },
-  {
-    id: "EMP-003B",
-    name: "Siddharth Roy",
-    departmentCode: "SW",
-    departmentName: "Cloud & Application Software",
-    designation: "Cloud & Application Software Lead",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "siddharth.roy@example.com",
-    deskExtension: "Ext. 215 (Software Lab)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 2",
-    primarySkills: ["AIS-140 MQTT", "BLE 5.2 Mobile", "Python / C# GUI", "Protobuf / JSON"],
-    avatarInitial: "SR",
-  },
-  {
-    id: "EMP-004",
-    name: "Priya Sharma",
-    departmentCode: "SAL",
-    departmentName: "Sales & Business Development",
-    designation: "VP · Sales & Automotive OEM Accounts",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "priya.sharma@example.com",
-    deskExtension: "Ext. 101 (Executive Suite)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 3",
-    primarySkills: ["OEM Account Mgmt", "Tata Motors / Ashok Leyland", "Commercial Quotation"],
-    avatarInitial: "PS",
-  },
-  {
-    id: "EMP-005",
-    name: "Samira Holt",
-    departmentCode: "MECH",
-    departmentName: "Mechanical Engineering",
-    designation: "Lead Mechanical & Enclosure Design Engineer",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "samira.holt@example.com",
-    deskExtension: "Ext. 220 (CAD & Prototyping)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 1",
-    primarySkills: ["IP67 Ingress", "Flame Retardant PC/ABS", "Ultrasonic Welding", "Thermal FEA"],
-    avatarInitial: "SH",
-  },
-  {
-    id: "EMP-006",
-    name: "Morgan Reed",
-    departmentCode: "PUR",
-    departmentName: "Purchasing & Supply Chain Management",
-    designation: "Head of Global Sourcing & Supplier Quality",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "morgan.reed@example.com",
-    deskExtension: "Ext. 150 (SCM Cell)",
-    facilityLocation: "Greater Noida SMT Plant 2 · Admin Block",
-    primarySkills: ["Tier-1 ASL", "PPAP Level 3", "BOM Costing", "Quectel / ST Direct"],
-    avatarInitial: "MR",
-  },
-  {
-    id: "EMP-007",
-    name: "Jordan Blake",
-    departmentCode: "QA",
-    departmentName: "Quality Assurance & APQP",
-    designation: "Quality Assurance Lead & IATF MR",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "jordan.blake@example.com",
-    deskExtension: "Ext. 301 (QMS Lab)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 1",
-    primarySkills: ["IATF 16949:2016", "DVP&R Plan", "AIAG-VDA DFMEA", "AIS-140 TAC"],
-    avatarInitial: "JB",
-  },
-  {
-    id: "EMP-008",
-    name: "Casey Rowan",
-    departmentCode: "EMF",
-    departmentName: "Electronics Manufacturing & Box-Build",
-    designation: "Plant Manager & Box-Build Operations Lead",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "casey.rowan@example.com",
-    deskExtension: "Ext. 401 (SMT Plant Floor)",
-    facilityLocation: "Greater Noida SMT Plant 2 · Production Floor",
-    primarySkills: ["PCBA Traceability", "Functional-Test Fixtures", "IPC-A-610 Class 3", "Control Plans"],
-    avatarInitial: "CR",
-  },
-  {
-    id: "EMP-009",
-    name: "Mina Cross",
-    departmentCode: "TST",
-    departmentName: "Production & Automated EOL Testing",
-    designation: "Automated Test Jigs & EOL Lead",
-    reportingManager: "Casey Rowan",
-    workEmail: "mina.cross@example.com",
-    deskExtension: "Ext. 415 (Test Engineering)",
-    facilityLocation: "Greater Noida SMT Plant 2 · Testing Bay",
-    primarySkills: ["Automated Jigs", "CAN Loopback", "Cellular RF Verification", "FPY 99%+"],
-    avatarInitial: "MC",
-  },
-  {
-    id: "EMP-009B",
-    name: "Mechanical Manufacturing Lead",
-    departmentCode: "MMF",
-    departmentName: "Mechanical Manufacturing",
-    designation: "Mechanical Fabrication & Subassembly Lead (Interim)",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "mmf.lead@example.com",
-    deskExtension: "Ext. 420 (Mechanical Shop)",
-    facilityLocation: "Greater Noida SMT Plant 2 · Mechanical Bay",
-    primarySkills: ["Part Fabrication", "Enclosure Finishing", "Subassembly", "Fit & Dimensional Checks"],
-    avatarInitial: "MM",
-  },
-  {
-    id: "EMP-010",
-    name: "Priya Voss",
-    departmentCode: "FIN",
-    departmentName: "Accounts & Finance",
-    designation: "Finance Controller & Commercial Billing Lead",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "priya.voss@example.com",
-    deskExtension: "Ext. 108 (Finance Office)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 3",
-    primarySkills: ["Automotive Tax Invoice", "GST & HSN", "Cost Center P&L", "NRE Billing"],
-    avatarInitial: "PV",
-  },
-  {
-    id: "EMP-011",
-    name: "Kai Morgan",
-    departmentCode: "SIT",
-    departmentName: "Service & IT Infrastructure",
-    designation: "IT & Information Security Lead",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "kai.morgan@example.com",
-    deskExtension: "Ext. 119 (Server Ops)",
-    facilityLocation: "Noida Tech Center · Building 4, Server Room B",
-    primarySkills: ["ISO 27001 ISMS", "Encrypted Backups", "OTA Infrastructure", "Zero Trust"],
-    avatarInitial: "KM",
-  },
-  {
-    id: "EMP-012",
-    name: "Taylor Quinn",
-    departmentCode: "HROPS",
-    departmentName: "HR & Operations",
-    designation: "Head of People & Operational Excellence",
-    reportingManager: "Executive Admin / MD",
-    workEmail: "taylor.quinn@example.com",
-    deskExtension: "Ext. 102 (HR Wing)",
-    facilityLocation: "Noida Tech Center · Building 4, Floor 3",
-    primarySkills: ["HLPL/F/HR/03 Matrix", "Six Sigma DMAIC", "IPC-A-610 Training", "Talent Ops"],
-    avatarInitial: "TQ",
-  },
-];
+export const defaultCompanyDirectory: DirectoryContact[] = DEMO_ORGANIZATION_ROSTER.map((person) => {
+  const manager = DEMO_ORGANIZATION_ROSTER.find((candidate) => candidate.fixtureKey === person.reportsToFixtureKey);
+  return {
+    id: person.employeeCode,
+    name: person.name,
+    departmentCode: person.departmentCode,
+    departmentName: person.departmentName,
+    designation: person.roleTitle,
+    reportingManager: manager?.name ?? "DEMO ONLY · Executive Admin",
+    workEmail: person.workEmail,
+    deskExtension: "DEMO ONLY · no direct extension",
+    facilityLocation: person.facilityLocation,
+    primarySkills: person.skills,
+    avatarInitial: person.name.split(" ").map((part) => part[0]).join("").slice(0, 2),
+  };
+});
 
 export function CompanyDirectoryModal({
   onClose,
@@ -252,10 +85,9 @@ export function CompanyDirectoryModal({
     { code: "QA", name: "Quality Assurance" },
     { code: "EMF", name: "Electronics Manufacturing" },
     { code: "MMF", name: "Mechanical Manufacturing" },
-    { code: "TST", name: "EOL Testing (Historical)" },
     { code: "FIN", name: "Finance & Accounts" },
     { code: "SIT", name: "Service & IT" },
-    { code: "HROPS", name: "HR & Operations" },
+    { code: "HR", name: "HR & Operations" },
   ];
 
   const filtered = (contacts ?? defaultCompanyDirectory).filter((emp) => {
@@ -291,11 +123,11 @@ export function CompanyDirectoryModal({
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-foreground">{lockedDepartment ? `${lockedDepartment} Team Directory` : "Signed-In Company Directory"}</h2>
                 <span className="rounded-md border border-primary/20 bg-primary/5 px-2 py-0.5 font-mono text-[10px] font-semibold text-primary">
-                  Work-Contact Projection (Master Plan §9)
+                  {contacts ? "Shared TEST" : "DEMO ONLY"} · Work-Contact Projection
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
-                Authorized workplace directory · Excludes confidential personal phone & HR compensation records
+                {contacts ? "Account-backed workspace members ·" : "Fictional sample roster ·"} Work contact details are not proof of HR or security clearance.
               </p>
             </div>
           </div>

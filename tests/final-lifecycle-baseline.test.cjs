@@ -26,6 +26,14 @@ const uploadAccess=load('stage-upload-access');
 test('complete phase catalogue includes all 82 source stages with editable defaults and dependency-safe track filtering',()=>{
   const revision=api.defaultLifecycleRevision();
   assert.equal(revision.stages.length,110);
+  assert.ok(revision.stages.every(stage=>Number.isInteger(stage.durationDays)&&stage.durationDays>0&&stage.durationDays<=365),'every configured stage has an Admin-owned default task-planning window');
+  const editableDuration=revision.stages.find(stage=>stage.code==='HW_15');
+  const previousDuration=editableDuration.durationDays;
+  editableDuration.durationDays=previousDuration+1;
+  assert.deepEqual(api.validateLifecycleRevision(revision),[],'stage duration defaults are part of a valid versioned lifecycle setting');
+  editableDuration.durationDays=0;
+  assert.ok(api.validateLifecycleRevision(revision).some(error=>error.includes(`${editableDuration.code}: stage duration`)),'invalid stage duration is rejected');
+  editableDuration.durationDays=previousDuration;
   for(const binding of extensions.STAGE_DELIVERABLE_BINDINGS){
     const stage=revision.stages.find(stage=>stage.code===binding.stage);
     assert.ok(stage,binding.stage);assert.equal(stage.tasks.length,5);assert.ok(stage.exitTypes.length);
@@ -41,6 +49,22 @@ test('complete phase catalogue includes all 82 source stages with editable defau
   const progress=engine.computeProgressiveStageAndTaskState({projectId:'TEST',track:'software_only',completedStageCodes:['CM_01'],stageDefinitions:software});
   assert.equal(progress.activeTasks.filter(task=>task.stageCode==='G0_01').length,5);
   assert.equal(progress.activeTasks.filter(task=>task.stageCode==='G0_05').length,0);
+});
+test('retired lifecycle stages are reversible in settings and excluded only from future project baselines',()=>{
+  const revision=api.defaultLifecycleRevision();
+  const applicable=api.projectLifecycleStages(revision,'hardware_only');
+  const target=applicable.find(stage=>!/^CM_0[1-4]$|^CL_0[1-3]$/.test(stage.code)&&!applicable.some(candidate=>candidate.prerequisites.includes(stage.code)));
+  assert.ok(target,'a non-core leaf stage exists in the hardware lifecycle');
+  const retired=structuredClone(revision);
+  retired.stages=retired.stages.filter(stage=>stage.code!==target.code);
+  retired.retiredStages=[...(retired.retiredStages??[]),target];
+  assert.deepEqual(api.validateLifecycleRevision(retired),[],'retiring a leaf stage keeps the active revision valid');
+  assert.ok(!extensions.completeLifecycleDefinitions(retired).some(stage=>stage.code===target.code),'default completion must not silently restore an Admin-retired stage');
+  assert.ok(!api.projectLifecycleStages(retired,'hardware_only').some(stage=>stage.code===target.code),'new projects omit the retired stage');
+  const restored=structuredClone(retired);
+  restored.stages.push(restored.retiredStages.pop());
+  assert.ok(api.projectLifecycleStages(restored,'hardware_only').some(stage=>stage.code===target.code),'restoring the stage makes it available to future projects again');
+  assert.ok(revision.stages.some(stage=>stage.code===target.code),'the earlier project baseline remains unchanged');
 });
 test('parallel record uploads follow pinned dependencies and activation rather than list positions',()=>{
   const stages=[{code:'G0_01',prerequisites:[]},{code:'SW_01',prerequisites:['G0_01']},{code:'HW_35',prerequisites:[]}];

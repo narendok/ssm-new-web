@@ -1123,7 +1123,7 @@ test("the legacy browser-local shell is not exposed; its stored sample remains s
   const sharedMembership = route.indexOf("setTestMembership(membership)");
   assert.doesNotMatch(route, /LocalTestWorkspace|localTestWorkspaceOpen|TEST Workspace/);
   assert.match(route, /portal\?\.demoLoaded && !testMembership/);
-  assert.match(route, />TEST DATA<\/span>/);
+  assert.match(route, />\s*TEST DATA\s*<\/span>/);
   assert.match(route, /Reset sample/);
   assert.match(route, /<SharedDocumentVault[\s\S]{0,200}membership=\{testMembership\}/);
   assert.match(component, /localStorage\.getItem\(LOCAL_TEST_WORKSPACE_STORAGE_KEY\)/);

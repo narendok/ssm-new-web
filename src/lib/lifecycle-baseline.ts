@@ -16,6 +16,32 @@ export type LifecycleTaskDefault = {
   title: string;
   description: string;
   department: string;
+  /** Optional org-chart role for future generated tasks; absent means current department lead. */
+  assigneeRoleId?: string | null;
+  /** Organization-chart slots are resolved L4 to L1 when new tasks are generated. */
+  assigneeRoleLevels?: Partial<Record<"L1" | "L2" | "L3" | "L4", string | null>>;
+  /** Reference SLA range; editable by the owning lead for new project plans. */
+  estimatedHoursMin?: number;
+  estimatedHoursMax?: number;
+};
+export type PhaseDurationDefault = {
+  minWorkingDays: number;
+  maxWorkingDays: number;
+  taskSlaMinHours: number;
+  taskSlaMaxHours: number;
+  activeThroughProductLifecycle?: boolean;
+};
+export const DEFAULT_PHASE_DURATIONS: Record<CompanyPhase, PhaseDurationDefault> = {
+  TG_0: { minWorkingDays: 3, maxWorkingDays: 7, taskSlaMinHours: 4, taskSlaMaxHours: 24 },
+  TG_1: { minWorkingDays: 5, maxWorkingDays: 10, taskSlaMinHours: 8, taskSlaMaxHours: 36 },
+  TG_2: { minWorkingDays: 5, maxWorkingDays: 12, taskSlaMinHours: 8, taskSlaMaxHours: 48 },
+  TG_3: { minWorkingDays: 15, maxWorkingDays: 25, taskSlaMinHours: 16, taskSlaMaxHours: 60 },
+  TG_4: { minWorkingDays: 10, maxWorkingDays: 18, taskSlaMinHours: 8, taskSlaMaxHours: 32 },
+  TG_5: { minWorkingDays: 10, maxWorkingDays: 20, taskSlaMinHours: 16, taskSlaMaxHours: 72 },
+  TG_6: { minWorkingDays: 30, maxWorkingDays: 65, taskSlaMinHours: 16, taskSlaMaxHours: 48 },
+  TG_7: { minWorkingDays: 15, maxWorkingDays: 25, taskSlaMinHours: 16, taskSlaMaxHours: 48 },
+  TG_8: { minWorkingDays: 10, maxWorkingDays: 15, taskSlaMinHours: 8, taskSlaMaxHours: 24 },
+  TG_9: { minWorkingDays: 5, maxWorkingDays: 10, taskSlaMinHours: 16, taskSlaMaxHours: 24, activeThroughProductLifecycle: true },
 };
 export type LifecycleStageDefinition = {
   code: string;
@@ -26,6 +52,8 @@ export type LifecycleStageDefinition = {
   prerequisites: string[];
   exitTypes: string[];
   optional: boolean;
+  /** Admin-owned default window for tasks planned within this stage. */
+  durationDays?: number;
   sourceReference?: { workbook: string; sheet: string; row: number; deliverables: string; preparer: string; reviewer: string };
   tasks: LifecycleTaskDefault[];
   /** Explicit stage responsibilities. Absent on historical, preserved baselines. */
@@ -36,8 +64,18 @@ export type LifecycleRevision = {
   createdAt: string;
   /** Workbook role aliases resolve to configured organization department codes. */
   roleDepartments?: Record<string, string>;
+  /** Admin-owned defaults used to propose the project timeline at feasibility. */
+  phaseDurations?: Partial<Record<CompanyPhase, PhaseDurationDefault>>;
   stages: LifecycleStageDefinition[];
+  /** Reversible Admin retirement list; excluded from new project baselines. */
+  retiredStages?: LifecycleStageDefinition[];
 };
+export function getDefaultStageDurationDays(revision: LifecycleRevision, stage: LifecycleStageDefinition): number {
+  if (Number.isInteger(stage.durationDays) && (stage.durationDays ?? 0) > 0) return stage.durationDays!;
+  const phaseDuration = revision.phaseDurations?.[stage.phase] ?? DEFAULT_PHASE_DURATIONS[stage.phase];
+  const stageCount = Math.max(1, revision.stages.filter((item) => item.phase === stage.phase).length);
+  return Math.max(1, Math.round((phaseDuration.minWorkingDays + phaseDuration.maxWorkingDays) / 2 / stageCount));
+}
 export const exitTypesForStage = (code: string) => {
   const rows=LIFECYCLE_DOCUMENT_EXITS.filter(row=>row.stage===code);
   const existing=rows.filter(row=>!row.recordType.startsWith('Stage evidence · '));
@@ -194,6 +232,7 @@ export function defaultLifecycleRevision(): LifecycleRevision {
   const reference:LifecycleRevision = {
     id: "LC-TG-2026-11-07-v4",
     createdAt: "2026-11-04T00:00:00.000Z",
+    phaseDurations: structuredClone(DEFAULT_PHASE_DURATIONS),
     stages: CANONICAL_STAGE_TEMPLATES.map((s) => ({
       code: s.stageCode,
       name: s.name,
@@ -208,6 +247,8 @@ export function defaultLifecycleRevision(): LifecycleRevision {
         title: t.title,
         description: t.description,
         department: t.defaultOwner,
+        estimatedHoursMin: DEFAULT_PHASE_DURATIONS[phaseForStage(s.stageCode)].taskSlaMinHours,
+        estimatedHoursMax: DEFAULT_PHASE_DURATIONS[phaseForStage(s.stageCode)].taskSlaMaxHours,
       })),
     })).map(finalizedStageRefinement).map(s => ({ ...s,
       name: HEXA_STAGES.find(stage=>stage.code===s.code)?.name ?? s.name,
@@ -218,10 +259,28 @@ export function defaultLifecycleRevision(): LifecycleRevision {
     } })),
   };
   const corrected=applyHexaRaci(applyHexaTaskDefaults(applyHexaStageCorrections(reference)),new Set(Object.keys(DEPARTMENT_MODULES)));
-  return {...corrected,stages:completeLifecycleDefinitions(corrected)};
+  const completeStages = completeLifecycleDefinitions(corrected);
+  const phaseCounts = new Map<CompanyPhase, number>();
+  for (const stage of completeStages) phaseCounts.set(stage.phase, (phaseCounts.get(stage.phase) ?? 0) + 1);
+  return {
+    ...corrected,
+    stages: completeStages.map((stage) => ({
+      ...stage,
+      durationDays: stage.durationDays ?? Math.max(1, Math.round(
+        ((corrected.phaseDurations?.[stage.phase] ?? DEFAULT_PHASE_DURATIONS[stage.phase]).minWorkingDays +
+          (corrected.phaseDurations?.[stage.phase] ?? DEFAULT_PHASE_DURATIONS[stage.phase]).maxWorkingDays) /
+          2 / (phaseCounts.get(stage.phase) ?? 1),
+      )),
+    })),
+  };
 }
 export function validateLifecycleRevision(revision: LifecycleRevision): string[] {
   const errors: string[] = [];
+  for (const [phase, duration] of Object.entries(revision.phaseDurations ?? {})) {
+    if (!COMPANY_PHASES.some(([code]) => code === phase)) errors.push(`Unknown phase duration: ${phase}`);
+    if (![duration.minWorkingDays, duration.maxWorkingDays, duration.taskSlaMinHours, duration.taskSlaMaxHours].every((value) => Number.isFinite(value) && value > 0)) errors.push(`${phase}: phase and task durations must be positive`);
+    if (duration.minWorkingDays > duration.maxWorkingDays || duration.taskSlaMinHours > duration.taskSlaMaxHours) errors.push(`${phase}: minimum duration cannot exceed maximum`);
+  }
   const codes = new Set<string>();
   for (const s of revision.stages) {
     if (!s.code.trim() || codes.has(s.code)) errors.push(`Duplicate or blank stage: ${s.code}`);
@@ -230,6 +289,15 @@ export function validateLifecycleRevision(revision: LifecycleRevision): string[]
       errors.push(`${s.code}: name, department and internal gate required`);
     if (!COMPANY_PHASES.some((p) => p[0] === s.phase))
       errors.push(`${s.code}: invalid company phase`);
+    if (s.durationDays !== undefined && (!Number.isInteger(s.durationDays) || s.durationDays < 1 || s.durationDays > 365))
+      errors.push(`${s.code}: stage duration must be a whole number of days between 1 and 365`);
+    for (const task of s.tasks) {
+      const range = [task.estimatedHoursMin, task.estimatedHoursMax];
+      if (range.some((value) => value !== undefined && (!Number.isFinite(value) || value <= 0)))
+        errors.push(`${s.code}: task ${task.id} estimate hours must be positive`);
+      if (task.estimatedHoursMin !== undefined && task.estimatedHoursMax !== undefined && task.estimatedHoursMin > task.estimatedHoursMax)
+        errors.push(`${s.code}: task ${task.id} minimum estimate exceeds maximum`);
+    }
     const ids = new Set<string>();
     if (s.raci) {
       for (const role of ["R", "A", "C", "I"] as const) {
@@ -296,7 +364,7 @@ export function projectLifecycleStages(
     ),
   );
   return revision.stages
-    .filter((s) => codes.has(s.code))
+    .filter((s) => codes.has(s.code) && !revision.retiredStages?.some((retired) => retired.code === s.code))
     .map((s) => ({
       ...s,
       prerequisites: [

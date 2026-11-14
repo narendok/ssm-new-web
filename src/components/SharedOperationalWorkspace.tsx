@@ -4,18 +4,20 @@ import { attachReusableRevisionToRecord, getLifecycleWorkspace } from '@/lib/lif
 import { InlineCustomerModal } from "./InlineCustomerModal";
 import { SharedSalesPipeline } from "./SharedSalesPipeline";
 import { SharedMasterSelect } from "./SharedMasterSelect";
-import { sharedMasterOptions } from "@/lib/shared-master-options";
-import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision, sharedSupplierOptions } from "@/lib/record-form-options";
+import { isSelectableMasterStatus, sharedMasterOptions } from "@/lib/shared-master-options";
+import { resolveSharedMasterFields } from "@/lib/shared-master-snapshot";
+import { automaticRecordReference, procurementTrack, revisionOptions, referenceAtRevision } from "@/lib/record-form-options";
 import { SharedSupplierSelect } from "./SharedSupplierSelect";
 import { InlineSupplierModal, InlinePartModal, type SupplierRecordItem, type PartRecordItem } from "./InlineMasterModals";
 import type { RecordField } from "@/lib/record-form-catalogue";
 import { hardwareAttachmentForRecordType, hardwareStageForRecordType, recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getSharedTestWorkspace, mutateSharedTestWorkspace } from "@/lib/shared-test.functions";
+import { getSharedTestWorkspace, mutateSharedTaskTimer, mutateSharedTestWorkspace } from "@/lib/shared-test.functions";
 import { registerSharedDocument } from "@/lib/shared-vault.functions";
 import { beginControlledDocumentUpload, completeControlledDocumentUpload } from "@/lib/controlled-documents.functions";
+import { sharedStageSaveError } from "@/lib/shared-stage-errors";
 import { getCoordination } from "./SharedProjectAnalysis";
 import { DepartmentProjectWorkspace } from "./DepartmentProjectWorkspace";
 import { SharedTestWorkspace } from "./SharedTestWorkspace";
@@ -23,8 +25,11 @@ import { ApprovalsFullPageView, type ApprovalRecord } from "./ApprovalsFullPageV
 import type { TaskRecord, TeamMember } from "./DepartmentLeadCoordinationCenter";
 import type { TestMembership } from "@/lib/test-auth.functions";
 import type { SharedJson, SharedTestAction } from "@/lib/shared-test.schema";
-import { businessDate } from "@/lib/business-date";
+import { sharedTaskDueDate } from "@/lib/shared-task-date";
+import { memberHasDepartmentPermission, memberHasDepartmentScope, departmentIdsForMember } from "@/lib/shared-department-access";
+import { getSharedDepartmentRoleConfiguration } from "@/lib/department-roles.functions";
 import { CANONICAL_STAGE_TEMPLATES } from "@/lib/canonical-lifecycle";
+import { resolveSharedProjectScope } from "@/lib/shared-project-scope";
 import { COMPANY_PHASES, readLifecycleBaseline } from "@/lib/lifecycle-baseline";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +42,18 @@ import {
 
 const fieldClass = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
 type Register = "Projects" | "Records" | "Tasks" | "Approvals" | "Documents";
+function TaskWorkTimer({ task, memberId, onToggle }: { task: { id: string; assignee_id: string | null; actual_seconds?: number | undefined; timer_started_at?: string | null | undefined; timer_started_by?: string | null | undefined }; memberId: string; onToggle: (id: string, action: "start" | "stop") => void }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!task.timer_started_at) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [task.timer_started_at]);
+  const ownTimer = task.timer_started_by === memberId;
+  const seconds = (task.actual_seconds ?? 0) + (task.timer_started_at ? Math.max(0, Math.floor((now - new Date(task.timer_started_at).getTime()) / 1000)) : 0);
+  const display = `${Math.floor(seconds / 3600).toString().padStart(2,"0")}:${Math.floor((seconds % 3600) / 60).toString().padStart(2,"0")}:${(seconds % 60).toString().padStart(2,"0")}`;
+  return <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3" aria-label="Task work timer"><div><p className="text-xs text-muted-foreground">Actual time logged</p><p className="font-mono text-lg font-semibold tabular-nums">{display}</p>{task.timer_started_at && <p className="text-[10px] text-muted-foreground">{ownTimer ? "Your timer is running" : "Timer is running for the assigned member"}</p>}</div>{task.assignee_id === memberId && <Button size="sm" variant={ownTimer ? "outline" : "default"} disabled={!!task.timer_started_at && !ownTimer} onClick={() => onToggle(task.id, ownTimer ? "stop" : "start")}>{ownTimer ? "Stop & save time" : "Start timer"}</Button>}</section>;
+}
 export function SharedOperationalWorkspace({
   membership,
   view,
@@ -63,12 +80,15 @@ export function SharedOperationalWorkspace({
   onOpenTasks: () => void;
 }) {
   const [reuseOpen,setReuseOpen] = useState(false);
+  const [selectedTask,setSelectedTask] = useState<TaskRecord | null>(null);
   const [reuseRevisionId,setReuseRevisionId]=useState(''),[reuseAssessment,setReuseAssessment]=useState('');
   const attachReuse=useServerFn(attachReusableRevisionToRecord),loadReuse=useServerFn(getLifecycleWorkspace);
   const reuseOptions=useQuery({queryKey:['lifecycle-workspace',membership.membershipId],queryFn:()=>loadReuse(),retry:false});
   const load = useServerFn(getSharedTestWorkspace),
     coordination = useServerFn(getCoordination),
     write = useServerFn(mutateSharedTestWorkspace),
+    writeTaskTimer = useServerFn(mutateSharedTaskTimer),
+    loadRoleConfiguration = useServerFn(getSharedDepartmentRoleConfiguration),
     registerDocument = useServerFn(registerSharedDocument),
     beginFileUpload = useServerFn(beginControlledDocumentUpload),
     completeFileUpload = useServerFn(completeControlledDocumentUpload);
@@ -78,15 +98,38 @@ export function SharedOperationalWorkspace({
     refetchInterval: 15000,
     retry: 1,
   });
+  async function toggleTaskTimer(taskId: string, action: "start" | "stop") {
+    try {
+      await writeTaskTimer({ data: { taskId, action } });
+      await query.refetch();
+      setNotice(action === "start" ? "Task timer started." : "Task time saved.");
+    } catch (timerError) {
+      setError(timerError instanceof Error ? timerError.message : "Task timer could not be updated.");
+    }
+  }
   const common = useQuery({
     queryKey: ["project-coordination", membership.organizationId, membership.membershipId],
     queryFn: () => coordination(),
     refetchInterval: 15000,
     retry: 1,
   });
+  const roleConfiguration = useQuery({
+    queryKey: ["shared-department-role-configuration", membership.organizationId, membership.membershipId],
+    queryFn: () => loadRoleConfiguration(),
+    enabled: !membership.isClient,
+    retry: false,
+    refetchInterval: 30000,
+  });
   const [scope, setScope] = useState(initialProjectScope || "all"),
     [department, setDepartment] = useState(""),
     [advanced, setAdvanced] = useState<Register | null>(null);
+  useEffect(() => {
+    if (!query.data) return;
+    const selectableProjects = query.data.records
+      .filter((record) => record.record_type === "Project" && isSelectableMasterStatus(record.status))
+      .map(({ id, reference }) => ({ id, reference }));
+    setScope((current) => resolveSharedProjectScope(current, selectableProjects));
+  }, [query.data]);
   const [form, setForm] = useState<"create_project" | "create_record" | "update_record" | null>(
       null,
     ),
@@ -124,7 +167,8 @@ export function SharedOperationalWorkspace({
       await Promise.all([query.refetch(), common.refetch(), reuseOptions.refetch()]);
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed. Your input is preserved.");
+      const message = e instanceof Error ? e.message : "Save failed. Your input is preserved.";
+      setError(sharedStageSaveError(action, message));
       void query.refetch();
       return false;
     } finally {
@@ -147,13 +191,22 @@ export function SharedOperationalWorkspace({
     );
   const data = query.data,
     actor = data.membership;
+  const configuredRoles = roleConfiguration.data?.roles ?? [];
+  const workspaceDepartmentIds = departmentIdsForMember(
+    data.departments.map(d => ({id:d.id,code:d.code,active:true,lead_member_id:d.lead_member_id})),
+    configuredRoles,
+    actor.membership_id,
+    actor.role,
+    actor.department_code,
+  );
+  const workspaceDepartments = data.departments.filter(d => workspaceDepartmentIds.includes(d.id));
   const actorDeptId = data.departments.find((d) => d.code === actor.department_code)?.id || "";
   const purDeptId = data.departments.find((d) => d.code === "PUR")?.id || actorDeptId || "";
 
-  const leadsDepartment = (code: string) => data.departments.some((item) => item.code === code && item.lead_member_id === actor.membership_id);
-  const canAddCustomer = actor.role === "admin" || actor.department_code === "SAL" || (actor.role === "department_lead" && leadsDepartment("SAL"));
-  const canAddSupplier = actor.role === "admin" || actor.department_code === "PUR" || (actor.role === "department_lead" && leadsDepartment("PUR"));
-  const canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "") || (actor.role === "department_lead" && data.departments.some((item) => ["EHW", "FW", "SW", "MECH", "PUR"].includes(item.code) && item.lead_member_id === actor.membership_id));
+  const departmentForCode = (code: string) => data.departments.find(item => item.code === code);
+  const hasPermission = (departmentId: string | null | undefined, permission: string) => memberHasDepartmentPermission(
+    data.departments.find(d => d.id === departmentId), configuredRoles, actor.membership_id, actor.role, permission,
+  );
 
   async function handleSharedSupplierCreated(supplier: SupplierRecordItem) {
     const requestId = supplier.operationId || crypto.randomUUID();
@@ -191,6 +244,7 @@ export function SharedOperationalWorkspace({
       ...prev,
       supplier: createdId,
       supplierId: createdId,
+      supplier_id: createdId,
       supplierName: supplier.name,
     }));
     setNotice(`Supplier ${supplier.name} saved to Supplier Master.`);
@@ -207,7 +261,7 @@ export function SharedOperationalWorkspace({
           title: `${part.mpn} · ${part.description}`,
           reference: controlledRef,
           record_type: "Part",
-          department_id: actorDeptId,
+          department_id: selectedDepartment,
           fields: {
             mpn: part.mpn,
             description: part.description,
@@ -233,6 +287,7 @@ export function SharedOperationalWorkspace({
       ...prev,
       part: createdId,
       partId: createdId,
+      part_id: createdId,
       mpn: part.mpn,
     }));
     setNotice(`Component ${part.mpn} saved to Part Master.`);
@@ -252,11 +307,46 @@ export function SharedOperationalWorkspace({
   const selectedDepartment =
     actor.role === "admin"
       ? (resolvedAdminDept?.id || department || data.departments.find((d) => d.code === "EHW")?.id || data.departments[0]?.id || "")
-      : actor.role === "department_lead" && resolvedAdminDept?.lead_member_id === actor.membership_id
-        ? resolvedAdminDept.id
-        : (department || data.departments.find((d) => d.code === actor.department_code)?.id || "");
+      : (() => {
+          const preferredDepartment = department || resolvedAdminDept?.id || actorDeptId;
+          return workspaceDepartmentIds.includes(preferredDepartment)
+            ? preferredDepartment
+            : workspaceDepartmentIds[0] || actorDeptId;
+        })();
   const dept = data.departments.find((d) => d.id === selectedDepartment);
-  const supplierOptions = sharedSupplierOptions(data.records);
+  const canCreateRecords = hasPermission(selectedDepartment, "records:create");
+  const canAssignTasks = hasPermission(selectedDepartment, "tasks:assign");
+  const canRequestReview = hasPermission(selectedDepartment, "records:edit");
+  const canDecideGate = hasPermission(selectedDepartment, "approvals:decide");
+  const canAddCustomer = hasPermission(departmentForCode("SAL")?.id, "records:create");
+  const canAddSupplier = hasPermission(departmentForCode("PUR")?.id, "records:create");
+  const canAddPart = ["EHW", "FW", "SW", "MECH", "PUR", "RND"].includes(dept?.code || "") && canCreateRecords;
+  const customerDirectory = data.customerOptions.length ? data.customerOptions : data.records
+    .filter(record => record.record_type === "Customer")
+    .map(record => ({ id: record.id, reference: record.reference, title: record.title, status: record.status }));
+  const supplierDirectory = data.supplierOptions.length ? data.supplierOptions : data.records
+    .filter(record => record.record_type === "Supplier")
+    .map(record => ({ id: record.id, reference: record.reference, title: record.title, status: record.status }));
+  const supplierOptions = supplierDirectory
+    .filter(supplier => isSelectableMasterStatus(supplier.status))
+    .map(supplier => ({
+    value: supplier.id,
+    label: `${supplier.reference} · ${supplier.title}`,
+  }));
+  const partDirectory = data.partOptions.length ? data.partOptions : data.records
+    .filter(record => record.record_type === "Part")
+    .map(record => ({ id: record.id, reference: record.reference, title: record.title, status: record.status, mpn: typeof record.fields["mpn"] === "string" ? record.fields["mpn"] : null }));
+  const productDirectory = data.productOptions.length ? data.productOptions : data.records
+    .filter(record => record.record_type === "Product")
+    .map(record => ({ id: record.id, reference: record.reference, title: record.title, status: record.status }));
+  const partOptions = partDirectory.filter(part => isSelectableMasterStatus(part.status)).map(part => ({
+    value: part.id,
+    label: `${part.reference} · ${part.title}${part.mpn ? ` · ${part.mpn}` : ""}`,
+  }));
+  const productOptions = productDirectory.filter(product => isSelectableMasterStatus(product.status)).map(product => ({
+    value: product.id,
+    label: `${product.reference} · ${product.title}`,
+  }));
   const originalRecord = data.records.find(r => r.id === recordId);
   const generatedReferenceBase = automaticRecordReference(data.records.find(r => r.id === values["projectId"] && r.record_type === "Project")?.reference || "", dept?.code || "", values["record_type"] || "");
   const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : generatedReferenceBase, data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
@@ -372,13 +462,32 @@ export function SharedOperationalWorkspace({
       return <input className={fieldClass} value={field.automaticLabel || field.automaticValue || ""} readOnly aria-readonly="true" />;
     }
     if (field.master === "suppliers") {
+      const supplierId = values["supplierId"] || values["supplier_id"] || "";
+      const linkedSupplier = supplierDirectory.find(supplier => supplier.id === supplierId);
+      const legacySupplierValue = [
+        values["supplier"],
+        values["supplierName"],
+        values["supplierCode"],
+        values["supplier_code"],
+      ].find(value => typeof value === "string" && value.trim() && value !== linkedSupplier?.title);
       return (
-        <div className="flex items-center gap-2">
-          <div className="flex-1">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
             <SharedSupplierSelect
               options={supplierOptions}
-              value={values[field.key] || ""}
-              onChange={(value) => setValues({ ...values, [field.key]: value, supplierId: value })}
+              value={supplierId}
+              onChange={(value) => {
+                const selected = supplierDirectory.find(supplier => supplier.id === value);
+                setValues(previous => ({
+                  ...previous,
+                  [field.key]: selected?.title || "",
+                  supplierId: value,
+                  supplier_id: value,
+                  supplierName: selected?.title || "",
+                  supplierCode: selected?.reference || "",
+                }));
+              }}
             />
           </div>
           {canAddSupplier && (
@@ -392,17 +501,27 @@ export function SharedOperationalWorkspace({
               + Add Supplier
             </Button>
           )}
+          </div>
+          {!supplierId && legacySupplierValue && (
+            <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+              Saved supplier text is not linked to a master: {legacySupplierValue}. Choose a supplier above to create the canonical link.
+            </p>
+          )}
+          {supplierId && !linkedSupplier && (
+            <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+              The saved supplier ID is not available in the current master list. Choose an available supplier only if this record should be relinked.
+            </p>
+          )}
         </div>
       );
     }
     if (field.master === "parts") {
-      const partOptions = sharedMasterOptions(data.records, ["Part"]);
       return (
         <div className="flex items-center gap-2">
           <div className="flex-1">
             <SharedMasterSelect label={field.label} options={partOptions} required={!!field.required}
-              value={data.records.find(r => r.record_type === "Part" && [r.id, r.reference].includes(values[field.key] || ""))?.id || values[field.key] || ""}
-              onChange={id => { const part = data.records.find(r=>r.id===id); setValues(previous=>({...previous,[field.key]:id,partId:id,mpn:String(part?.fields["mpn"] || "")})); }}/>
+              value={partDirectory.find(part => [part.id, part.reference, part.title, part.mpn || ""].includes(values[field.key] || ""))?.id || values[field.key] || ""}
+              onChange={id => { const part = partDirectory.find(item=>item.id===id); setValues(previous=>({...previous,[field.key]:id,partId:id,part_id:id,mpn:part?.mpn || ""})); }}/>
           </div>
           {canAddPart && (
             <Button
@@ -418,6 +537,59 @@ export function SharedOperationalWorkspace({
         </div>
       );
     }
+    if (field.master === "customers") {
+      const customerId = values["customerId"] || values["customer_id"] || "";
+      const linkedCustomer = customerDirectory.find(customer => customer.id === customerId);
+      const legacyCustomerValue = [
+        values["customer"],
+        values["customerName"],
+        values["customerCode"],
+        values["customer_code"],
+      ].find(value => typeof value === "string" && value.trim() && value !== linkedCustomer?.title);
+      const options = customerDirectory
+        .filter(customer => isSelectableMasterStatus(customer.status))
+        .map(customer => ({ value: customer.id, label: `${customer.reference} · ${customer.title}` }));
+      return (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <SharedMasterSelect
+                label={field.label}
+                options={options}
+                required={!!field.required}
+                value={customerId}
+                onChange={id => {
+                  const selected = customerDirectory.find(customer => customer.id === id);
+                  setValues(previous => ({
+                    ...previous,
+                    [field.key]: selected?.title || "",
+                    customerId: id,
+                    customer_id: id,
+                    customerName: selected?.title || "",
+                    customerCode: selected?.reference || "",
+                  }));
+                }}
+              />
+            </div>
+            {canAddCustomer && (
+              <Button type="button" variant="outline" size="sm" className="shrink-0 h-9 text-xs" onClick={() => setInlineCustomerOpen(true)}>
+                + Add Customer
+              </Button>
+            )}
+          </div>
+          {!customerId && legacyCustomerValue && (
+            <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+              Saved customer text is not linked to a master: {legacyCustomerValue}. Choose a customer above to create the canonical link.
+            </p>
+          )}
+          {customerId && !linkedCustomer && (
+            <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+              The saved customer ID is not available in the current master list. Choose an available customer only if this record should be relinked.
+            </p>
+          )}
+        </div>
+      );
+    }
     if (field.master) {
       if(field.master === 'locations') {
         const locations=sharedMasterOptions(data.records,['Location','Facility']);
@@ -425,9 +597,16 @@ export function SharedOperationalWorkspace({
       }
       const options = field.master === "people"
         ? data.members.filter(m=>m.department_id===selectedDepartment).map(m=>({value:m.id,label:m.display_name || m.id}))
-        : sharedMasterOptions(data.records, field.master === "customers" ? ["Customer"] : field.master === "products" ? ["Product", "Project"] : field.master === "routes" ? ["Production route", "Route"] : ["Controlled document"]);
-      return <div className="flex items-center gap-2"><div className="min-w-0 flex-1"><SharedMasterSelect label={field.label} options={options} required={!!field.required} value={values[field.key] || ""}
-        onChange={id=>setValues(previous=>({...previous,[field.key]:id,...(field.master==="customers" ? {customerId:id} : {})}))}/></div>{field.master === "customers" && canAddCustomer && <Button type="button" variant="outline" size="sm" onClick={()=>setInlineCustomerOpen(true)}>+ Add Customer</Button>}</div>;
+        : field.master === "projects"
+            ? sharedMasterOptions(data.records, ["Project"])
+            : field.master === "products"
+              ? productOptions
+              : sharedMasterOptions(data.records, field.master === "routes" ? ["Production route", "Route"] : ["Controlled document"]);
+      const selectedValue = field.master === "products"
+        ? values["productId"] || values["product_id"] || productDirectory.find(product => [product.id, product.reference, product.title].includes(values[field.key] || ""))?.id || ""
+        : values[field.key] || "";
+      return <div className="flex items-center gap-2"><div className="min-w-0 flex-1"><SharedMasterSelect label={field.label} options={options} required={!!field.required} value={selectedValue}
+        onChange={id=>setValues(previous=>({...previous,[field.key]:id,...(field.master==="products" ? {productId:id} : field.master==="projects" ? {projectId:id,projectCode:data.records.find(record=>record.id===id)?.reference || ""} : {})}))}/></div></div>;
     }
     if (field.options) {
       return (
@@ -476,7 +655,7 @@ export function SharedOperationalWorkspace({
       archived: "Archived",
     })[value.toLowerCase()] || "Open") as TaskRecord["status"];
   const projectRows: TaskRecord[] = source
-    .filter((r) => r.record_type === "Project")
+    .filter((r) => r.record_type === "Project" && isSelectableMasterStatus(r.status))
     .map((r) => ({
       id: r.id,
       reference: r.reference,
@@ -539,23 +718,29 @@ export function SharedOperationalWorkspace({
           ? t.priority
           : "Normal") as TaskRecord["priority"],
         area: (data.departments.find((d)=>d.id===t.department_id)?.code || actor.department_code || "home").toLowerCase(),
-        createdAt: t.updated_at,
+        createdAt: t.created_at || t.updated_at,
         updatedAt: t.updated_at,
         notes: t.description || "",
-        fields: {
-          projectId: t.record_id || "",
-          stageCode: t.stage_code || "",
-          assignee: data.members.find((m) => m.id === t.assignee_id)?.display_name || "Unassigned",
-          dueDate: t.due_at ? businessDate(new Date(t.due_at)) : "",
-          workStatus: t.status === "In Progress" ? "In progress" : "To do",
-        },
+        ...(() => {
+          const date = sharedTaskDueDate(t.due_at, t.created_at || t.updated_at);
+          return { fields: {
+            projectId: t.record_id || "",
+            stageCode: t.stage_code || "",
+            assignee: data.members.find((m) => m.id === t.assignee_id)?.display_name || "Unassigned",
+            dueDate: date.dueDate,
+            ...(date.warning ? { dueDateWarning: date.warning, storedDueDate: date.storedDueDate } : {}),
+            workStatus: t.status === "In Progress" ? "In progress" : "To do",
+          } };
+        })(),
       })),
   ];
   const team: TeamMember[] = data.members
-    .filter((m) => !selectedDepartment || m.department_id === selectedDepartment)
+    .filter((m) => !selectedDepartment || memberHasDepartmentScope(
+      data.departments.find(d => d.id === selectedDepartment), configuredRoles, m.id,
+    ))
     .map((m) => ({
       name: m.display_name || m.id,
-      area: (data.departments.find((d)=>d.id===m.department_id)?.code || actor.department_code || "home").toLowerCase(),
+      area: (data.departments.find((d)=>d.id===selectedDepartment)?.code || data.departments.find((d)=>d.id===m.department_id)?.code || actor.department_code || "home").toLowerCase(),
       role: m.role,
       score: "Not recorded",
       level: "Not recorded",
@@ -616,13 +801,15 @@ export function SharedOperationalWorkspace({
       setScope(r.reference);
       return;
     }
+    const recordFields = Object.fromEntries(
+      Object.entries(r.fields).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+    const resolvedFields = resolveSharedMasterFields(recordFields, data);
     setRecordId(r.id);
     setValues({
-      ...Object.fromEntries(
-        Object.entries(r.fields).filter(
-          (entry): entry is [string, string] => typeof entry[1] === "string",
-        ),
-      ),
+      ...resolvedFields,
       notes: r.notes,
     });
     setError("");
@@ -660,13 +847,15 @@ export function SharedOperationalWorkspace({
       expected_updated_at: task.updated_at,
     };
     if (patch.fields?.["assignee"] !== undefined) {
-      if (actor.role !== "department_lead") {
-        setError("Only the department lead can reassign tasks.");
+      if (!hasPermission(task.department_id, "tasks:assign")) {
+        setError("This role does not have Assign tasks permission for the task's department.");
         return;
       }
       const matches = data.members.filter(
         (m) =>
-          m.display_name === patch.fields!["assignee"] && m.department_id === task.department_id,
+          m.display_name === patch.fields!["assignee"] && memberHasDepartmentScope(
+            data.departments.find(d => d.id === task.department_id), configuredRoles, m.id,
+          ),
       );
       if (matches.length !== 1) {
         setError("Choose one verified department member.");
@@ -707,6 +896,14 @@ export function SharedOperationalWorkspace({
         <span className="rounded border border-primary/30 bg-primary/10 px-2 py-1 text-xs">
           TEST · {actor.display_name}
         </span>
+        {actor.role !== "admin" && workspaceDepartments.length > 1 && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            Department workspace
+            <select aria-label="Department workspace" className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" value={selectedDepartment} onChange={event => setDepartment(event.target.value)}>
+              {workspaceDepartments.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
+            </select>
+          </label>
+        )}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => onOpenVault ? onOpenVault() : setAdvanced("Documents")}>
             Document files
@@ -729,10 +926,10 @@ export function SharedOperationalWorkspace({
         <ApprovalsFullPageView
           approvals={approvals}
           projects={projectRows}
+          departments={data.departments.map(department=>({id:department.id,code:department.code,name:department.name}))}
           records={records}
           currentUser={actor.display_name}
           userRole={actor.role === "member" ? "Employee" : "Lead"}
-          onBack={onOpenTasks}
           onApprove={(id, notes) => decide(id, "approved", notes)}
           onReject={(id, reason) => decide(id, "rejected", reason)}
           onReturn={(id, reason) => decide(id, "returned", reason)}
@@ -780,19 +977,22 @@ export function SharedOperationalWorkspace({
                   ? "deliverables"
                   : undefined
           }
-          onCreateRecord={() => openCreate("create_record")}
+          onCreateRecord={() => canCreateRecords ? openCreate("create_record") : setError("This role does not have Create records permission for the selected department.")}
+          canCreateRecord={canCreateRecords}
+          canCreateTask={canAssignTasks}
           onCreateDeliverable={() => onOpenVault ? onOpenVault(undefined,projectRows.find(p=>p.id===scope||p.reference===scope)?.id) : setAdvanced("Documents")}
           onCreateProject={undefined}
           onOpenRecord={openRecord}
+          onOpenTask={setSelectedTask}
           onOpenApprovals={() => setAdvanced('Approvals')}
           onOpenDocument={id => onOpenVault ? onOpenVault(id,projectRows.find(p=>p.id===scope||p.reference===scope)?.id) : setAdvanced("Documents")}
           onUpdateTask={(id, patch) => void updateTask(id, patch)}
-          onRequestStageReview={actor.role === "admin" || actor.role === "department_lead" ? async (projectId, stageCode, notes) => {
+          onRequestStageReview={canRequestReview ? async (projectId, stageCode, notes) => {
             const project = data.records.find(record => record.id === projectId);
             if (!project) return false;
             return await save("request_stage_completion", { project_id: projectId, stage_code: stageCode, notes: notes || "", expected_updated_at: project.updated_at });
           } : undefined}
-          onAdvanceStage={actor.role === "admin" || actor.role === "department_lead" ? async (projectId, targetStage, notes) => {
+          onAdvanceStage={canDecideGate ? async (projectId, targetStage, notes) => {
             const project = data.records.find(record => record.id === projectId);
             if (!project) return false;
             return await save("advance_stage", {
@@ -803,6 +1003,10 @@ export function SharedOperationalWorkspace({
             });
           } : undefined}
           onCreateTask={async (task) => {
+            if (!canAssignTasks) {
+              setError("This role does not have Assign tasks permission for the selected department.");
+              return false;
+            }
             const project = projectRows.find((p) => [p.id, p.reference].includes(task.projectId));
             if (!project) {
               setError("Select a saved project first.");
@@ -817,12 +1021,18 @@ export function SharedOperationalWorkspace({
               setError("Choose one verified member.");
               return false;
             }
-            return save("create_task", {
+            const stageCode=String(project.fields["currentStage"]||project.fields["lifecycleStage"]||project.fields["stage"]||"");
+            if (!stageCode) {
+              setError("Choose a project with a canonical current stage before adding a department task.");
+              return false;
+            }
+            return save("create_custom_task", {
               project_id: project.id,
               department_id: selectedDepartment,
+              stage_code: stageCode,
               title: task.title,
               priority: task.priority,
-              assignee_id: actor.role === "member" ? actor.membership_id : matches[0]?.id || null,
+              assignee_id: matches[0]?.id || actor.membership_id,
               due_at: task.dueDate
                 ? new Date(`${task.dueDate}T17:00:00+05:30`).toISOString()
                 : null,
@@ -830,6 +1040,30 @@ export function SharedOperationalWorkspace({
           }}
         />
       )}
+      <Dialog open={selectedTask !== null} onOpenChange={(open) => { if (!open) setSelectedTask(null); }}>
+        <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedTask?.title || "Task details"}</DialogTitle>
+            <DialogDescription>Shared TEST task · {selectedTask?.reference || ""}</DialogDescription>
+          </DialogHeader>
+          {selectedTask && (() => {
+            const related = data.records.find((record) => record.id === selectedTask.fields["projectId"]);
+            const timerTask = data.tasks.find((task) => task.id === selectedTask.id);
+            return <div className="space-y-4 text-sm">
+              <dl className="grid grid-cols-2 gap-3 rounded-lg border border-border p-3">
+                <div><dt className="text-xs text-muted-foreground">Department</dt><dd>{data.departments.find((item) => item.code.toLowerCase() === selectedTask.area)?.name || selectedTask.area.toUpperCase()}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Status</dt><dd>{selectedTask.status}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Assigned to</dt><dd>{selectedTask.fields["assignee"] || "Unassigned"}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Lifecycle stage</dt><dd>{selectedTask.fields["stageCode"] || "Not recorded"}</dd></div>
+                <div className="col-span-2"><dt className="text-xs text-muted-foreground">Due date</dt><dd>{selectedTask.fields["dueDateWarning"] ? <span className="text-amber-700 dark:text-amber-300">{selectedTask.fields["dueDateWarning"]}</span> : selectedTask.fields["dueDate"] || "No due date"}</dd></div>
+              </dl>
+              {selectedTask.notes && <div><h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Task instructions</h3><p className="whitespace-pre-wrap">{selectedTask.notes}</p></div>}
+              {timerTask && <TaskWorkTimer task={timerTask} memberId={actor.membership_id} onToggle={(id, action) => void toggleTaskTimer(id, action)} />}
+              {related ? <p className="rounded-lg bg-muted p-3 text-xs">Related record: <strong>{related.reference} · {related.title}</strong></p> : <p className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">Related record details are limited to their owning department. This task shows only the information assigned to your department.</p>}
+            </div>;
+          })()}
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={form !== null}
         onOpenChange={(open) => {
@@ -1011,7 +1245,7 @@ export function SharedOperationalWorkspace({
         const result = await write({data:{action:"create_record",requestId:customer.operationId,payload:{record_type:"Customer",reference:`HLPL-CUS-${customer.operationId.slice(0,8).toUpperCase()}`,title:customer.name,fields:{name:customer.name,spocName:customer.contact,spocEmail:customer.email,revision:"01"}}}}) as {id?:string};
         if(!result?.id) throw new Error("Customer save did not return a persisted ID.");
         await query.refetch();
-        setValues(previous=>({...previous,customer:result.id!,customerId:result.id!,customerName:customer.name}));
+        setValues(previous=>({...previous,customer:result.id!,customerId:result.id!,customer_id:result.id!,customerName:customer.name}));
         setInlineCustomerOpen(false);
       }}/>}
       {inlineSupplierOpen && (

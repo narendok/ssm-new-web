@@ -4,28 +4,26 @@
 - **Allow All Operations**: The user has granted full blanket permission for this project. Execute all commands, file updates, and browser automation tasks autonomously without blocking for manual confirmations.
 - **Automotive Integrity**: Ensure all generated models and documentation strictly follow IATF 16949:2016, ISO 9001:2015, AIS-140, and AEC-Q100 standards.
 - **Naming Standard**: Strictly adhere to `HLPL-[PROJ_ID]-[DEPT]-[DOC_TYPE]-[REV]`.
-- **Lovable Sync**: The primary frontend and cloud backend are hosted on Lovable (`https://lovable.dev/projects/a3399684-daab-4b38-8666-187b96b451af`). Keep local migrations and Lovable schemas aligned.
+- **Hosting direction**: The user paused Lovable synchronization/deployment. Do not publish or rely on a Lovable preview for acceptance until the user resumes that path.
 
-<!-- LOVABLE:BEGIN -->
+<!-- SHARED-GIT:BEGIN -->
 
 > [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
+> Avoid rewriting published Git history — force pushing, or rebasing/amending/squashing
+> commits already pushed to a shared repository can disrupt collaborators and connected tools.
 >
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
+> Do not assume a Git push deploys or updates a hosted preview. Verify hosting separately
+> and only deploy when the user has directed that hosting path.
 
-<!-- LOVABLE:END -->
+<!-- SHARED-GIT:END -->
 
 ## Portal Runtime
-- Keep operational prototype data in a versioned browser-local store so records persist between refreshes without creating an unconfigured backend.
-- Portal record forms use structured local fields, controlled master options, and record links so created operational data remains traceable without inventing business data.
-- Keep the operational command-center prototype in one browser-local state model until authenticated shared-data queries replace the full workflow; do not mix local mutations with partial shared persistence.
-- Keep authorized demo data in the same versioned browser-local portal state, clearly marked and replaceable as a whole, so it never blends with configured operational data or creates duplicate records.
-- Shared records and documents stay browser-local and are surfaced through access-checked aggregate views; department ownership remains the source of authority.
-- Private controlled-document binaries live in Lovable Cloud Storage; server functions create short-lived signed upload/download links only after authenticated database policies authorize the department-scoped document.
+- Keep fictional interactive walkthroughs and replaceable demo fixtures in a versioned browser-local store. Label them as local examples; they do not represent shared account data.
+- Authenticated Shared TEST records, approvals, settings and controlled documents use the secured shared database and Supabase Storage contracts. Never silently fall back to local writes when shared persistence fails.
+- Portal record forms use structured fields, controlled master options and explicit record links so saved data stays traceable without inventing business facts.
+- Keep local demo state separate from configured operational and authenticated TEST data; demo reset must not affect either.
+- Department ownership and access authority come from authenticated membership and server-side permissions. Browser role query parameters and presentation filters never grant access.
+- Private controlled-document binaries use Supabase Storage; server functions create short-lived signed upload/download links only after authenticated database policies authorize the department-scoped document.
 - Model department hubs through a canonical SCMS area map, migrating legacy browser-local area IDs at read time so existing records remain usable.
 - Keep interactive lifecycle walkthroughs and competency examples in the replaceable DEMO browser-local state, so feature tests never affect configured operational records.
 - Keep demo task, project, alert, and document samples inside the replaceable browser-local DEMO state so no illustrative activity can affect configured operations.
@@ -35,7 +33,7 @@
 
 ## Android Companion Handoff
 - For Android companion work, read `docs/ANDROID_ANTIGRAVITY_HANDOFF.md` and master plan §25 before changing app code.
-- The Android Studio project currently resides at `C:\Users\Test\Documents\GitHub\SSM-new-app`; it is a separate Git repository (`https://github.com/narendok/SSM-new-app.git`) and is not inside this SSM-new workspace. Do not assume Android source changes are synced with this folder's Git/Lovable project.
-- Treat SSM-new's configured Supabase project `rzskhndweihuczbdhoxk` as the Android target. Android Gradle pins `SUPABASE_URL` to this endpoint and reads the publishable key from ignored `local.properties`. Never put that key or any privileged credential in tracked files.
+- The Android Studio project currently resides at `C:\Users\Test\Documents\GitHub\SSM-new-app`; it is a separate Git repository (`https://github.com/narendok/SSM-new-app.git`) and is not inside this SSM-new web workspace. Do not assume Android source changes are synced with this folder's Git repository.
+- Current web and Android local TEST target: Supabase project `jiqbxcqlywvvmhbgirzl` (`https://jiqbxcqlywvvmhbgirzl.supabase.co`). Web local env and Android TEST config should use this same project. Historical backend evidence naming `rzskhndweihuczbdhoxk` must remain dated historical evidence. Never put publishable keys or privileged credentials in tracked files.
 - Keep safe-view reads, stock RPCs, local-role elevation, and private document links fail-closed until the schema, RLS permissions, and authenticated signed-URL path are verified. A local prototype mutation is not a portal sync.
 - After Android source changes, run `testDebugUnitTest assembleDebug` from the Android project using Android Studio's bundled JDK, then report the outcome and any remaining integration gates.

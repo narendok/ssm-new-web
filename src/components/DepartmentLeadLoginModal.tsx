@@ -15,6 +15,7 @@ import {
   LogOut,
   Sparkles,
 } from "lucide-react";
+import { DEMO_ORGANIZATION_ROSTER } from "@/lib/demo-organization-roster";
 
 export type DepartmentCredential = {
   id: string;
@@ -27,7 +28,7 @@ export type DepartmentCredential = {
   badgeTone: string;
 };
 
-export const DEPARTMENT_CREDENTIALS: DepartmentCredential[] = [
+const DEMO_LOGIN_CREDENTIALS: DepartmentCredential[] = [
   {
     id: "pur",
     departmentCode: "PUR",
@@ -161,6 +162,20 @@ export const DEPARTMENT_CREDENTIALS: DepartmentCredential[] = [
     badgeTone: "bg-blue-600/15 text-blue-700 dark:text-blue-300 border-blue-600/30",
   },
 ];
+
+const leadByDepartment = new Map<string, (typeof DEMO_ORGANIZATION_ROSTER)[number]>(
+  DEMO_ORGANIZATION_ROSTER
+    .filter((person) => person.hierarchyLevel === 1)
+    .map((person) => [person.departmentCode, person] as const),
+);
+
+/** Keep legacy example credentials isolated while their display identity comes from the canonical roster. */
+export const DEPARTMENT_CREDENTIALS: DepartmentCredential[] = DEMO_LOGIN_CREDENTIALS.map((credential) => {
+  const canonicalLead = leadByDepartment.get(credential.departmentCode);
+  return canonicalLead
+    ? { ...credential, leadName: canonicalLead.name, roleTitle: canonicalLead.roleTitle }
+    : credential;
+});
 
 /** Existing synthetic employees only; permissions come from server membership. */
 export const EMPLOYEE_TEST_CREDENTIALS: DepartmentCredential[] = DEPARTMENT_CREDENTIALS

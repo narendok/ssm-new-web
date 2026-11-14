@@ -5,7 +5,7 @@ import { useOrganizationConfiguration, DEPARTMENT_MODULES } from '@/lib/organiza
 import { taskProjectId } from '@/lib/department-scope';
 import type { TestMembership } from '@/lib/test-auth.functions';
 import { CompanyDirectoryModal } from './CompanyDirectoryAndLegalHub';
-import { CommonDepartmentSearchView, DEPARTMENTS_METADATA, type AreaId } from './CommonDepartmentSearchView';
+import { buildDepartmentDirectoryMetadata, CommonDepartmentSearchView, type AreaId } from './CommonDepartmentSearchView';
 
 export function SharedOrganizationDepartments({membership,onOpen}:{membership:TestMembership;onOpen:(area:string,view?:string)=>void}) {
   const query=useOrganizationConfiguration(membership.membershipId);
@@ -15,7 +15,7 @@ export function SharedOrganizationDepartments({membership,onOpen}:{membership:Te
   if(!query.data||query.error||!workspace.data||workspace.error)return <p role="alert">Organization departments could not load. <button onClick={()=>{void query.refetch();void workspace.refetch();}}>Retry</button></p>;
   const data=query.data, departments=data.departments.filter(d=>d.active);
   const snapshot=workspace.data;
-  const configured=departments.flatMap(d=>{const module=DEPARTMENTS_METADATA.find(m=>m.code===d.code);return module?[{...module,name:d.name,lead:data.leads.find(l=>l.id===d.leadMemberId)?.name||'Unassigned',leadRole:'Department lead'}]:[];});
+  const configured=buildDepartmentDirectoryMetadata(departments.map(d=>({...d,lead:data.leads.find(l=>l.id===d.leadMemberId)?.name||'Unassigned'})));
   return <CommonDepartmentSearchView departments={configured} currentDepartment={(DEPARTMENT_MODULES[membership.departmentCode||'']||'ehw') as AreaId}
     onSelectDepartment={(area,view)=>{if(membership.role==='admin'||DEPARTMENT_MODULES[membership.departmentCode||'']===area)onOpen(area,view);}}
     openTaskCounts={Object.fromEntries(departments.map(d=>[DEPARTMENT_MODULES[d.code],snapshot.tasks.filter(task=>task.department_id===d.id&&!['Complete','Cancelled','cancelled'].includes(task.status)).length]))}

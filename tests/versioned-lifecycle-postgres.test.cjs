@@ -43,9 +43,10 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
     "20261028120001_canonical_stage_completion_reviews",
     "20261028120002_preserve_legacy_lifecycle_boundary",
     "20261029120000_restore_preproject_sales_intake",
-    "20261103120000_decide_shared_test_track_after_feasibility",
-    "20261104010000_versioned_lifecycle_and_asset_reuse",
+    "20261103235535_decide_shared_test_track_after_feasibility",
+    "20261103235542_versioned_lifecycle_and_asset_reuse",
     "20261106001444_admin_reset_shared_test_sample_pack",
+    "20261112144226_shared_customer_directory_links",
   ];
 
   for (const name of migrationNames) {
@@ -295,7 +296,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   };
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261104030000_shared_test_original_storage.sql"),
+      path.join(root, "supabase/migrations/20261104002046_shared_test_original_storage.sql"),
       "utf8",
     ),
   );
@@ -354,13 +355,25 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   );
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261104020000_project_start_from_feasibility.sql"),
+      path.join(root, "supabase/migrations/20261104000355_project_start_from_feasibility.sql"),
       "utf8",
     ),
   );
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261107050000_copy_reviewed_opportunity_context.sql"),
+      path.join(root, "supabase/migrations/20261107162145_copy_reviewed_opportunity_context.sql"),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    fs.readFileSync(
+      path.join(root, "supabase/migrations/20261112144239_copy_canonical_customer_to_project.sql"),
+      "utf8",
+    ),
+  );
+  await db.exec(
+    fs.readFileSync(
+      path.join(root, "supabase/migrations/20261112221934_require_canonical_customer_for_project_start.sql"),
       "utf8",
     ),
   );
@@ -380,6 +393,14 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
     () => oldWrite(admin, "create_project", { title: "Bypass", reference: "HLPL-BYPASS" }),
     /USE_REVIEWED_OPPORTUNITY/,
   );
+  const customer = (
+    await oldWrite(salLead, "create_record", {
+      record_type: "Customer",
+      reference: "HLPL-TEST-CUSTOMER-CANONICAL",
+      title: "Fictional linked customer",
+      fields: { revision: "01", name: "Fictional linked customer" },
+    })
+  ).id;
   const opportunity = (
     await oldWrite(salLead, "create_record", {
       record_type: "Opportunity",
@@ -387,6 +408,9 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
       title: "Fictional feasibility case",
       fields: {
         revision: "01",
+        customerId: customer,
+        customer: "Stale customer label must be refreshed",
+        customerCode: "STALE-CODE",
         requiredDepartments: "EHW",
         feasibilityDispatchedAt: "2026-11-04T00:00:00Z",
         quantity: "12",
@@ -458,6 +482,9 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
     .rows[0];
   assert.equal(created.fields.track, "hardware_only");
   assert.equal(created.fields.sourceOpportunityId, opportunity);
+  assert.equal(created.fields.customerId, customer);
+  assert.equal(created.fields.customer, "Fictional linked customer");
+  assert.equal(created.fields.customerCode, "HLPL-TEST-CUSTOMER-CANONICAL");
   assert.equal(created.fields.quantity, "12");
   assert.equal(created.fields.contactPerson, "Fictional TEST Contact");
   assert.equal(created.fields.email, "test-contact@example.com");
@@ -465,11 +492,67 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   assert.equal(created.fields.currentStage, "CM_01");
   assert.equal(created.fields.portfolioStatus, "FEASIBILITY_AND_SCOPING");
   assert.equal(created.status, "draft");
+
+  const legacyOpportunity = (
+    await oldWrite(salLead, "create_record", {
+      record_type: "Opportunity",
+      reference: "HLPL-TEST-OPPORTUNITY-UNLINKED-CUSTOMER",
+      title: "Fictional opportunity with unresolved legacy customer",
+      fields: {
+        revision: "01",
+        customer: "Legacy customer label only",
+        customerCode: "LEGACY-CODE",
+        requiredDepartments: "EHW",
+        feasibilityDispatchedAt: "2026-11-04T00:00:00Z",
+      },
+    })
+  ).id;
+  const legacyReview = (
+    await oldWrite(salLead, "request_approval", {
+      record_id: legacyOpportunity,
+      reviewer_department_id: dEhw,
+      title: "Legacy customer link feasibility review",
+    })
+  ).id;
+  const legacyApproval = (await db.query("SELECT * FROM approvals WHERE id=$1", [legacyReview])).rows[0];
+  await oldWrite(ehwLead, "decide_approval", {
+    id: legacyReview,
+    expected_updated_at: legacyApproval.updated_at,
+    outcome: "approved",
+    notes: "Synthetic approval for the unresolved-link guard test",
+  });
+  let legacySource = (await db.query("SELECT * FROM operational_records WHERE id=$1", [legacyOpportunity])).rows[0];
+  await asUser(salLead, () =>
+    db.query("SELECT public.decide_shared_test_track_after_feasibility($1::jsonb,$2)", [
+      JSON.stringify({
+        opportunityId: legacyOpportunity,
+        expectedUpdatedAt: legacySource.updated_at,
+        track: "hardware_only",
+      }),
+      crypto.randomUUID(),
+    ]),
+  );
+  legacySource = (await db.query("SELECT * FROM operational_records WHERE id=$1", [legacyOpportunity])).rows[0];
+  await assert.rejects(
+    () => start(salLead, {
+      opportunityId: legacyOpportunity,
+      expectedUpdatedAt: legacySource.updated_at,
+      reference: "HLPL-TEST-UNLINKED-CUSTOMER-PROJECT",
+      title: "Unlinked customer project must wait",
+    }),
+    /CUSTOMER_MASTER_LINK_REQUIRED/,
+  );
+  assert.equal(
+    (await db.query("SELECT count(*)::int AS count FROM operational_records WHERE reference='HLPL-TEST-UNLINKED-CUSTOMER-PROJECT'")).rows[0].count,
+    0,
+    "The guarded project start must not create a project from unresolved legacy customer text",
+  );
+
   await db.exec(
     fs.readFileSync(
       path.join(
         root,
-        "supabase/migrations/20261104040000_reviewed_project_lifecycle_configuration.sql",
+        "supabase/migrations/20261104043746_reviewed_project_lifecycle_configuration.sql",
       ),
       "utf8",
     ),
@@ -589,7 +672,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   );
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261104050000_reuse_original_in_record_dialog.sql"),
+      path.join(root, "supabase/migrations/20261104044330_reuse_original_in_record_dialog.sql"),
       "utf8",
     ),
   );
@@ -644,7 +727,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
     fs.readFileSync(
       path.join(
         root,
-        "supabase/migrations/20261104060000_parallel_stage_readiness_and_exit_receipts.sql",
+        "supabase/migrations/20261104045847_parallel_stage_readiness_and_exit_receipts.sql",
       ),
       "utf8",
     ),
@@ -779,7 +862,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   );
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261104070000_recorded_certification_scope.sql"),
+      path.join(root, "supabase/migrations/20261104050026_recorded_certification_scope.sql"),
       "utf8",
     ),
   );
@@ -882,7 +965,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   );
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261104080000_verified_original_receipts.sql"),
+      path.join(root, "supabase/migrations/20261104051040_verified_original_receipts.sql"),
       "utf8",
     ),
   );
@@ -936,7 +1019,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   );
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261104090000_pinned_lifecycle_identity_guard.sql"),
+      path.join(root, "supabase/migrations/20261104093240_pinned_lifecycle_identity_guard.sql"),
       "utf8",
     ),
   );
@@ -954,7 +1037,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   );
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261104100000_canonical_coordination_projection.sql"),
+      path.join(root, "supabase/migrations/20261104132615_canonical_coordination_projection.sql"),
       "utf8",
     ),
   );
@@ -978,7 +1061,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   assert.equal(projected.fields.legacyStage, "Stage 2");
   assert.ok(projected.fields.lifecycleBaseline);
   {
-  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261106125525_stage_raci_execution_contract.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261106130248_stage_raci_execution_contract.sql'),'utf8'));
   await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261101010231_stage_task_lead_assignment.sql'),'utf8'));
   const raciDefinition = structuredClone(definition);
   raciDefinition.id='TEST-RACI-v1';
@@ -1016,7 +1099,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   const changedTasks=(await db.query('SELECT * FROM tasks WHERE record_id=$1',[raciProject2])).rows;
   assert.equal(changedTasks.length,3);
   assert.ok(changedTasks.every(t=>t.department_id===dEhw && t.assignee_id===mids[ehwLead]));
-  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261106222219_shared_department_configuration.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261106222724_shared_department_configuration.sql'),'utf8'));
   const configuration=async(user)=>(await asUser(user,()=>db.query('SELECT public.get_organization_configuration() data'))).rows[0].data;
   const departmentConfig=(await configuration(admin)).departments.find(d=>d.id===dEhw);
   const departmentPatch={id:dEhw,name:'Configured hardware engineering',type:departmentConfig.type,active:true,sortOrder:7,leadMemberId:departmentConfig.leadMemberId,expectedUpdatedAt:departmentConfig.updatedAt};
@@ -1027,7 +1110,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   assert.equal((await configuration(ehwLead)).departments.find(d=>d.id===dEhw).name,'Configured hardware engineering');
   await assert.rejects(()=>saveDepartment(admin,departmentPatch),/STALE_DEPARTMENT/);
   await assert.rejects(()=>saveDepartment(admin,{...departmentPatch,active:false,expectedUpdatedAt:renamed.departments.find(d=>d.id===dEhw).updatedAt}),/ACTIVE_WORK_OR_LIFECYCLE/);
-  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261107221540_department_workspace_responsibilities.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261107221830_department_workspace_responsibilities.sql'),'utf8'));
   const groupPatch=(d,extra)=>({id:d.id,name:d.name,type:d.type,active:d.active,sortOrder:d.sortOrder,leadMemberId:d.leadMemberId,expectedUpdatedAt:d.updatedAt,ticketGroups:d.ticketGroups,workspaceDepartmentId:d.workspaceDepartmentId,...extra});
   const groupHardware=(await configuration(admin)).departments.find(d=>d.id===dEhw);
   const grouped=await saveDepartment(admin,groupPatch(groupHardware,{workspaceDepartmentId:dSal,ticketGroups:['service','it']}));
@@ -1037,7 +1120,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   await assert.rejects(()=>saveDepartment(admin,groupPatch(grouped.departments.find(d=>d.id===dSal),{workspaceDepartmentId:dEhw})),/CHOOSE_ACTIVE_MAIN_WORKSPACE/);
   await assert.rejects(()=>saveDepartment(admin,groupPatch(grouped.departments.find(d=>d.id===dEhw),{ticketGroups:['unknown']})),/INVALID_WORKSPACE_RESPONSIBILITIES/);
   await saveDepartment(admin,groupPatch(grouped.departments.find(d=>d.id===dEhw),{workspaceDepartmentId:null}));
-  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261110090000_multi_department_lead_access.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261111151258_multi_department_lead_access.sql'),'utf8'));
   const noLeadConfig=(await configuration(admin)).departments.find(d=>d.id===dNoLead);
   const multiRoleConfig=await saveDepartment(admin,{...groupPatch(noLeadConfig),leadMemberId:mids[ehwLead]});
   assert.equal(multiRoleConfig.departments.find(d=>d.id===dNoLead).leadMemberId,mids[ehwLead]);
@@ -1045,7 +1128,95 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   assert.equal((await asUser(purLead,()=>db.query('SELECT private.shared_test_scope($1,$2) allowed',[org,dNoLead]))).rows[0].allowed,false);
   assert.equal((await asUser(ehwLead,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dNoLead,'approvals:decide']))).rows[0].allowed,true);
   assert.equal((await asUser(purLead,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dNoLead,'approvals:decide']))).rows[0].allowed,false);
-  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261107043504_complete_phase_stage_registry.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261111161923_shared_department_role_configuration.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261111162106_department_scoped_lifecycle_task_settings.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261111162654_department_lead_default_task_management.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261111173412_department_lead_lifecycle_metadata_scope.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261111162036_configured_role_record_task_actions.sql'),'utf8'));
+  const readRoleConfig=async user=>(await asUser(user,()=>db.query('SELECT public.get_shared_department_role_configuration() data'))).rows[0].data;
+  const saveConfiguredRole=async(user,payload)=>(await asUser(user,()=>db.query('SELECT public.save_shared_department_role($1::jsonb) data',[JSON.stringify(payload)]))).rows[0].data;
+  const configuredRole=await readRoleConfig(admin);
+  const employeeDepartmentRole=await saveConfiguredRole(admin,{id:null,expectedUpdatedAt:null,departmentId:dPur,name:'TEST Purchasing Reviewer',roleKey:'test_purchasing_reviewer',active:true,permissions:['records:view'],memberIds:[mids[employee]]});
+  let assignedRole=employeeDepartmentRole.roles.find(role=>role.roleKey==='test_purchasing_reviewer');
+  const employeeResponsibleRole=await saveConfiguredRole(admin,{id:null,expectedUpdatedAt:null,departmentId:dEhw,name:'TEST EHW Contributor',roleKey:'test_ehw_contributor',active:true,permissions:['records:view'],memberIds:[mids[employee]]});
+  let responsibleRole=employeeResponsibleRole.roles.find(role=>role.roleKey==='test_ehw_contributor');
+  assert.ok(assignedRole,'Admin can configure a department role for a regular member');
+  assert.equal((await asUser(employee,()=>db.query('SELECT private.shared_test_scope($1,$2) allowed',[org,dPur]))).rows[0].allowed,true,'role assignment grants the selected department scope');
+  assert.equal((await asUser(employee,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dPur,'approvals:decide']))).rows[0].allowed,false,'read-only role does not inherit approval authority');
+  const roleGateProject=uuid(972);
+  await createRaciProject(roleGateProject,'HLPL-TEST-ROLE-GATE',dSal);
+  await db.query("UPDATE tasks SET status='Complete' WHERE record_id=$1",[roleGateProject]);
+  const secondaryTask={project_id:roleGateProject,department_id:dPur,title:'TEST secondary task assignment'};
+  await assert.rejects(()=>oldWrite(employee,'create_task',secondaryTask),/ROLE_ACTION_PERMISSION_REQUIRED/,'secondary-department task assignment requires tasks:assign');
+  await assert.rejects(()=>oldWrite(employee,'create_custom_task',{...secondaryTask,stage_code:'CM_01'}),/ROLE_ACTION_PERMISSION_REQUIRED/,'secondary-department custom task creation requires tasks:assign');
+  await assert.rejects(()=>oldWrite(employee,'create_record',{department_id:dPur,record_type:'Part',reference:'HLPL-TEST-ROLE-PART-DENIED',title:'Denied role part',fields:{revision:'01',mpn:'TEST-DENIED'}}),/ROLE_ACTION_PERMISSION_REQUIRED/,'secondary-department record creation requires records:create');
+  const taskPermissionConfig=await saveConfiguredRole(admin,{id:assignedRole.id,expectedUpdatedAt:assignedRole.updatedAt,departmentId:dPur,name:assignedRole.name,roleKey:assignedRole.roleKey,active:true,permissions:['records:view','tasks:assign','records:create'],memberIds:[mids[employee]]});
+  assignedRole=taskPermissionConfig.roles.find(role=>role.id===assignedRole.id);
+  assert.equal((await asUser(employee,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dPur,'tasks:assign']))).rows[0].allowed,true,'the secondary role grants only its explicitly configured task permission');
+  const configuredPart=await oldWrite(employee,'create_record',{department_id:dPur,record_type:'Part',reference:'HLPL-TEST-ROLE-PART-01',title:'TEST role-created part',fields:{revision:'01',mpn:'TEST-PUR-ROLE'}});
+  assert.equal((await db.query("SELECT department_id FROM operational_records WHERE reference='HLPL-TEST-ROLE-PART-01'")).rows[0].department_id,dPur,'configured records:create writes the record into the assigned department');
+  let roleGateProjectRow=(await db.query('SELECT * FROM operational_records WHERE id=$1',[roleGateProject])).rows[0];
+  assert.equal((await asUser(employee,()=>db.query('SELECT private.shared_test_scope($1,$2) allowed',[org,dEhw]))).rows[0].allowed,true,'the read-only responsible role receives only its configured department scope');
+  assert.equal((await asUser(employee,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dEhw,'records:edit']))).rows[0].allowed,false,'read-only role has no phase-edit authority');
+  await assert.rejects(()=>oldWrite(employee,'request_stage_completion',{project_id:roleGateProject,stage_code:'CM_01',expected_updated_at:roleGateProjectRow.updated_at}),/STAGE_REVIEW_DENIED/);
+  assert.equal((await asUser(ehwLead,()=>db.query('SELECT private.shared_test_scope($1,$2) allowed',[org,dEhw]))).rows[0].allowed,true,'the configured RACI lead retains EHW scope');
+  assert.deepEqual((await db.query("SELECT private.project_stage_responsibility($1,'CM_01') raci",[roleGateProject])).rows[0].raci.R,['EHW']);
+  let roleGateReview=await oldWrite(ehwLead,'request_stage_completion',{project_id:roleGateProject,stage_code:'CM_01',expected_updated_at:roleGateProjectRow.updated_at});
+  let roleGateApproval=(await db.query('SELECT * FROM approvals WHERE record_id=$1',[roleGateReview.id])).rows[0];
+  await assert.rejects(()=>oldWrite(employee,'decide_approval',{id:roleGateApproval.id,expected_updated_at:roleGateApproval.updated_at,outcome:'approved',notes:'TEST read-only role'}),/SIGNING_AUTHORITY_DENIED/);
+  roleGateProjectRow=(await db.query('SELECT * FROM operational_records WHERE id=$1',[roleGateProject])).rows[0];
+  await assert.rejects(()=>oldWrite(employee,'advance_stage',{project_id:roleGateProject,target_stage:'CM_02',expected_updated_at:roleGateProjectRow.updated_at}),/STAGE_ADVANCE_DENIED/);
+  const updatedRoleConfig=await saveConfiguredRole(admin,{id:assignedRole.id,expectedUpdatedAt:assignedRole.updatedAt,departmentId:dPur,name:assignedRole.name,roleKey:assignedRole.roleKey,active:true,permissions:['records:view','approvals:decide'],memberIds:[mids[employee]]});
+  assignedRole=updatedRoleConfig.roles.find(role=>role.id===assignedRole.id);
+  assert.ok(assignedRole.permissions.includes('approvals:decide'));
+  assert.equal((await asUser(employee,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dPur,'approvals:decide']))).rows[0].allowed,true,'the configured role now carries gate-approval authority');
+  await saveConfiguredRole(admin,{id:null,expectedUpdatedAt:null,departmentId:dEhw,name:'TEST EHW Phase Owner',roleKey:'test_ehw_phase_owner',active:true,permissions:['records:view','approvals:decide'],memberIds:[mids[employee]]});
+  assert.equal((await asUser(employee,()=>db.query('SELECT private.shared_test_scope($1,$2) allowed',[org,dEhw]))).rows[0].allowed,true,'the same member can hold an additional department role for phase ownership');
+  assert.equal((await asUser(employee,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dEhw,'approvals:decide']))).rows[0].allowed,true,'the additional role grants phase-advance authority');
+  responsibleRole=(await saveConfiguredRole(admin,{id:responsibleRole.id,expectedUpdatedAt:responsibleRole.updatedAt,departmentId:dEhw,name:responsibleRole.name,roleKey:responsibleRole.roleKey,active:true,permissions:['records:view','records:edit'],memberIds:[mids[employee]]})).roles.find(role=>role.id===responsibleRole.id);
+  assert.equal((await asUser(employee,()=>db.query('SELECT public.has_department_permission($1,$2,$3) allowed',[org,dEhw,'records:edit']))).rows[0].allowed,true,'explicit edit permission enables responsible-role review requests');
+  roleGateProjectRow=(await db.query('SELECT * FROM operational_records WHERE id=$1',[roleGateProject])).rows[0];
+  await oldWrite(employee,'request_stage_completion',{project_id:roleGateProject,stage_code:'CM_01',expected_updated_at:roleGateProjectRow.updated_at});
+  roleGateProjectRow=(await db.query('SELECT * FROM operational_records WHERE id=$1',[roleGateProject])).rows[0];
+  roleGateApproval=(await db.query('SELECT * FROM approvals WHERE record_id=$1',[roleGateReview.id])).rows[0];
+  await oldWrite(employee,'decide_approval',{id:roleGateApproval.id,expected_updated_at:roleGateApproval.updated_at,outcome:'approved',notes:'Synthetic role-configured gate approval'});
+  roleGateProjectRow=(await db.query('SELECT * FROM operational_records WHERE id=$1',[roleGateProject])).rows[0];
+  await oldWrite(employee,'advance_stage',{project_id:roleGateProject,target_stage:'CM_02',expected_updated_at:roleGateProjectRow.updated_at});
+  assert.equal((await db.query('SELECT stage FROM operational_records WHERE id=$1',[roleGateProject])).rows[0].stage,'CM_02','configured member role can advance the RACI accountable gate after independent approval');
+  const taskManagerConfig=await saveConfiguredRole(admin,{id:responsibleRole.id,expectedUpdatedAt:responsibleRole.updatedAt,departmentId:dEhw,name:responsibleRole.name,roleKey:responsibleRole.roleKey,active:true,permissions:['records:view','records:edit','settings:manage'],memberIds:[mids[employee]]});
+  responsibleRole=taskManagerConfig.roles.find(role=>role.id===responsibleRole.id);
+  let settingsRevision=(await db.query('SELECT id,definition FROM private.lifecycle_revisions WHERE organization_id=$1 ORDER BY version DESC LIMIT 1',[org])).rows[0];
+  const directLeadTaskEdit=structuredClone(settingsRevision.definition);
+  directLeadTaskEdit.id=`LC-TG-${uuid(973)}`;
+  directLeadTaskEdit.createdAt=new Date().toISOString();
+  const directLeadTask=directLeadTaskEdit.stages.flatMap(stage=>stage.tasks).find(task=>task.department==='EHW');
+  assert.ok(directLeadTask,'fixture has an EHW task for the configured lead');
+  directLeadTask.description=`${directLeadTask.description} · direct department lead`;
+  await mutate(ehwLead,'save_revision',{definition:directLeadTaskEdit,expectedRevision:settingsRevision.id});
+  settingsRevision=(await db.query('SELECT id,definition FROM private.lifecycle_revisions WHERE organization_id=$1 ORDER BY version DESC LIMIT 1',[org])).rows[0];
+  const withForeignTask=structuredClone(settingsRevision.definition);
+  withForeignTask.stages[0].raci.R=[...new Set([...withForeignTask.stages[0].raci.R,'PUR'])];
+  withForeignTask.stages[0].tasks.push({id:'PUR-TEST-DEFAULT',title:'Configured purchasing default',description:'Synthetic TEST only',department:'PUR'});
+  await mutate(admin,'save_revision',{definition:withForeignTask,expectedRevision:settingsRevision.id});
+  settingsRevision=(await db.query('SELECT id,definition FROM private.lifecycle_revisions WHERE organization_id=$1 ORDER BY version DESC LIMIT 1',[org])).rows[0];
+  const departmentTaskEdit=structuredClone(settingsRevision.definition);
+  const eHwTask=departmentTaskEdit.stages.flatMap(stage=>stage.tasks).find(task=>task.department==='EHW');
+  assert.ok(eHwTask,'fixture has a configured EHW default task');
+  eHwTask.description=`${eHwTask.description} · department lead maintained`;
+  await mutate(employee,'save_revision',{definition:departmentTaskEdit,expectedRevision:settingsRevision.id});
+  const afterDepartmentEdit=(await db.query('SELECT definition FROM private.lifecycle_revisions WHERE organization_id=$1 ORDER BY version DESC LIMIT 1',[org])).rows[0].definition;
+  assert.match(afterDepartmentEdit.stages.flatMap(stage=>stage.tasks).find(task=>task.id===eHwTask.id).description,/department lead maintained/,'a role with settings:manage can update its own department default tasks');
+  const otherDepartmentEdit=structuredClone(afterDepartmentEdit);
+  const foreignTask=otherDepartmentEdit.stages.flatMap(stage=>stage.tasks).find(task=>task.department!=='EHW');
+  assert.ok(foreignTask,'fixture has a default task owned by another department');
+  foreignTask.title=`${foreignTask.title} · unauthorized`;
+  const afterDepartmentRevision=(await db.query('SELECT id FROM private.lifecycle_revisions WHERE organization_id=$1 ORDER BY version DESC LIMIT 1',[org])).rows[0].id;
+  await assert.rejects(()=>mutate(employee,'save_revision',{definition:otherDepartmentEdit,expectedRevision:afterDepartmentRevision}),/DEPARTMENT_LIFECYCLE_SCOPE_DENIED/,'department settings permission cannot edit another department task');
+  const raciEdit=structuredClone(afterDepartmentEdit);
+  const raciStage=raciEdit.stages.find(stage=>stage.raci);
+  raciStage.raci={...raciStage.raci,C:['PUR']};
+  await assert.rejects(()=>mutate(employee,'save_revision',{definition:raciEdit,expectedRevision:afterDepartmentRevision}),/DEPARTMENT_LIFECYCLE_SCOPE_DENIED/,'department task manager cannot alter the shared RACI matrix');
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261107094957_complete_phase_stage_registry.sql'),'utf8'));
   assert.equal((await db.query("SELECT count(*)::int n FROM canonical_stage_templates WHERE stage_code ~ '^G[0-9]_'")).rows[0].n,21);
   assert.equal((await db.query('SELECT count(*)::int n FROM private.stage_deliverable_bindings')).rows[0].n,82);
   const stageSettings=structuredClone(raciDefinition);stageSettings.id='TEST-FULL-STAGE-SETTINGS';

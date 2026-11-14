@@ -34,7 +34,7 @@ test("expense category suggestion uses request and phase context without forcing
 
 test("expense form keeps Finance category manual and has no separate business-purpose input", () => {
   const ui = fs.readFileSync(path.resolve("src/components/SharedBusinessWorkspace.tsx"), "utf8");
-  assert.match(ui, /select\('category','Finance category'/);
+  assert.match(ui, /searchableSelect\(['"]category['"],['"]Finance category['"],\(expenseOptions\.data\?\.categories\|\|\[\]\)\.map/);
   assert.match(ui, /Use suggestion/);
   assert.doesNotMatch(ui, /field\(['"]purpose['"]/);
   assert.match(ui, /category: values\['category'\]/);

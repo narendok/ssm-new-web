@@ -9,6 +9,11 @@
  * 4. Anonymous survey responses have separated response tracking.
  */
 
+import {
+  DEMO_ORGANIZATION_ADMIN,
+  DEMO_ORGANIZATION_ROSTER,
+} from "./demo-organization-roster";
+
 export interface EmployeeProfile {
   id: string;
   employeeCode: string; // e.g. "HLPL-EMP-104"
@@ -18,8 +23,8 @@ export interface EmployeeProfile {
   departmentCode: string; // "EHW", "SAL", "PUR", "QA", "FIN", "HROPS"
   departmentName: string;
   roleTitle: string;
-  securityClearance: string; // "Level 4 Master", "Level 3 Engineering Lead", "Level 2 Staff"
-  facilityLocation: string;  // "Noida Tech Center & Greater Noida SMT 2"
+  securityClearance: string; // Only populated from an authoritative HR/security source.
+  facilityLocation: string;  // Only populated from an authoritative facilities source.
   emergencyContact: string;
   joiningDate: string;
   status: "Active" | "Probation" | "Notice" | "On_Leave";
@@ -113,204 +118,53 @@ export interface EmployeeAssignedAsset {
 }
 
 /** Directory of Active Internal Personas for My Profile */
-export const DEFAULT_EMPLOYEE_PROFILES: Record<string, EmployeeProfile> = {
-  "admin": {
-    id: "usr-admin-exec",
-    employeeCode: "HLPL-EXEC-001",
-    name: "Executive Admin",
-    email: "admin@example.com",
-    phone: "+91 98765 43000",
-    departmentCode: "ADMIN",
-    departmentName: "Executive Command / MD",
-    roleTitle: "Managing Director & Executive Admin",
-    securityClearance: "Level 5 Universal Authority",
-    facilityLocation: "Hexense Labs Headquarters, Noida",
-    emergencyContact: "Board Secretariat (+91 98765 00000)",
-    joiningDate: "2021-01-01",
+function profileFromDemoRoster(person: (typeof DEMO_ORGANIZATION_ROSTER)[number]): EmployeeProfile {
+  return {
+    id: person.profileId ?? `demo-profile-${person.fixtureKey.toLowerCase()}`,
+    employeeCode: person.employeeCode,
+    name: person.name,
+    email: person.workEmail,
+    phone: person.workPhone,
+    departmentCode: person.departmentCode,
+    departmentName: person.departmentName,
+    roleTitle: person.roleTitle,
+    securityClearance: person.securityClearance,
+    facilityLocation: person.facilityLocation,
+    emergencyContact: `${person.emergencyContactName} · ${person.emergencyContactPhone}`,
+    joiningDate: person.joiningDate,
     status: "Active",
-  },
-  "sales": {
-    id: "usr-sal-priya",
-    employeeCode: "HLPL-EMP-102",
-    name: "Priya Sharma",
-    email: "priya.sharma@example.com",
-    phone: "+91 98765 43201",
-    departmentCode: "SAL",
-    departmentName: "Sales & Business Development",
-    roleTitle: "Sales & BD Lead",
-    securityClearance: "Level 3 Commercial Executive",
-    facilityLocation: "Noida Tech Center — Corporate Wing",
-    emergencyContact: "Raj Sharma (+91 98765 00101)",
-    joiningDate: "2023-04-15",
-    status: "Active",
-  },
-  "ehw": {
-    id: "usr-ehw-avery",
-    employeeCode: "HLPL-EMP-103",
-    name: "Avery Vale",
-    email: "avery.vale@example.com",
-    phone: "+91 98765 43202",
-    departmentCode: "EHW",
-    departmentName: "Hardware Engineering",
-    roleTitle: "Hardware Lead",
-    securityClearance: "Level 4 Engineering Master",
-    facilityLocation: "Noida Tech Center — R&D Lab 1",
-    emergencyContact: "Elena Vale (+91 98765 00102)",
-    joiningDate: "2022-08-01",
-    status: "Active",
-  },
-  "fw": {
-    id: "usr-fw-devon",
-    employeeCode: "HLPL-EMP-104",
-    name: "Devon Lane",
-    email: "devon.lane@example.com",
-    phone: "+91 98765 43203",
-    departmentCode: "FW",
-    departmentName: "Firmware Engineering",
-    roleTitle: "Firmware Lead",
-    securityClearance: "Level 3 Technical Specialist",
-    facilityLocation: "Noida Tech Center — Embedded Lab",
-    emergencyContact: "Claire Lane (+91 98765 00103)",
-    joiningDate: "2023-02-15",
-    status: "Active",
-  },
-  "sw": {
-    id: "usr-sw-siddharth",
-    employeeCode: "HLPL-EMP-105",
-    name: "Siddharth Roy",
-    email: "siddharth.roy@example.com",
-    phone: "+91 98765 43204",
-    departmentCode: "SW",
-    departmentName: "Cloud & Software",
-    roleTitle: "Software Lead",
-    securityClearance: "Level 3 Technical Specialist",
-    facilityLocation: "Noida Tech Center — Software Wing",
-    emergencyContact: "Ananya Roy (+91 98765 00104)",
-    joiningDate: "2023-03-01",
-    status: "Active",
-  },
-  "mech": {
-    id: "usr-mech-samira",
-    employeeCode: "HLPL-EMP-106",
-    name: "Samira Holt",
-    email: "samira.holt@example.com",
-    phone: "+91 98765 43205",
-    departmentCode: "MECH",
-    departmentName: "Mechanical Engineering",
-    roleTitle: "Mechanical Lead",
-    securityClearance: "Level 3 Technical Specialist",
-    facilityLocation: "Noida Tech Center — Prototyping Bay",
-    emergencyContact: "Zain Holt (+91 98765 00105)",
-    joiningDate: "2023-05-10",
-    status: "Active",
-  },
-  "pur": {
-    id: "usr-pur-morgan",
-    employeeCode: "HLPL-EMP-107",
-    name: "Morgan Reed",
-    email: "morgan.reed@example.com",
-    phone: "+91 98765 43206",
-    departmentCode: "PUR",
-    departmentName: "Purchasing & SCM",
-    roleTitle: "Purchasing Lead",
-    securityClearance: "Level 3 Commercial Executive",
-    facilityLocation: "Greater Noida SMT Plant 2 — Supply Base",
-    emergencyContact: "David Reed (+91 98765 00106)",
-    joiningDate: "2023-01-10",
-    status: "Active",
-  },
-  "qa": {
-    id: "usr-qa-jordan",
-    employeeCode: "HLPL-EMP-108",
-    name: "Jordan Blake",
-    email: "jordan.blake@example.com",
-    phone: "+91 98765 43207",
-    departmentCode: "QA",
-    departmentName: "Quality Assurance & APQP",
-    roleTitle: "Quality Assurance Lead",
-    securityClearance: "Level 4 Quality Lead",
-    facilityLocation: "Greater Noida SMT Plant 2 — Reliability Lab",
-    emergencyContact: "Sarah Blake (+91 98765 00107)",
-    joiningDate: "2022-11-20",
-    status: "Active",
-  },
-  "emf": {
-    id: "usr-emf-casey",
-    employeeCode: "HLPL-EMP-109",
-    name: "Casey Rowan",
-    email: "casey.rowan@example.com",
-    phone: "+91 98765 43208",
-    departmentCode: "EMF",
-    departmentName: "Electronics Manufacturing",
-    roleTitle: "Manufacturing Lead",
-    securityClearance: "Level 3 Operations Specialist",
-    facilityLocation: "Greater Noida SMT Plant 2 — Production Floor",
-    emergencyContact: "Alex Rowan (+91 98765 00108)",
-    joiningDate: "2023-06-01",
-    status: "Active",
-  },
-  "mmf": {
-    id: "usr-mmf-lead",
-    employeeCode: "HLPL-EMP-110",
-    name: "Mechanical Manufacturing Lead",
-    email: "mmf.lead@example.com",
-    phone: "+91 98765 43209",
-    departmentCode: "MMF",
-    departmentName: "Mechanical Manufacturing",
-    roleTitle: "Mechanical Manufacturing Lead",
-    securityClearance: "Level 3 Operations Specialist",
-    facilityLocation: "Greater Noida Plant — CNC & Tooling Bay",
-    emergencyContact: "Facility Admin (+91 98765 00109)",
-    joiningDate: "2023-07-15",
-    status: "Active",
-  },
-  "fin": {
-    id: "usr-fin-priya",
-    employeeCode: "HLPL-EMP-111",
-    name: "Priya Voss",
-    email: "priya.voss@example.com",
-    phone: "+91 98765 43210",
-    departmentCode: "FIN",
-    departmentName: "Finance & Accounts",
-    roleTitle: "Finance Lead",
-    securityClearance: "Level 4 Financial Controller",
-    facilityLocation: "Hexense Labs Headquarters, Noida",
-    emergencyContact: "Vikram Voss (+91 98765 00110)",
-    joiningDate: "2022-09-01",
-    status: "Active",
-  },
-  "sit": {
-    id: "usr-sit-kai",
-    employeeCode: "HLPL-EMP-112",
-    name: "Kai Morgan",
-    email: "kai.morgan@example.com",
-    phone: "+91 98765 43211",
-    departmentCode: "SIT",
-    departmentName: "Service & IT Infrastructure",
-    roleTitle: "Service & IT Lead",
-    securityClearance: "Level 4 Infrastructure Administrator",
-    facilityLocation: "Hexense Labs Headquarters, Noida",
-    emergencyContact: "Taylor Morgan (+91 98765 00111)",
-    joiningDate: "2023-08-20",
-    status: "Active",
-  },
-  "hrops": {
-    id: "usr-hrops-taylor",
-    employeeCode: "HLPL-EMP-113",
-    name: "Taylor Quinn",
-    email: "taylor.quinn@example.com",
-    phone: "+91 98765 43212",
-    departmentCode: "HROPS",
-    departmentName: "HR & Operations",
-    roleTitle: "HR & Operations Manager",
-    securityClearance: "Level 4 Personnel Administrator",
-    facilityLocation: "Hexense Labs Headquarters, Noida",
-    emergencyContact: "Jordan Quinn (+91 98765 00112)",
-    joiningDate: "2022-05-15",
-    status: "Active",
-  },
+  };
+}
+
+const demoAdminProfile: EmployeeProfile = {
+  id: DEMO_ORGANIZATION_ADMIN.profileId,
+  employeeCode: DEMO_ORGANIZATION_ADMIN.employeeCode,
+  name: DEMO_ORGANIZATION_ADMIN.name,
+  email: DEMO_ORGANIZATION_ADMIN.workEmail,
+  phone: DEMO_ORGANIZATION_ADMIN.workPhone,
+  departmentCode: DEMO_ORGANIZATION_ADMIN.departmentCode,
+  departmentName: DEMO_ORGANIZATION_ADMIN.departmentName,
+  roleTitle: DEMO_ORGANIZATION_ADMIN.roleTitle,
+  securityClearance: DEMO_ORGANIZATION_ADMIN.securityClearance,
+  facilityLocation: DEMO_ORGANIZATION_ADMIN.facilityLocation,
+  emergencyContact: `${DEMO_ORGANIZATION_ADMIN.emergencyContactName} · ${DEMO_ORGANIZATION_ADMIN.emergencyContactPhone}`,
+  joiningDate: DEMO_ORGANIZATION_ADMIN.joiningDate,
+  status: "Active",
 };
 
+export const DEFAULT_EMPLOYEE_PROFILES: Record<string, EmployeeProfile> = Object.fromEntries([
+  ["admin", demoAdminProfile],
+  ...DEMO_ORGANIZATION_ROSTER.flatMap((person) => {
+    const profile = profileFromDemoRoster(person);
+    return [
+      [person.fixtureKey, profile],
+      [person.employeeCode, profile],
+      [person.name.toLowerCase(), profile],
+      ...(person.profileKey ? [[person.profileKey, profile]] : []),
+      ...(person.personaId ? [[person.personaId, profile]] : []),
+    ];
+  }),
+]) as Record<string, EmployeeProfile>;
 // Aliases for backwards compatibility with email keys
 if (DEFAULT_EMPLOYEE_PROFILES["admin"]) DEFAULT_EMPLOYEE_PROFILES["admin@example.com"] = DEFAULT_EMPLOYEE_PROFILES["admin"];
 if (DEFAULT_EMPLOYEE_PROFILES["sales"]) DEFAULT_EMPLOYEE_PROFILES["priya.sharma@example.com"] = DEFAULT_EMPLOYEE_PROFILES["sales"];
@@ -370,37 +224,15 @@ export function resolveEmployeeProfile(
   // 2. DEMO Mode
   // If persona is a member: NEVER return the department lead!
   if (persona.kind === "member") {
-    // If exact member profile exists in directory by ID
-    if (persona.id && DEFAULT_EMPLOYEE_PROFILES[persona.id]) {
-      return DEFAULT_EMPLOYEE_PROFILES[persona.id];
-    }
-    // If persona has no recognized department, fail closed
-    if (!persona.departmentId || !DEFAULT_EMPLOYEE_PROFILES[persona.departmentId.toLowerCase()]) {
-      return undefined;
-    }
-    // Return a scoped member profile; never substitute Avery Vale or any other lead!
-    const deptKey = persona.departmentId.toLowerCase();
-    const leadTemplate = DEFAULT_EMPLOYEE_PROFILES[deptKey];
-    if (!leadTemplate) {
-      return undefined;
-    }
-    const deptCode = leadTemplate.departmentCode;
-    const deptName = leadTemplate.departmentName;
-    return {
-      id: `demo-mem-${deptKey}-${persona.id || "01"}`,
-      employeeCode: `HLPL-EMP-DEMO-${(persona.id || "01").toUpperCase()}`,
-      name: persona.person || `${deptCode} Employee`,
-      email: `${(persona.person || "employee").toLowerCase().replace(/\s+/g, ".")}@example.com`,
-      phone: "+91 98765 00000",
-      departmentCode: deptCode,
-      departmentName: deptName,
-      roleTitle: `${deptName} Engineer`,
-      securityClearance: "Level 1 Operational Contributor",
-      facilityLocation: "Hexense Labs Headquarters, Noida",
-      emergencyContact: "HR Department (+91 98765 43212)",
-      joiningDate: "2024-01-15",
-      status: "Active",
-    };
+    const deptKey = persona.departmentId?.toLowerCase();
+    if (!deptKey) return undefined;
+    const exact = persona.id ? DEFAULT_EMPLOYEE_PROFILES[persona.id] : undefined;
+    if (exact && exact.departmentCode.toLowerCase() === deptKey) return exact;
+    const scoped = DEMO_ORGANIZATION_ROSTER.find((person) =>
+      person.area.toLowerCase() === deptKey &&
+      persona.person?.toLowerCase() === person.name.toLowerCase(),
+    ) ?? DEMO_ORGANIZATION_ROSTER.find((person) => person.area.toLowerCase() === deptKey && person.hierarchyLevel === 3);
+    return scoped ? profileFromDemoRoster(scoped) : undefined;
   }
 
   // Admin persona

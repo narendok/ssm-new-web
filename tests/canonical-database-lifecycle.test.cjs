@@ -38,13 +38,23 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261020025329_enforce_operational_gate_write_boundary',
     '20261020034857_shared_test_workspace',
     '20261025091500_harden_downstream_master_guards',
+    '20261026110000_shared_document_registration',
     '20261028120000_lifecycle_and_sample_pack_sync',
     '20261028120001_canonical_stage_completion_reviews',
     '20261028120002_preserve_legacy_lifecycle_boundary',
     '20261029120000_restore_preproject_sales_intake',
-    '20261103120000_decide_shared_test_track_after_feasibility',
+    '20261103235535_decide_shared_test_track_after_feasibility',
+    '20261104000355_project_start_from_feasibility',
     '20261106001444_admin_reset_shared_test_sample_pack',
     '20261106005734_retire_legacy_test_fixture_on_admin_reset',
+    '20261107162145_copy_reviewed_opportunity_context',
+    '20261112144226_shared_customer_directory_links',
+    '20261112144239_copy_canonical_customer_to_project',
+    '20261112181809_normalize_catalogue_phases_to_tg_codes',
+    '20261112204347_backfill_canonical_supplier_id_aliases',
+    '20261112204537_backfill_exact_project_reference_ids',
+    '20261112205712_register_test_orion_customer_link',
+    '20261112221934_require_canonical_customer_for_project_start',
   ];
 
   for (const name of migrationNames) {
@@ -113,6 +123,11 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   const dClient = uuid(14);
   const dInactive = uuid(15);
   const dNoLead = uuid(16);
+  const dEmf = uuid(17);
+  await db.query(
+    'INSERT INTO departments(id, organization_id, name, department_type, code, lead_member_id) VALUES($1,$2,$3,$4,$5,$6)',
+    [dEmf, org, 'Electronics Manufacturing', 'Electronics Manufacturing', 'EMF', mids[employee]]
+  );
   await db.query(
     'INSERT INTO departments(id, organization_id, name, department_type, code, lead_member_id, active) VALUES($1,$2,$3,$3,$4,$5,$6)',
     [dClient, org, 'Client', 'CLIENT', mids[salLead], true]
@@ -262,6 +277,67 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     }
   }
 
+  // Apply the latest shared role settings contract against the synthetic TEST org.
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261111161923_shared_department_role_configuration.sql'), 'utf8'));
+  const activeDepartmentCount=(await db.query("SELECT count(*)::int count FROM departments WHERE organization_id=$1 AND active AND code<>'CLIENT'",[org])).rows[0].count;
+  const commonIndexMigration=fs.readFileSync(path.join(root,'supabase/migrations/20261111161945_shared_test_department_common_document_indexes.sql'),'utf8');
+  await db.exec(commonIndexMigration);
+  const commonIndexes=(await db.query("SELECT * FROM documents WHERE organization_id=$1 AND metadata->>'seedKey' LIKE 'shared-test-common-index-v1:%' ORDER BY department_id",[org])).rows;
+  assert.equal(commonIndexes.length,activeDepartmentCount,'each active Shared TEST department receives one common-document index');
+  assert.ok(commonIndexes.every(document=>document.record_id===null&&document.reference_url==='private'&&document.metadata.scope==='common'&&document.metadata.status==='Draft'&&document.metadata.effectiveDate.includes('no original file')),'common indexes stay unlinked, non-effective Draft metadata without fake originals');
+  assert.equal((await db.query('SELECT count(*)::int count FROM controlled_document_files WHERE organization_id=$1 AND document_id=ANY($2::uuid[])',[org,commonIndexes.map(document=>document.id)])).rows[0].count,0,'seeded indexes never imply an uploaded binary');
+  await db.exec(commonIndexMigration);
+  assert.equal((await db.query("SELECT count(*)::int count FROM documents WHERE organization_id=$1 AND metadata->>'seedKey' LIKE 'shared-test-common-index-v1:%'",[org])).rows[0].count,activeDepartmentCount,'common index seeding is idempotent');
+
+  // EOL is a distinct EMF role, but gets no access until an actual TEST member and permissions are saved.
+  let roleConfig = await asUser(admin, async () => (await db.query('SELECT get_shared_department_role_configuration() result')).rows[0].result);
+  let eolRole = roleConfig.roles.find(role => role.departmentCode === 'EMF' && role.roleKey === 'eol_testing_lead');
+  assert.ok(eolRole, 'EOL Testing is configurable under EMF');
+  assert.deepEqual(eolRole.memberIds, [], 'No employee is invented or assigned by the seed');
+  assert.deepEqual(eolRole.permissions, [], 'Seeded EOL role grants no access before configuration');
+  assert.equal(roleConfig.canManage, true, 'TEST Admin can manage shared roles');
+
+  const saveRole = async (user, payload) => asUser(user, async () =>
+    (await db.query('SELECT save_shared_department_role($1::jsonb) result', [JSON.stringify(payload)])).rows[0].result);
+  await assert.rejects(saveRole(admin, {
+    id: eolRole.id, expectedUpdatedAt: eolRole.updatedAt, departmentId: dEmf, name: eolRole.name,
+    roleKey: eolRole.roleKey, active: true, permissions: [], memberIds: [mids[ehwLead]],
+  }), /ROLE_VIEW_PERMISSION_REQUIRED/);
+  const savedEol = await saveRole(admin, {
+    id: eolRole.id, expectedUpdatedAt: eolRole.updatedAt, departmentId: dEmf, name: eolRole.name,
+    roleKey: eolRole.roleKey, active: true, permissions: ['records:view','approvals:decide'], memberIds: [mids[ehwLead]],
+  });
+  eolRole = savedEol.roles.find(role => role.id === eolRole.id);
+  assert.deepEqual(eolRole.memberIds, [mids[ehwLead]], 'Admin can assign an existing active member to EOL');
+  assert.deepEqual(eolRole.permissions, ['approvals:decide','records:view']);
+  assert.equal(await asUser(ehwLead, async () => (await db.query('SELECT has_department_permission($1,$2,$3) allowed', [org,dEmf,'records:view'])).rows[0].allowed), true);
+  assert.equal(await asUser(ehwLead, async () => (await db.query('SELECT has_department_permission($1,$2,$3) allowed', [org,dEmf,'approvals:decide'])).rows[0].allowed), true, 'assigned role approval permission drives the real gate authorization function');
+  assert.equal(await asUser(ehwLead, async () => (await db.query('SELECT has_department_permission($1,$2,$3) allowed', [org,dEmf,'records:edit'])).rows[0].allowed), false);
+
+  await assert.rejects(saveRole(ehwLead, {
+    id: eolRole.id, expectedUpdatedAt: eolRole.updatedAt, departmentId: dEmf, name: eolRole.name,
+    roleKey: eolRole.roleKey, active: true, permissions: ['records:view'], memberIds: [mids[ehwLead]],
+  }), /ROLE_CONFIGURATION_ADMIN_REQUIRED/);
+  await assert.rejects(saveRole(admin, {
+    id: eolRole.id, expectedUpdatedAt: '2000-01-01T00:00:00.000Z', departmentId: dEmf, name: eolRole.name,
+    roleKey: eolRole.roleKey, active: true, permissions: ['records:view'], memberIds: [mids[ehwLead]],
+  }), /STALE_ROLE_CONFIGURATION/);
+
+  const secondDepartmentRole = await saveRole(admin, {
+    id: null, expectedUpdatedAt: null, departmentId: dPur, name: 'TEST Cross-Department Reviewer',
+    roleKey: 'test_cross_department_reviewer', active: true, permissions: ['records:view'], memberIds: [mids[ehwLead]],
+  });
+  const purRole = secondDepartmentRole.roles.find(role => role.roleKey === 'test_cross_department_reviewer');
+  assert.ok(purRole, 'One person can hold a role in a second department');
+  assert.equal(await asUser(ehwLead, async () => (await db.query('SELECT has_department_permission($1,$2,$3) allowed', [org,dPur,'records:view'])).rows[0].allowed), true);
+  const deactivated = await saveRole(admin, {
+    id: purRole.id, expectedUpdatedAt: purRole.updatedAt, departmentId: dPur, name: purRole.name,
+    roleKey: purRole.roleKey, active: false, permissions: purRole.permissions, memberIds: purRole.memberIds,
+  });
+  assert.equal(deactivated.roles.find(role => role.id === purRole.id).active, false);
+  assert.equal(await asUser(ehwLead, async () => (await db.query('SELECT has_department_permission($1,$2,$3) allowed', [org,dPur,'records:view'])).rows[0].allowed), false);
+  assert.equal(await asUser(ehwLead, async () => (await db.query('SELECT has_department_permission($1,$2,$3) allowed', [org,dEmf,'records:view'])).rows[0].allowed), true);
+
   async function call(user, action, payload, key = crypto.randomUUID()) {
     if (action === 'advance_stage' && !payload.expected_updated_at) {
       payload = {...payload, expected_updated_at:(await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[payload.project_id])).rows[0].updated_at.toISOString()};
@@ -274,6 +350,72 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
       return res.rows[0].result;
     });
   }
+
+  async function createReviewedProject({ reference, title, track, customerId = undefined }) {
+    const slug = reference.replace(/^HLPL-/, '').replace(/[^A-Z0-9]+/g, '-');
+    const opportunity = await call(salLead, 'create_record', {
+      record_type: 'Opportunity',
+      reference: `HLPL-TEST-OPP-${slug}`,
+      title: `Reviewed TEST opportunity for ${title}`,
+      fields: { revision: '01', requiredDepartments: 'EHW', feasibilityDispatchedAt: new Date().toISOString(), ...(customerId ? { customerId } : {}) },
+    });
+    const approval = await call(salLead, 'request_approval', { record_id: opportunity.id, reviewer_department_id: dEhw });
+    const approvalRow = (await db.query('SELECT updated_at FROM approvals WHERE id=$1', [approval.id])).rows[0];
+    await call(admin, 'decide_approval', { id: approval.id, expected_updated_at: approvalRow.updated_at.toISOString(), outcome: 'approved' });
+    const currentOpportunity = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1', [opportunity.id])).rows[0];
+    await asUser(salLead, async () => db.query('SELECT decide_shared_test_track_after_feasibility($1::jsonb,$2)', [
+      JSON.stringify({ opportunityId: opportunity.id, expectedUpdatedAt: currentOpportunity.updated_at.toISOString(), track }), crypto.randomUUID(),
+    ]));
+    const updatedOpportunity = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1', [opportunity.id])).rows[0];
+    return asUser(salLead, async () => {
+      const result = await db.query('SELECT public.start_project_from_feasibility($1::jsonb,$2) AS result', [
+        JSON.stringify({ opportunityId: opportunity.id, expectedUpdatedAt: updatedOpportunity.updated_at.toISOString(), reference, title }), crypto.randomUUID(),
+      ]);
+      return result.rows[0].result;
+    });
+  }
+
+  const customerMaster = await call(admin, 'create_record', {
+    record_type: 'Customer',
+    reference: 'HLPL-CUST-TEST-01',
+    title: 'Fictional TEST Customer',
+    fields: { revision: '01' },
+  });
+  const partMaster = (await db.query(
+    "INSERT INTO operational_records(organization_id,department_id,area,record_type,reference,title,status,fields,created_by,updated_by) VALUES($1,$2,'pur','Part','HLPL-PRT-DIRECTORY-01','Directory-only TEST part','draft','{\"mpn\":\"TEST-MPN-DIR-01\"}'::jsonb,$3,$3) RETURNING id",
+    [org,dPur,admin],
+  )).rows[0];
+  const productMaster = (await db.query(
+    "INSERT INTO operational_records(organization_id,department_id,area,record_type,reference,title,status,fields,created_by,updated_by) VALUES($1,$2,'sal','Product','HLPL-PROD-DIRECTORY-01','Directory-only TEST product','draft','{}'::jsonb,$3,$3) RETURNING id",
+    [org,dSal,admin],
+  )).rows[0];
+  const hwCustomerDirectory = await asUser(ehwLead, async () =>
+    (await db.query('SELECT get_shared_test_workspace() result')).rows[0].result
+  );
+  const customerOption = hwCustomerDirectory.customerOptions.find(option => option.id === customerMaster.id);
+  const customerRow = (await db.query('SELECT id,reference,title,status::text AS status FROM operational_records WHERE id=$1',[customerMaster.id])).rows[0];
+  assert.deepEqual(customerOption, {
+    id: customerMaster.id,
+    reference: 'HLPL-CUST-TEST-01',
+    title: 'Fictional TEST Customer',
+    status: customerRow.status,
+  }, 'cross-department selection exposes only the minimal canonical customer option');
+  assert.equal(hwCustomerDirectory.records.some(record => record.id === customerMaster.id), false,
+    'minimal directory does not broaden full customer-record visibility');
+  assert.deepEqual(hwCustomerDirectory.partOptions.find(option => option.id === partMaster.id), {
+    id: partMaster.id, reference: 'HLPL-PRT-DIRECTORY-01', title: 'Directory-only TEST part', status: 'draft', mpn: 'TEST-MPN-DIR-01',
+  }, 'engineering receives the minimal canonical part option without full Purchasing visibility');
+  assert.deepEqual(hwCustomerDirectory.productOptions.find(option => option.id === productMaster.id), {
+    id: productMaster.id, reference: 'HLPL-PROD-DIRECTORY-01', title: 'Directory-only TEST product', status: 'draft',
+  }, 'engineering receives the minimal canonical product option without full Sales visibility');
+  assert.equal(hwCustomerDirectory.records.some(record => [partMaster.id,productMaster.id].includes(record.id)), false,
+    'minimal part/product directories do not broaden full-record visibility');
+  const viewerCustomerDirectory = await asUser(viewer, async () =>
+    (await db.query('SELECT get_shared_test_workspace() result')).rows[0].result
+  );
+  assert.deepEqual(viewerCustomerDirectory.customerOptions, [], 'client/viewer membership receives no company customer directory');
+  assert.deepEqual(viewerCustomerDirectory.partOptions, [], 'viewer receives no part directory');
+  assert.deepEqual(viewerCustomerDirectory.productOptions, [], 'viewer receives no product directory');
 
   // ==========================================
   // TEST 1: Atomic Canonical Sample Pack Sync
@@ -347,6 +489,70 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   assert.equal(f.remainingPlannedUnits, 300);
   assert.equal(f.acceptedUnits + f.heldUnits + f.pendingInspectionUnits, f.lotQuantity);
   assert.equal(f.totalPlannedUnits - f.lotQuantity, f.remainingPlannedUnits);
+
+  const linkedCustomerRecord = await call(ehwLead, 'create_record', {
+    record_type: 'Hardware customer input',
+    reference: 'HLPL-JIG-EHW-CUST-01',
+    title: 'TEST customer-linked hardware input',
+    project_id: p06Project.id,
+    fields: { revision: '01', customerId: customerMaster.id, customer: 'Forged customer label' },
+  });
+  const canonicalCustomerFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
+  assert.equal(canonicalCustomerFields.customerId, customerMaster.id);
+  assert.equal(canonicalCustomerFields.customer, 'Fictional TEST Customer', 'server replaces typed customer label with canonical master title');
+  assert.equal(canonicalCustomerFields.customerCode, 'HLPL-CUST-TEST-01', 'server snapshots canonical customer reference');
+  const linkedCustomerRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
+  await call(ehwLead, 'update_record', {
+    record_id: linkedCustomerRecord.id,
+    expected_updated_at: linkedCustomerRow.updated_at.toISOString(),
+    fields: { revision: '01', customerId: customerMaster.id, customer: 'Stale edited label' },
+  });
+  const canonicalCustomerAfterEdit = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
+  assert.equal(canonicalCustomerAfterEdit.customer, 'Fictional TEST Customer', 'same-ID edits retain the canonical customer display label');
+  assert.equal(canonicalCustomerAfterEdit.customerId, customerMaster.id, 'same-ID edits retain the canonical customer ID');
+  const linkedCustomerEditedRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
+  await call(ehwLead, 'update_record', {
+    record_id: linkedCustomerRecord.id,
+    expected_updated_at: linkedCustomerEditedRow.updated_at.toISOString(),
+    fields: { ...canonicalCustomerAfterEdit, customerId: '', customer_id: '', customer: '' },
+  });
+  const clearedCustomerFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
+  assert.equal(Object.hasOwn(clearedCustomerFields, 'customerCode'), false, 'clearing a customer link also removes stale canonical label metadata');
+  assert.equal(Object.hasOwn(clearedCustomerFields, 'customer'), false, 'clearing a customer link cannot leave an unlinked display label');
+  const linkedPartAndProductRecord = await call(ehwLead, 'create_record', {
+    record_type: 'Hardware customer input',
+    reference: 'HLPL-JIG-EHW-MASTER-LINKS-01',
+    title: 'TEST canonical part and product links',
+    project_id: p06Project.id,
+    fields: { revision: '01', partId: partMaster.id, part: 'Forged part', mpn: 'FORGED-MPN', productId: productMaster.id, product: 'Forged product' },
+  });
+  const canonicalPartAndProductFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedPartAndProductRecord.id])).rows[0].fields;
+  assert.equal(canonicalPartAndProductFields.partId, partMaster.id);
+  assert.equal(canonicalPartAndProductFields.part_id, partMaster.id);
+  assert.equal(canonicalPartAndProductFields.part, partMaster.id);
+  assert.equal(canonicalPartAndProductFields.mpn, 'TEST-MPN-DIR-01', 'part MPN is always read from canonical Part master');
+  assert.equal(canonicalPartAndProductFields.productId, productMaster.id);
+  assert.equal(canonicalPartAndProductFields.product, productMaster.id);
+  assert.equal(canonicalPartAndProductFields.productCode, 'HLPL-PROD-DIRECTORY-01');
+  const linkedPartProductRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedPartAndProductRecord.id])).rows[0];
+  await assert.rejects(call(ehwLead, 'update_record', {
+    record_id: linkedPartAndProductRecord.id,
+    expected_updated_at: linkedPartProductRow.updated_at.toISOString(),
+    fields: { ...canonicalPartAndProductFields, partId: uuid(996) },
+  }), /PART_LINK_INVALID/);
+  const linkedPartProductRetry = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedPartAndProductRecord.id])).rows[0];
+  await assert.rejects(call(ehwLead, 'update_record', {
+    record_id: linkedPartAndProductRecord.id,
+    expected_updated_at: linkedPartProductRetry.updated_at.toISOString(),
+    fields: { ...canonicalPartAndProductFields, productId: uuid(997) },
+  }), /PRODUCT_LINK_INVALID/);
+  await assert.rejects(call(ehwLead, 'create_record', {
+    record_type: 'Hardware customer input',
+    reference: 'HLPL-JIG-EHW-CUST-02',
+    title: 'TEST invalid customer link',
+    project_id: p06Project.id,
+    fields: { revision: '01', customerId: uuid(999) },
+  }), /CUSTOMER_LINK_INVALID/);
 
   // Idempotency: Replaying sync does NOT duplicate records
   const countBefore = (await db.query('SELECT count(*) as c FROM operational_records WHERE organization_id = $1', [org])).rows[0].c;
@@ -515,6 +721,25 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
       [org, dPur, admin]
     )
   ).rows[0].id;
+  const hwSupplierDirectory = await asUser(ehwLead, async () =>
+    (await db.query('SELECT get_shared_test_workspace() result')).rows[0].result
+  );
+  assert.deepEqual(
+    hwSupplierDirectory.supplierOptions.find(option => option.id === validSup),
+    { id: validSup, reference: 'HLPL-SUP-V01', title: 'Test Verified Supplier', status: 'approved' },
+    'cross-department supplier picker receives only canonical supplier option fields',
+  );
+  assert.equal(hwSupplierDirectory.records.some(record => record.id === validSup), false,
+    'supplier directory does not broaden full supplier-record visibility');
+
+  const legacySupplierIdOnly = (await db.query(
+    "INSERT INTO operational_records(organization_id,department_id,area,record_type,reference,title,status,fields,created_by,updated_by) VALUES($1,$2,'pur','Purchase order','HLPL-PUR-PO-LEGACY-SUPPLIER-01','Legacy supplier UUID alias','draft',jsonb_build_object('supplier',$3::text,'revision','01'),$4,$4) RETURNING id",
+    [org,dPur,validSup,admin],
+  )).rows[0].id;
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261112204347_backfill_canonical_supplier_id_aliases.sql'),'utf8'));
+  const repairedSupplierAliases=(await db.query('SELECT fields FROM operational_records WHERE id=$1',[legacySupplierIdOnly])).rows[0].fields;
+  assert.equal(repairedSupplierAliases.supplierId,validSup,'an exact supplier UUID stored in the legacy field is promoted to the canonical alias');
+  assert.equal(repairedSupplierAliases.supplier_id,validSup,'the legacy-compatible supplier alias is also set');
 
   const validPO = (
     await call(purLead, 'create_record', {
@@ -522,10 +747,27 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
       reference: 'HLPL-PUR-PO-OK-01',
       title: 'Valid Supplier PO',
       project_id: projectId,
-      fields: { revision: '01', supplier_id: validSup },
+      fields: { revision: '01', supplier_id: validSup, supplierId: validSup, supplier: 'Stale supplier label' },
     })
   ).id;
   assert.ok(validPO);
+  const canonicalSupplierFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[validPO])).rows[0].fields;
+  assert.equal(canonicalSupplierFields.supplier, 'Test Verified Supplier', 'server snapshots the canonical supplier title');
+  assert.equal(canonicalSupplierFields.supplier_id, validSup, 'server stores the canonical supplier ID in legacy-compatible aliases');
+  const validPORow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[validPO])).rows[0];
+  await call(purLead, 'update_record', {
+    record_id: validPO,
+    expected_updated_at: validPORow.updated_at.toISOString(),
+    fields: { ...canonicalSupplierFields, supplier: 'Edited stale supplier label' },
+  });
+  const canonicalSupplierAfterEdit = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[validPO])).rows[0].fields;
+  assert.equal(canonicalSupplierAfterEdit.supplier, 'Test Verified Supplier', 'same-ID edits retain the canonical supplier title');
+  const editedPORow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[validPO])).rows[0];
+  await assert.rejects(call(purLead, 'update_record', {
+    record_id: validPO,
+    expected_updated_at: editedPORow.updated_at.toISOString(),
+    fields: { ...canonicalSupplierAfterEdit, supplierId: uuid(998) },
+  }), /SUPPLIER_LINK_INVALID/);
 
   const poRow = (await db.query('SELECT * FROM operational_records WHERE id = $1', [validPO])).rows[0];
   await assert.rejects(
@@ -544,6 +786,9 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   // Verify 89 canonical stages in table
   const countRes = await db.query('SELECT count(*) as count FROM public.canonical_stage_templates');
   assert.equal(Number(countRes.rows[0].count), 89, 'Exact 89 canonical stage templates in public.canonical_stage_templates');
+  const phaseRegistry = await db.query("SELECT count(*)::int total, count(*) FILTER (WHERE phase_code ~ '^TG_[0-9]$')::int mapped, array_agg(DISTINCT phase_code ORDER BY phase_code) phases FROM public.canonical_stage_templates");
+  assert.equal(phaseRegistry.rows[0].mapped, phaseRegistry.rows[0].total, 'Every canonical stage is assigned to one fixed TG phase');
+  assert.deepEqual(phaseRegistry.rows[0].phases, Array.from({length:10}, (_, index) => `TG_${index}`), 'Canonical catalogue exposes only TG-0 through TG-9 phase codes');
 
   // is_valid_canonical_stage recognizes valid codes FW_13, SW_11, C01..C15
   for (const validCode of ['FW_13', 'SW_11', 'C01', 'C02', 'C15']) {
@@ -569,7 +814,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
 
   // Blocker 1 & 4: Prerequisites bypassed and progressive task generation
   // Create a fresh project (starts at CM_01)
-  const freshProject = await call(salLead, 'create_project', {
+  const freshProject = await createReviewedProject({
     reference: 'HLPL-FRESH-PREREQ-01',
     title: 'Fresh Project for Prerequisite and Task Generation Test',
     track: 'hardware_firmware_software',
@@ -640,7 +885,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
 
   // Blocker 2: Track restrictions server-side
   // Create a software_only project
-  const swProject = await call(salLead, 'create_project', {
+  const swProject = await createReviewedProject({
     reference: 'HLPL-SW-ONLY-01',
     title: 'Software Only Dedicated Project',
     track: 'software_only',
@@ -671,7 +916,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   );
 
   // Advancing declined project MUST fail with STAGE_GATE_BLOCKED
-  const declinedProject = await call(salLead, 'create_project', {
+  const declinedProject = await createReviewedProject({
     reference: 'HLPL-DECL-PRJ-01',
     title: 'Declined Customer Project',
     track: 'hardware_firmware',
@@ -687,7 +932,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     record_type: 'Opportunity',
     reference: 'HLPL-TEST-OPP-TRACK-01',
     title: 'Fictional tracker scope under feasibility',
-    fields: { revision: '01', requiredDepartments: 'EHW,PUR', feasibilityDispatchedAt: new Date().toISOString() },
+    fields: { revision: '01', requiredDepartments: 'EHW,PUR', feasibilityDispatchedAt: new Date().toISOString(), customerId: customerMaster.id },
   });
   const ehwReviewId = (await call(salLead, 'request_approval', {
     record_id: feasibilityOpportunity.id,
@@ -723,6 +968,57 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   assert.match(storedTrack.trackDecisionBasis, /completed internal feasibility reviews/);
   assert.deepEqual(await decideTrack(salLead, 'hardware_firmware', trackDecisionRequestId, trackDecisionExpectedAt), decidedTrack, 'Track decision retry is idempotent');
   await assert.rejects(decideTrack(salLead, 'hardware_only'), /SALES_TRACK_ALREADY_DECIDED/);
+  const opportunityAfterDecision = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1', [feasibilityOpportunity.id])).rows[0];
+  const projectFromOpportunity = await asUser(salLead, async () => {
+    const result = await db.query('SELECT public.start_project_from_feasibility($1::jsonb,$2) AS result', [
+      JSON.stringify({ opportunityId: feasibilityOpportunity.id, expectedUpdatedAt: opportunityAfterDecision.updated_at.toISOString(), reference: 'HLPL-TEST-PRJ-TRACK-01', title: 'Fictional tracker feasibility project' }),
+      crypto.randomUUID(),
+    ]);
+    return result.rows[0].result;
+  });
+  assert.ok(projectFromOpportunity.id, 'approved feasibility creates a project from the opportunity');
+  const projectFromOpportunityFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1', [projectFromOpportunity.id])).rows[0].fields;
+  assert.equal(projectFromOpportunityFields.customerId, customerMaster.id, 'project retains the canonical customer ID from its opportunity');
+  assert.equal(projectFromOpportunityFields.customer, 'Fictional TEST Customer', 'project displays the server-resolved canonical customer name');
+  assert.equal(projectFromOpportunityFields.customerCode, 'HLPL-CUST-TEST-01', 'project retains the canonical customer reference');
+  const linkedOpportunityFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1', [feasibilityOpportunity.id])).rows[0].fields;
+  assert.equal(linkedOpportunityFields.projectRecordId, projectFromOpportunity.id, 'opportunity links back to the created project ID');
+
+  // Reuse only the explicitly fictional identity shared by one exact Opportunity/Project pair.
+  await db.query(
+    "UPDATE operational_records SET reference=$2::text WHERE id=$1",
+    [feasibilityOpportunity.id, 'HLPL-GEN-SAL-ENQ-19B263D68FB14FE38955B28519B6BBDF-01'],
+  );
+  await db.query(
+    "UPDATE operational_records SET fields = (fields - 'customerId' - 'customer_id') || jsonb_build_object('customer', $2::text, 'customerCode', 'TESTORION') WHERE id IN ($1, $3)",
+    [feasibilityOpportunity.id, 'Orion Controls Private Limited (fictional)', projectFromOpportunity.id],
+  );
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261112205712_register_test_orion_customer_link.sql'), 'utf8'));
+  const testOrionCustomer = (await db.query("SELECT id,reference,title,status FROM operational_records WHERE organization_id=$1 AND record_type='Customer' AND reference='HLPL-CUS-TESTORION'", [org])).rows[0];
+  assert.ok(testOrionCustomer, 'the exact fictional TEST customer receives one canonical master record');
+  assert.equal(testOrionCustomer.title, 'Orion Controls Private Limited (fictional)');
+  assert.equal(testOrionCustomer.status, 'draft', 'the new customer stays a Draft');
+  const linkedOpportunityCustomer = (await db.query('SELECT fields FROM operational_records WHERE id=$1', [feasibilityOpportunity.id])).rows[0].fields;
+  const linkedProjectCustomer = (await db.query('SELECT fields FROM operational_records WHERE id=$1', [projectFromOpportunity.id])).rows[0].fields;
+  for (const fields of [linkedOpportunityCustomer, linkedProjectCustomer]) {
+    assert.equal(fields.customerId, testOrionCustomer.id, 'canonical customer ID is stored on each exact linked record');
+    assert.equal(fields.customer_id, testOrionCustomer.id, 'legacy-compatible customer ID alias is kept in sync');
+    assert.equal(fields.customer, testOrionCustomer.title, 'display name comes from the canonical customer master');
+    assert.equal(fields.customerCode, testOrionCustomer.reference, 'customer code comes from the canonical master reference');
+  }
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261112205712_register_test_orion_customer_link.sql'), 'utf8'));
+  assert.equal((await db.query("SELECT count(*)::int AS count FROM operational_records WHERE organization_id=$1 AND record_type='Customer' AND reference='HLPL-CUS-TESTORION'", [org])).rows[0].count, 1, 'replaying the repair does not create a duplicate customer');
+
+  // Exact legacy project references become canonical IDs without changing the business reference.
+  await db.query(
+    "UPDATE operational_records SET fields = (fields - 'project_id') || jsonb_build_object('projectId', $2::text, 'projectCode', $3::text) WHERE id = $1",
+    [feasibilityOpportunity.id, 'HLPL-TEST-PRJ-TRACK-01', 'HLPL-TEST-PRJ-TRACK-01'],
+  );
+  await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261112204537_backfill_exact_project_reference_ids.sql'), 'utf8'));
+  const repairedProjectFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1', [feasibilityOpportunity.id])).rows[0].fields;
+  assert.equal(repairedProjectFields.projectId, projectFromOpportunity.id, 'an exact unique project reference is promoted to its canonical UUID');
+  assert.equal(repairedProjectFields.project_id, projectFromOpportunity.id, 'the compatibility project ID alias is also set');
+  assert.equal(repairedProjectFields.projectCode, 'HLPL-TEST-PRJ-TRACK-01', 'the business reference remains unchanged');
 
   // ==========================================
   // TEST 4: Admin-only shared sample reset
@@ -739,7 +1035,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   await assert.rejects(resetPack(employee), /SAMPLE_RESET_ADMIN_REQUIRED/);
   await assert.rejects(resetPack(admin, 'another-run'), /FIXTURE_RUN_NOT_SUPPORTED/);
 
-  const unrelated = await call(admin, 'create_project', {
+  const unrelated = await createReviewedProject({
     reference: 'HLPL-TEST-KEEP-01',
     title: 'Unrelated TEST workspace project',
     track: 'hardware_only',

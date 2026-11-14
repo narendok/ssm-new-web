@@ -1,4 +1,4 @@
-export type RecordField = { key: string; label: string; required?: boolean; kind?: "text" | "date" | "select"; options?: string[]; master?: "people" | "suppliers" | "parts" | "products" | "customers" | "locations" | "routes" | "documentTypes"; readOnly?: boolean; automaticValue?: string; automaticLabel?: string };
+export type RecordField = { key: string; label: string; required?: boolean; kind?: "text" | "date" | "select"; options?: string[]; master?: "people" | "suppliers" | "parts" | "products" | "projects" | "customers" | "locations" | "routes" | "documentTypes"; readOnly?: boolean; automaticValue?: string; automaticLabel?: string };
 export type RecordFormSpec = { types: string[]; fields: RecordField[]; sourceSpec?:RecordFormSpec };
 export type RecordAttachmentSpec = { documentType: string; label: string; accept: string; stageCode: string };
 const auditStatuses = ["Draft", "Planned", "Scheduled", "In progress", "Awaiting closure", "Closed", "Overdue"];
@@ -167,7 +167,7 @@ export const formSpecs: Partial<Record<string, RecordFormSpec>> = {
           (_, index) => `HW_${String(index + 1).padStart(2, "0")}`,
         ),
       },
-      { key: "projectId", label: "Project ID", master: "products" },
+      { key: "projectId", label: "Project ID", master: "projects" },
       { key: "location", label: "Location", required: true, master: "locations" },
     ],
   },
@@ -183,7 +183,7 @@ export const formSpecs: Partial<Record<string, RecordFormSpec>> = {
         kind: "select",
         options: Array.from({ length: 12 }, (_, index) => `G${index}`),
       },
-      { key: "projectId", label: "Project ID", master: "products" },
+      { key: "projectId", label: "Project ID", master: "projects" },
     ],
   },
   mech: {
@@ -191,7 +191,7 @@ export const formSpecs: Partial<Record<string, RecordFormSpec>> = {
     fields: [
       { key: "controlledNumber", label: "Controlled number", required: true },
       { key: "title", label: "Title", required: true },
-      { key: "projectId", label: "Project ID", master: "products" },
+      { key: "projectId", label: "Project ID", master: "projects" },
       { key: "location", label: "Location", required: true, master: "locations" },
     ],
   },
@@ -364,12 +364,18 @@ export function recordFieldValues(spec: RecordFormSpec, type: string, values: Re
   const domainLinkageKeys = [
     // Common / Master identities
     "supplierId",
+    "supplier_id",
     "supplier",
     "supplierName",
     "partId",
+    "part_id",
+    "productId",
+    "product",
+    "productCode",
     "part",
     "mpn",
     "customerId",
+    "customer_id",
     "customer",
     "customerName",
     "verification_status",

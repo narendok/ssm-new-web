@@ -4,13 +4,15 @@ import {
   sharedTestMutationSchema,
   sharedTestResetSchema,
   sharedTestSnapshotSchema,
+  sharedTestTimerSchema,
 } from "./shared-test.schema";
+import { resolveSharedMasterSnapshotLabels } from "./shared-master-snapshot";
 import type { Json } from "@/integrations/supabase/types";
 
 // Narrow bridge until generated Supabase types include the installed shared TEST RPCs.
 interface SharedTestRpc {
   rpc(
-    name: "get_shared_test_workspace" | "mutate_shared_test_workspace" | "reset_shared_test_sample_pack",
+    name: "get_shared_test_workspace" | "mutate_shared_test_workspace" | "reset_shared_test_sample_pack" | "mutate_shared_task_timer",
     args?: Record<string, Json>,
   ): Promise<{ data: unknown; error: { message: string } | null }>;
 }
@@ -21,7 +23,7 @@ export const getSharedTestWorkspace = createServerFn({ method: "GET" })
       "get_shared_test_workspace",
     );
     if (error) throw new Error(error.message);
-    return sharedTestSnapshotSchema.parse(data);
+    return resolveSharedMasterSnapshotLabels(sharedTestSnapshotSchema.parse(data));
   });
 export const mutateSharedTestWorkspace = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -34,6 +36,18 @@ export const mutateSharedTestWorkspace = createServerFn({ method: "POST" })
         p_payload: data.payload as Json,
         p_request_id: data.requestId,
       },
+    );
+    if (error) throw new Error(error.message);
+    return result as Json;
+  });
+
+export const mutateSharedTaskTimer = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((data) => sharedTestTimerSchema.parse(data))
+  .handler(async ({ context, data }) => {
+    const { data: result, error } = await (context.supabase as unknown as SharedTestRpc).rpc(
+      "mutate_shared_task_timer",
+      { p_task: data.taskId, p_action: data.action },
     );
     if (error) throw new Error(error.message);
     return result as Json;

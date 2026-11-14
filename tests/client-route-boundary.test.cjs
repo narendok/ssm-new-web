@@ -25,6 +25,10 @@ const sharedTestWorkspace = fs.readFileSync(
   path.join(root, "src/components/SharedTestWorkspace.tsx"),
   "utf8",
 );
+const sharedDocumentVault = fs.readFileSync(
+  path.join(root, "src/components/SharedDocumentVault.tsx"),
+  "utf8",
+);
 
 function between(source, start, end) {
   const startIndex = source.indexOf(start);
@@ -51,7 +55,7 @@ test("URL role=client selects presentation only; verified release still requires
 
   assert.match(
     route,
-    /<ClientOEMPortal demoMode=\{!testMembership && portal\.demoLoaded\}/,
+    /<ClientOEMPortal\s+demoMode=\{!testMembership && portal\.demoLoaded\}/,
   );
   assert.match(
     clientPortal,
@@ -60,9 +64,9 @@ test("URL role=client selects presentation only; verified release still requires
 });
 
 test("client-facing data remains gated until authenticated session verification completes", () => {
-  const pendingGate = route.indexOf('if (!testAuthReady) return');
-  const authErrorGate = route.indexOf("if(testAuthError)return");
-  const signedOutGate = route.indexOf("if (signedOut) return");
+  const pendingGate = route.search(/if \(!testAuthReady\)\s+return/);
+  const authErrorGate = route.search(/if \(testAuthError\)\s+return/);
+  const signedOutGate = route.search(/if \(signedOut\)\s+return/);
   const clientRender = route.indexOf("persona.kind === \"client\" ?", signedOutGate);
 
   assert.ok(pendingGate >= 0);
@@ -80,7 +84,7 @@ test("client preview uses a fictional in-portal test card and never exposes samp
   assert.match(route, /demoLoaded: value\.demoLoaded === true/);
   assert.match(
     route,
-    /<ClientOEMPortal demoMode=\{!testMembership && portal\.demoLoaded\}/,
+    /<ClientOEMPortal\s+demoMode=\{!testMembership && portal\.demoLoaded\}/,
   );
 
   assert.match(
@@ -109,12 +113,13 @@ test("the normal portal is the sample-data experience; the standalone browser-lo
   );
   assert.match(vaultBranch, /Documents &amp; Vault/);
   assert.match(vaultBranch, /<HardwareDeliverablesDrive/);
+  assert.doesNotMatch(vaultBranch, /label="Back to workspace"/, "sidebar-opened Documents & Vault stays a focused full-page view");
   assert.doesNotMatch(route, /LocalTestWorkspace|localTestWorkspaceOpen|Open browser-local TEST Documents|label="TEST Workspace"/);
   assert.match(route, /portal\?\.demoLoaded && !testMembership/);
-  assert.match(route, />TEST DATA<\/span>/);
+  assert.match(route, />\s*TEST DATA\s*<\/span>/);
   assert.match(route, /label="Reset sample"/);
   assert.equal((route.match(/label="Reset sample"/g) || []).length, 1, "sample reset has one portal location");
-  assert.match(route, /persona\.kind === "admin" && <Action label="Reset sample"/);
+  assert.match(route, /persona\.kind === "admin" &&\s*\(?\s*<Action\s+label="Reset sample"/);
   assert.doesNotMatch(route, /label="Reset sample data"|onResetDemo/);
   assert.match(route, /label="Shared TEST data"/);
   assert.match(route, /<DemoDataPanel loaded=\{portal\.demoLoaded\} onLoad=\{onLoadDemo\}/);
@@ -132,10 +137,10 @@ test("the normal portal is the sample-data experience; the standalone browser-lo
 });
 
 test("sample banner and reset stay out of authenticated account views", () => {
-  assert.match(route, /if \(testMembership\) \{ setNotice\("This view contains browser-local examples\./);
-  const headerActions = between(route, "{portal\?\.demoLoaded && !testMembership && (", "<PersonaSwitcher");
-  assert.match(headerActions, />TEST DATA<\/span>/);
-  assert.match(headerActions, /persona\.kind === "admin" && <Action label="Reset sample"/);
+  assert.match(route, /if \(testMembership\) \{\s*setNotice\(\s*"This view contains browser-local examples\./);
+  const headerActions = between(route, "{portal?.demoLoaded && !testMembership && (", "<PersonaSwitcher");
+  assert.match(headerActions, />\s*TEST DATA\s*<\/span>/);
+  assert.match(headerActions, /persona\.kind === "admin" &&\s*\(?\s*<Action\s+label="Reset sample"/);
   assert.match(headerActions, /!testMembership/);
 
   const authenticatedVaultBranch = between(
@@ -154,4 +159,14 @@ test("local register storage remains separate from authenticated document and up
   assert.doesNotMatch(localTestWorkspaceHelper, /supabase|fetch\(|XMLHttpRequest|https?:\/\//i);
   assert.match(localTestWorkspaceHelper, /Selected locally · not uploaded or shared/);
   assert.match(localTestWorkspace, /selected locally, not uploaded\/shared/);
+});
+
+test("project documents keep project and related-record links distinct", () => {
+  assert.match(sharedDocumentVault, /onChange=\{id=>\{setProjectId\(id\);setRecordId\(""\);\}\}/);
+  assert.match(sharedDocumentVault, /\{projectId&&\(scope==="internal"\|\|scope==="client"\)&&<SharedMasterSelect label="Related record \(optional\)"/);
+  assert.match(sharedDocumentVault, /vaultRelatedRecords\(records,projectId\)\.filter\(r=>isSelectableMasterStatus\(r\.status\)\)/);
+  assert.match(sharedDocumentVault, /\.{3}\(recordId\?\{recordId\}:\{\}\)/);
+  assert.match(sharedDocumentVault, />Draft template<select/);
+  assert.match(sharedDocumentVault, /Auto-draft source snapshot/);
+  assert.match(sharedDocumentVault, /\.\.\.\(draftSnapshot\?\{draftSnapshot\}:\{\}\)/);
 });

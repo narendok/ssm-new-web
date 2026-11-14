@@ -31,13 +31,24 @@ test("§14.12: Capability gating and canonical ID bindings in RecordForm and Sha
   const sharedContent = fs.readFileSync(path.resolve(__dirname, "../src/components/SharedOperationalWorkspace.tsx"), "utf8");
 
   // Capability guards in RecordForm (index.tsx)
-  assert.ok(indexContent.includes('canAddCustomer = ["sales", "sal", "admin"].includes(area)'), "Customer creation restricted to Sales & Admin");
-  assert.ok(indexContent.includes('canAddSupplier = ["pur", "admin"].includes(area)'), "Supplier creation restricted to Purchasing & Admin");
-  assert.ok(indexContent.includes('canAddPart = ["ehw", "esw", "mech", "pur", "rnd", "admin"].includes(area)'), "Part creation restricted to Engineering/Purchasing & Admin");
+  assert.match(indexContent, /canAddCustomer\s*=\s*\["sales",\s*"sal",\s*"admin"\]\.includes\(area\)/, "Customer creation restricted to Sales & Admin");
+  assert.match(indexContent, /canAddSupplier\s*=\s*\["pur",\s*"admin"\]\.includes\(area\)/, "Supplier creation restricted to Purchasing & Admin");
+  assert.match(indexContent, /canAddPart\s*=\s*\["ehw",\s*"esw",\s*"mech",\s*"pur",\s*"rnd",\s*"admin"\]\.includes\(area\)/, "Part creation restricted to Engineering/Purchasing & Admin");
 
   // Capability guards in SharedOperationalWorkspace.tsx
-  assert.ok(sharedContent.includes('canAddSupplier = actor.role === "admin" || actor.department_code === "PUR"'), "Shared workspace restricts supplier creation to PUR & Admin");
-  assert.ok(sharedContent.includes('canAddPart = actor.role === "admin" || ["EHW", "FW", "SW", "MECH", "PUR"].includes(actor.department_code || "")'), "Shared workspace restricts part creation to Engineering/PUR & Admin");
+  assert.ok(sharedContent.includes('canAddSupplier = hasPermission(departmentForCode("PUR")?.id, "records:create")'), "Shared workspace gates supplier creation by configured Purchasing permission");
+  assert.ok(sharedContent.includes('canAddPart = ["EHW", "FW", "SW", "MECH", "PUR", "RND"].includes(dept?.code || "") && canCreateRecords'), "Shared workspace gates part creation by the selected configured department");
+  assert.ok(sharedContent.includes('data.customerOptions.length ? data.customerOptions : data.records') && sharedContent.includes('const customerDirectory'), "Customer search prefers the minimal canonical directory and retains only a visible-record fallback");
+  assert.ok(sharedContent.includes('data.supplierOptions.length ? data.supplierOptions : data.records') && sharedContent.includes('const supplierDirectory'), "Supplier search prefers the minimal canonical directory and retains only a visible-record fallback");
+  assert.ok(sharedContent.includes('customerDirectory\n        .filter(customer => isSelectableMasterStatus(customer.status))') && sharedContent.includes('supplierDirectory\n    .filter(supplier => isSelectableMasterStatus(supplier.status)'), "Customer and supplier selectors use the shared inactive-master status rule");
+  assert.ok(sharedContent.includes('data.partOptions.length ? data.partOptions : data.records') && sharedContent.includes('data.productOptions.length ? data.productOptions : data.records'), "Part and Product pickers prefer minimal canonical directories and retain a visible-record fallback");
+  assert.ok(sharedContent.includes('partDirectory.filter(part => isSelectableMasterStatus(part.status)).map') && sharedContent.includes('productDirectory.filter(product => isSelectableMasterStatus(product.status)).map'), "Part and Product selectors exclude inactive rows from canonical and fallback directories");
+  assert.ok(sharedContent.includes('sharedMasterOptions(data.records, ["Project"])'), "Project ID picker contains project records only, not mixed Product records");
+  assert.ok(sharedContent.includes('resolveSharedMasterFields(recordFields, data)'), "Editing an existing record uses the same canonical ID resolver as the shared read");
+  assert.doesNotMatch(sharedContent, /\[customer\.id, customer\.reference, customer\.title\]|\[supplier\.id, supplier\.reference, supplier\.title\]|\[record\.id, record\.reference, record\.title\]/, "Existing links are never inferred from display titles");
+  assert.ok(sharedContent.includes('customerId: id,') && sharedContent.includes('customer_id: id,'), "Customer selections keep the canonical master ID in current and legacy-compatible fields");
+  assert.ok(sharedContent.includes('Department workspace') && sharedContent.includes('workspaceDepartmentIds.includes(preferredDepartment)'), "A multi-role member can switch only between assigned department workspaces");
+  assert.ok(sharedContent.includes('canRequestReview ? async') && sharedContent.includes('canDecideGate ? async'), "RACI request and gate actions follow configured department permissions");
 
   // Shared workspace renders modals and binds canonical IDs with stable request identity
   assert.ok(sharedContent.includes("<InlineSupplierModal"), "SharedOperationalWorkspace renders InlineSupplierModal");
@@ -47,6 +58,17 @@ test("§14.12: Capability gating and canonical ID bindings in RecordForm and Sha
   assert.ok(sharedContent.includes("supplierId: createdId"), "SharedOperationalWorkspace binds canonical supplierId");
   assert.ok(sharedContent.includes("partId: createdId"), "SharedOperationalWorkspace binds canonical partId");
   assert.ok(sharedContent.includes("No canonical UUID was returned by the database"), "Shared workspace rejects missing returned ID");
+});
+
+test("RecordForm master values are selected from searchable managed options", () => {
+  const indexContent = fs.readFileSync(path.resolve(__dirname, "../src/routes/index.tsx"), "utf8");
+  assert.ok(indexContent.includes('import { SharedMasterSelect } from "@/components/SharedMasterSelect"'), "RecordForm uses the shared searchable master selector");
+  assert.ok(indexContent.includes("options={options.map((option) => ({ value: option, label: option }))}"), "Customer, supplier, part and other master options come from the managed directory");
+  assert.ok(indexContent.includes("value.trim().toLocaleLowerCase() === field(item.key).trim().toLocaleLowerCase()"), "Managed references must match an exact directory value rather than a fuzzy substring");
+  assert.ok(!indexContent.includes("list={`${fieldId}-options`}"), "Master fields do not permit arbitrary datalist text");
+  assert.ok(indexContent.includes('item.key === "projectId" && type !== "Project"'), "Linked project fields use one dedicated register selector");
+  assert.match(indexContent, /projectRecords\.map\(\(record\)\s*=>\s*\(\{\s*value:\s*record\.reference,\s*label:\s*`\$\{record\.reference\} · \$\{record\.title\}`/, "Project links display code and title from the active project register");
+  assert.match(indexContent, /label:\s*isPreProjectIntake\(type\)\s*\?\s*"New requirement — no project yet"\s*:\s*item\.required\s*\?\s*"Choose a project"\s*:\s*"No project linked"/, "Required records show a project prompt while intake and task records retain their valid no-project choices");
 });
 
 test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline masters and downstream fail-closed gates", async (t) => {
@@ -98,10 +120,13 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   }
   await db.exec(
     fs.readFileSync(
-      path.join(root, "supabase/migrations/20261106012000_allow_test_member_document_drafts.sql"),
+      path.join(root, "supabase/migrations/20261106041141_allow_test_member_document_drafts.sql"),
       "utf8",
     ),
   );
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261111162011_role_scoped_document_registration.sql"),"utf8"));
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261111162044_shared_document_draft_snapshots.sql"),"utf8"));
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261113044537_exact_document_project_link_aliases.sql"),"utf8"));
 
   const admin = uuid(1),
     purLead = uuid(2),
@@ -282,14 +307,40 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   const docKey=crypto.randomUUID(),gerber=await registerDoc(hwLead,docPayload,docKey);
   assert.equal((await registerDoc(hwLead,docPayload,docKey)).id,gerber.id);
   await assert.rejects(registerDoc(hwLead,{...docPayload,title:'Changed retry'},docKey),/REQUEST_ID_REUSED/);
-  const employeeDoc=await registerDoc(emp,{title:'Employee project attachment',documentType:'Technical document',scope:'internal',projectId:project});
+  const generatedSnapshot={templateType:'BOM',templateVersion:'2026-10-19.2',catalogueFamilyId:'D11',sourceRecordId:null,projectRecordId:project,releaseStatus:'Unissued',completionPercentage:0,missingFields:['lineItems','mpn'],sections:[{title:'Controlled bill of materials',rows:[['lineItems','TBD — owner confirmation required','No source provided']]}]};
+  const employeeDoc=await registerDoc(emp,{title:'Employee project attachment',documentType:'Technical document',scope:'internal',projectId:project,draftSnapshot:generatedSnapshot});
   assert.equal(employeeDoc.status,'Draft');
   const employeeDocRow=(await db.query('SELECT department_id,record_id,metadata FROM documents WHERE id=$1',[employeeDoc.id])).rows[0];
   assert.equal(employeeDocRow.department_id,dEhw);assert.equal(employeeDocRow.record_id,project);assert.equal(employeeDocRow.metadata.status,'Draft');
+  assert.equal(employeeDocRow.metadata.draftSnapshot.templateType,'BOM');assert.equal(employeeDocRow.metadata.draftSnapshot.releaseStatus,'Unissued');
+  const aliasSource=(await call(hwLead,"create_record",{
+    title:"TEST alias-linked schematic",reference:"HLPL-RFT-EHW-SCH-ALIAS",record_type:"Schematic",project_id:project,
+    fields:{revision:"01",stage:"HW_01"},
+  })).id;
+  await db.query("UPDATE operational_records SET fields=$2::jsonb WHERE id=$1",[aliasSource,JSON.stringify({revision:"01",stage:"HW_01",project_id:project,projectCode:"HLPL-RFT-01"})]);
+  const aliasDoc=await registerDoc(hwLead,{...docPayload,title:"TEST document from project aliases",recordId:aliasSource});
+  assert.equal((await db.query("SELECT record_id FROM documents WHERE id=$1",[aliasDoc.id])).rows[0].record_id,aliasSource,
+    "an exact project_id plus matching projectCode is accepted as the same linked project");
+  await db.query("UPDATE operational_records SET fields=$2::jsonb WHERE id=$1",[aliasSource,JSON.stringify({revision:"01",stage:"HW_01",project_id:project,projectCode:"HLPL-VAULT-OTHER-01"})]);
+  await assert.rejects(registerDoc(hwLead,{...docPayload,title:"TEST conflicting project aliases",recordId:aliasSource}),/DOCUMENT_SOURCE_PROJECT_MISMATCH/);
+  await assert.rejects(registerDoc(hwLead,{...docPayload,title:"TEST project-linked source in common scope",scope:"common",projectId:undefined,recordId:aliasSource}),/DOCUMENT_NONPROJECT_SCOPE/);
+  await assert.rejects(registerDoc(emp,{title:'Invalid released snapshot',documentType:'Technical document',scope:'internal',projectId:project,draftSnapshot:{...generatedSnapshot,releaseStatus:'Released'}}),/DOCUMENT_DRAFT_SNAPSHOT_INVALID/);
+  await assert.rejects(registerDoc(emp,{title:'Snapshot without release status',documentType:'Technical document',scope:'internal',projectId:project,draftSnapshot:{...generatedSnapshot,releaseStatus:undefined}}),/DOCUMENT_DRAFT_SNAPSHOT_INVALID/);
+  await assert.rejects(registerDoc(emp,{title:'Snapshot bound to another project',documentType:'Technical document',scope:'internal',projectId:project,draftSnapshot:{...generatedSnapshot,projectRecordId:crypto.randomUUID()}}),/DOCUMENT_DRAFT_SNAPSHOT_INVALID/);
   const employeeScopedDoc=await registerDoc(emp,{...docPayload,departmentId:dQa,title:'Employee scoped to own department'});
   assert.equal((await db.query('SELECT department_id FROM documents WHERE id=$1',[employeeScopedDoc.id])).rows[0].department_id,dEhw,
     'member input cannot route a document outside its assigned department');
   await assert.rejects(registerDoc(null,docPayload),/DOCUMENT_REGISTER_DENIED/);
+  const secondaryRole=(await db.query("INSERT INTO department_roles(organization_id,department_id,name,role_key) VALUES($1,$2,'TEST QA document role','test_qa_documents') RETURNING id",[org,dQa])).rows[0].id;
+  await db.query("INSERT INTO department_role_assignments(role_id,member_id,assigned_by) VALUES($1,$2,$3)",[secondaryRole,mids[emp],admin]);
+  const limitedRoleDoc=await registerDoc(emp,{title:'Unpermitted secondary department draft',documentType:'Technical document',scope:'common',departmentId:dQa});
+  assert.equal((await db.query('SELECT department_id FROM documents WHERE id=$1',[limitedRoleDoc.id])).rows[0].department_id,dEhw,
+    'a role assignment without documents:manage cannot redirect the write outside the primary department');
+  await db.query("INSERT INTO role_permissions(role_id,permission_key,allowed) VALUES($1,'documents:manage',true)",[secondaryRole]);
+  assert.equal((await asUser(emp,()=>db.query("SELECT public.has_department_permission($1,$2,'documents:manage') allowed",[org,dQa]))).rows[0].allowed,true);
+  const secondaryDoc=await registerDoc(emp,{title:'TEST secondary department draft',documentType:'Technical document',scope:'common',departmentId:dQa});
+  assert.equal((await db.query('SELECT department_id FROM documents WHERE id=$1',[secondaryDoc.id])).rows[0].department_id,dQa,
+    'an explicitly configured secondary department role can register a document in that department');
   await assert.rejects(registerDoc(hwLead,{...docPayload,scope:'common',projectId:undefined,recordId:project}),/DOCUMENT_NONPROJECT_SCOPE/);
   await assert.rejects(registerDoc(hwLead,{...docPayload,projectId:crypto.randomUUID()}),/DOCUMENT_PROJECT_REQUIRED/);
   const commonDoc=await registerDoc(hwLead,{title:'TEST common procedure',documentType:'Policy / procedure',scope:'common',departmentId:dQa,status:'Approved',visibility:'client'});
@@ -1152,7 +1203,7 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
 
   // Dispatch and its generated work use the same saved responsibility/task definition.
   await db.exec('CREATE TABLE IF NOT EXISTS storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint)');
-  for(const migration of ['20261028120000_lifecycle_and_sample_pack_sync','20261028120001_canonical_stage_completion_reviews','20261028120002_preserve_legacy_lifecycle_boundary','20261029120000_restore_preproject_sales_intake','20261104010000_versioned_lifecycle_and_asset_reuse','20261104030000_shared_test_original_storage','20261104040000_reviewed_project_lifecycle_configuration','20261106125525_stage_raci_execution_contract','20261106224031_settings_driven_feasibility_dispatch'])
+  for(const migration of ['20261028120000_lifecycle_and_sample_pack_sync','20261028120001_canonical_stage_completion_reviews','20261028120002_preserve_legacy_lifecycle_boundary','20261029120000_restore_preproject_sales_intake','20261103235542_versioned_lifecycle_and_asset_reuse','20261104002046_shared_test_original_storage','20261104043746_reviewed_project_lifecycle_configuration','20261106130248_stage_raci_execution_contract','20261107100003_settings_driven_feasibility_dispatch'])
     await db.exec(fs.readFileSync(path.join(root,'supabase/migrations',migration+'.sql'),'utf8'));
   const settingsV1={id:'TEST-FEASIBILITY-RACI-v1',createdAt:'2026-11-07T00:00:00Z',stages:[{code:'CM_02',name:'Configured feasibility',phase:'TG_0',gate:'Intake review',department:'EHW',prerequisites:[],exitTypes:[],optional:false,raci:{R:['EHW'],A:['SAL'],C:['QA'],I:['PUR']},tasks:[{id:'F01',title:'Configured technical assessment',description:'Synthetic test scope',department:'EHW'},{id:'F02',title:'Configured dependency review',description:'Synthetic test dependencies',department:'EHW'}]}]};
   const publishSettings=async(definition,expectedRevision)=>(await asUser(admin,()=>db.query("SELECT public.mutate_lifecycle_workspace('save_revision',$1::jsonb,$2) result",[JSON.stringify({definition,expectedRevision}),crypto.randomUUID()]))).rows[0].result;

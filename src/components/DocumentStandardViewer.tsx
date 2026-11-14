@@ -14,7 +14,7 @@ import {
   FileCode,
   X,
 } from "lucide-react";
-import type { buildDocumentDraft, DraftSource } from "@/lib/document-draft";
+import { supportsDraftDocx, type buildDocumentDraft, type DraftSource } from "@/lib/document-draft";
 import { NativeAttachmentCard } from "./NativeAttachmentCard";
 
 export type PrintableDocumentProps = {
@@ -48,6 +48,7 @@ export function DocumentStandardViewer({
   settings,
   onClose,
   onOpenSettings,
+  settingsSourceNotice,
 }: {
   document: PrintableDocumentProps;
   draft: ReturnType<typeof buildDocumentDraft>;
@@ -55,8 +56,29 @@ export function DocumentStandardViewer({
   settings: TemplateSettingsProps;
   onClose: () => void;
   onOpenSettings?: () => void;
+  settingsSourceNotice?: string;
 }) {
   const [copiedMd, setCopiedMd] = useState(false);
+  const [wordExportError, setWordExportError] = useState(false);
+
+  const exportWord = async () => {
+    setWordExportError(false);
+    try {
+      const { buildDraftDocx } = await import("@/lib/document-draft-docx");
+      const bytes = buildDraftDocx(document, draft, settings);
+      const blob = new Blob([Uint8Array.from(bytes).buffer], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = `${document.documentId.replace(/[^\w.-]/g, "_")}-draft.docx`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      setWordExportError(true);
+    }
+  };
 
   const formattedDate = document.date || new Date().toISOString().slice(0, 10);
 
@@ -125,6 +147,7 @@ export function DocumentStandardViewer({
             </span>
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-foreground truncate">{document.title}</h2>
+              {settingsSourceNotice && <p className="text-[10px] text-muted-foreground">{settingsSourceNotice}</p>}
               <p className="text-[10px] font-mono text-muted-foreground truncate">
                 {document.documentId} · Rev {document.revision}
               </p>
@@ -151,6 +174,12 @@ export function DocumentStandardViewer({
               <Download className="size-3.5" />
               <span>Export Snapshot</span>
             </button>
+            {draft.supported && supportsDraftDocx(draft.type) && (
+              <button type="button" onClick={exportWord} className="flex items-center gap-1 rounded border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-secondary transition" title="Download the unissued draft as a Word document">
+                <Download className="size-3.5" /> Download Word draft
+              </button>
+            )}
+            {wordExportError && <span role="alert">Word download failed. Try again.</span>}
 
             {onOpenSettings && (
               <button
@@ -419,14 +448,14 @@ export function DocumentStandardViewer({
                     {/* Prepared By */}
                     <tr className="border-t border-border">
                       <td className="p-2.5 font-semibold text-foreground">1. Prepared By (Author)</td>
-                      <td className="p-2.5 text-foreground">{document.preparedBy?.name || "Authoring Engineer"}</td>
+                      <td className="p-2.5 text-foreground">{document.preparedBy?.name || "Not recorded"}</td>
                       <td className="p-2.5">
-                        <span className="rounded bg-success/15 px-2 py-0.5 text-[10px] font-bold text-success">
-                          {document.preparedBy?.status || "Draft Created"}
+                        <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${document.preparedBy?.status === "Completed" ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+                          {document.preparedBy?.status || "Pending"}
                         </span>
                       </td>
                       <td className="p-2.5 font-mono text-[10px] text-muted-foreground">
-                        {document.preparedBy?.date || formattedDate}
+                        {document.preparedBy?.date || "Not recorded"}
                       </td>
                     </tr>
 
@@ -479,7 +508,7 @@ export function DocumentStandardViewer({
               <p className="font-semibold">{settings.confidentialityNotice}</p>
               <p className="mt-1">{settings.complianceFooter}</p>
               <p className="mt-2 text-steel font-mono">
-                Classification: {draft.snapshot.classification} · Printed: {new Date().toLocaleString("en-IN")} · Page 1 of 1
+                Classification: {draft.snapshot.classification} · Printed: {new Date().toLocaleString("en-IN")}
               </p>
               <div className="no-print mt-4">
                 <button

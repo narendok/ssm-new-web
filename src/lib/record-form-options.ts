@@ -1,3 +1,5 @@
+import { isSelectableMasterStatus } from "@/lib/shared-master-options";
+
 export function procurementTrack(type: string): string | undefined {
   return type === "Rapid prototype request" ? "Rapid prototype" : type === "Mass production request" ? "Mass production" : undefined;
 }
@@ -12,7 +14,7 @@ export function referenceAtRevision(reference: string, revision: string): string
   return /-\d{2,}$/.test(reference) ? reference.replace(/-\d{2,}$/,`-${revision}`) : reference;
 }
 export function sharedSupplierOptions(records: {id:string;title:string;reference:string;record_type:string;status:string}[]) {
-  return records.filter(record => record.record_type.toLowerCase() === "supplier" && !["archived","obsolete","rejected"].includes(record.status.toLowerCase())).map(record => ({value:record.id,label:`${record.reference} · ${record.title}`}));
+  return records.filter(record => record.record_type.toLowerCase() === "supplier" && isSelectableMasterStatus(record.status)).map(record => ({value:record.id,label:`${record.reference} · ${record.title}`}));
 }
 
 export function automaticRecordReference(projectReference: string, department: string, type: string, revision = "01"): string {

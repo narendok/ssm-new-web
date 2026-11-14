@@ -12,7 +12,25 @@ function loadSource(name) {
   new Function("module", "exports", "require", compiled)(loaded, loaded.exports, imported => imported.startsWith("./") ? loadSource(imported.slice(2)) : require(imported));
   return loaded.exports;
 }
-const { prepareUploadDraft: prepare, sourceGerberPackages, assertUploadContextCurrent, UPLOAD_TYPES } = loadSource("document-upload-pilot");
+const { prepareUploadDraft: prepare, sourceGerberPackages, assertUploadContextCurrent, eligibleUploadDepartments, UPLOAD_TYPES } = loadSource("document-upload-pilot");
+
+test("document upload dialog uses searchable canonical selectors for linked masters", () => {
+  const component = fs.readFileSync(path.resolve(__dirname, "../src/components/DocumentUploadPilotDialog.tsx"), "utf8");
+  assert.match(component, /import \{ SharedMasterSelect \} from "@\/components\/SharedMasterSelect"/);
+  assert.match(component, /label="Document project"[\s\S]*?value: p\.id[\s\S]*?onChange=\{\(projectId\)/);
+  assert.match(component, /label="Owning department"[\s\S]*?eligibleUploadDepartments\(departments, actor\)\.map[\s\S]*?value: d\.id/);
+  assert.match(component, /label="Source Gerber package"[\s\S]*?value: p\.documentId[\s\S]*?onChange=\{\(sourceDocumentId\)/);
+});
+
+test("non-admin upload choices stay within the actor's active department; admin can manage active departments", () => {
+  const departments = [
+    { id: "qa", code: "QA", name: "Quality", active: true },
+    { id: "ehw", code: "EHW", name: "Hardware", active: true },
+    { id: "old", code: "OLD", name: "Inactive", active: false },
+  ];
+  assert.deepEqual(eligibleUploadDepartments(departments, { kind: "lead", departmentId: "qa" }).map(d => d.id), ["qa"]);
+  assert.deepEqual(eligibleUploadDepartments(departments, { kind: "admin" }).map(d => d.id), ["qa", "ehw"]);
+});
 const fixture = () => ({
   metadata: {
     title: "Board original",

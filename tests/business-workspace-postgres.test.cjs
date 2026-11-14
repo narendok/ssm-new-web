@@ -43,6 +43,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [fw, "fw@example.com"],
     [viewer, "client@example.com"],
     [uuid(7), "procurement@example.com"],
+    [uuid(8), "service@example.com"],
   ])
     await db.query("INSERT INTO auth.users VALUES($1,$2)", [id, email]);
   await db.query(
@@ -60,6 +61,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [employee, "member"],
     [viewer, "viewer"],
     [uuid(7), "department_lead"],
+    [uuid(8), "department_lead"],
   ])
     mids[id] = (
       await db.query(
@@ -73,6 +75,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [fd, "FW", fw],
     [sd, "SAL", admin],
     [uuid(15), "PUR", uuid(7)],
+    [uuid(17), "SIT", uuid(8)],
   ])
     await db.query(
       "INSERT INTO departments(id,organization_id,name,department_type,code,lead_member_id) VALUES($1,$2,$3,$3,$3,$4)",
@@ -100,9 +103,18 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
       "utf8",
     ),
   );
-  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104120000_expense_request_routing.sql"),"utf8"));
-  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104121500_repair_expense_request_routing_patch.sql"),"utf8"));
-  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104123000_validate_expense_request_details.sql"),"utf8"));
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104174216_expense_request_routing.sql"),"utf8"));
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104174711_repair_expense_request_routing_patch.sql"),"utf8"));
+  await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104175534_validate_expense_request_details.sql"),"utf8"));
+  for (const migration of [
+    "20261104171344_shared_expense_catalogue.sql",
+    "20261106050628_shared_department_service_catalogue.sql",
+    "20261106051636_validate_shared_service_catalogue.sql",
+    "20261111162055_link_expense_service_catalogue.sql",
+    "20261112142917_canonical_expense_supplier_options.sql",
+    "20261112142926_service_catalogue_supplier_master_links.sql",
+  ]) await db.exec(fs.readFileSync(path.join(root, "supabase/migrations", migration), "utf8"));
+  await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261112225842_shared_ticket_department_help.sql"), "utf8"));
   const patchedBusinessFn=(await db.query("SELECT pg_get_functiondef('mutate_business_workspace(text,jsonb,uuid)'::regprocedure) AS definition")).rows[0].definition;
   assert.match(patchedBusinessFn,/Pending_Procurement/);
   assert.match(patchedBusinessFn,/COALESCE\(data->>'requestType','travel'\)/);
@@ -134,7 +146,26 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
       async () => (await db.query("SELECT get_business_workspace() result")).rows[0].result,
     );
   }
+  async function loadExpenseCatalogue(user) {
+    return as(user, async () => (await db.query("SELECT get_expense_catalogue(NULL) result")).rows[0].result);
+  }
   await assert.rejects(load(null), /MEMBERSHIP_REQUIRED/);
+  const supplierMasterId=uuid(30);
+  await db.query("INSERT INTO operational_records(id,organization_id,department_id,area,record_type,reference,title,created_by,updated_by) VALUES($1,$2,$3,'procurement','Supplier','SUP-TEST-001','TEST approved component supplier',$4,$4)",[supplierMasterId,org,uuid(15),admin]);
+  assert.ok((await load(employee)).suppliers.some(supplier=>supplier.id===supplierMasterId&&supplier.title==='TEST approved component supplier'),'expense requester sees only the supplier master fields needed to link a request');
+  const projectMasterId=uuid(31);
+  await db.query("INSERT INTO operational_records(id,organization_id,department_id,area,record_type,reference,title,stage,created_by,updated_by) VALUES($1,$2,$3,'engineering','Project','TEST-PROJECT-001','TEST linked project','HW_01',$4,$4)",[projectMasterId,org,hd,admin]);
+  assert.ok((await load(employee)).projects.some(project=>project.id===projectMasterId&&project.reference==='TEST-PROJECT-001'&&project.currentStage==='HW_01'),'expense request project choices come from the organization project records with their current lifecycle stage');
+  const expenseCatalogue=await loadExpenseCatalogue(admin);
+  assert.ok(expenseCatalogue.suppliers.some(supplier=>supplier.id===supplierMasterId),'service settings use the same canonical Supplier master');
+  await assert.rejects(loadExpenseCatalogue(viewer),/EXPENSE_SETTINGS_ACCESS_DENIED/,'viewer/client memberships cannot read the service supplier selector');
+  const linkedServices=expenseCatalogue.services.map(service=>service.id==='github'?{...service,supplierId:supplierMasterId,provider:'Forged display name'}:service);
+  await assert.rejects(as(admin,()=>db.query("SELECT save_expense_catalogue(NULL,$1::jsonb,$2)",[JSON.stringify({categories:expenseCatalogue.categories,purposes:expenseCatalogue.purposes,operationsEnabled:expenseCatalogue.operationsEnabled,services:expenseCatalogue.services.map(service=>service.id==='github'?{...service,supplierId:uuid(33)}:service)}),expenseCatalogue.version])),/EXPENSE_SERVICE_SUPPLIER_INVALID/);
+  await as(admin,()=>db.query("SELECT save_expense_catalogue(NULL,$1::jsonb,$2)",[JSON.stringify({categories:expenseCatalogue.categories,purposes:expenseCatalogue.purposes,operationsEnabled:expenseCatalogue.operationsEnabled,services:linkedServices}),expenseCatalogue.version]));
+  const savedExpenseCatalogue=await loadExpenseCatalogue(employee);
+  const linkedService=savedExpenseCatalogue.services.find(service=>service.id==='github');
+  assert.equal(linkedService.supplierId,supplierMasterId,'service catalogue stores the canonical supplier ID');
+  assert.equal(linkedService.provider,'TEST approved component supplier','service provider display is derived from the Supplier master');
   await assert.rejects(call(viewer, "allocate", { data: {} }), /FINANCE_AUTHORITY_REQUIRED/);
   await assert.rejects(
     as(employee, () => db.query("select * from business_items")),
@@ -244,14 +275,83 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     }),
     /STALE_VERSION/,
   );
-  const purchase=(await call(employee,"request_expense",{data:{...payload.data,requestType:"purchase",purchaseKind:"goods",itemOrService:"TEST sensor evaluation quantity",quantity:4}})).id;
-  assert.equal((await load(employee)).items.find(i=>i.id===purchase).data.status,"Pending_Procurement");
+  await assert.rejects(call(employee,"request_expense",{data:{...payload.data,requestType:"purchase",purchaseKind:"goods",itemOrService:"TEST unknown supplier",quantity:1,supplierId:uuid(32)}}),/INVALID_SUPPLIER/);
+  const purchase=(await call(employee,"request_expense",{data:{...payload.data,requestType:"purchase",purchaseKind:"goods",itemOrService:"TEST sensor evaluation quantity",quantity:4,projectId:projectMasterId,supplierId:supplierMasterId,supplierName:"Forged supplier label"}})).id;
+  const savedPurchase=(await load(employee)).items.find(i=>i.id===purchase);
+  assert.equal(savedPurchase.data.status,"Pending_Procurement");
+  assert.equal(savedPurchase.projectId,projectMasterId,'selected project remains linked to the request');
+  assert.equal(savedPurchase.data.supplierId,supplierMasterId,'purchase request preserves the canonical supplier UUID');
+  assert.equal(savedPurchase.data.supplierName,'TEST approved component supplier','supplier display snapshot is sourced from the selected canonical record');
   assert.ok((await load(uuid(7))).items.some(i=>i.id===purchase));
   assert.equal((await load(hw)).items.some(i=>i.id===purchase),false);
   await assert.rejects(call(hw,"approve_expense",{id:purchase,version:1,data:{}}),/ITEM_UNAVAILABLE/);
   const procurementItem=(await load(uuid(7))).items.find(i=>i.id===purchase);
   await call(uuid(7),"approve_expense",{id:purchase,version:procurementItem.version,data:{}});
   assert.equal((await load(employee)).items.find(i=>i.id===purchase).data.status,"Pending_Finance");
+  const travel = (await call(employee, "request_expense", { data: {
+    ...payload.data, requestType: "travel", destination: "TEST client site",
+    travelStartDate: end, travelEndDate: end,
+  } })).id;
+  const service = (await call(employee, "request_expense", { data: {
+    ...payload.data, requestType: "purchase", purchaseKind: "service",
+    itemOrService: "TEST annual electronics calibration service", serviceCatalogueId: "calibration",
+  } })).id;
+  const employeeItems = (await load(employee)).items;
+  assert.equal(employeeItems.find(item => item.id === travel).data.status, "Pending_Finance");
+  assert.equal(employeeItems.find(item => item.id === service).data.status, "Pending_Procurement");
+  assert.equal(employeeItems.find(item => item.id === service).data.serviceCatalogueId, "calibration");
+  assert.equal(employeeItems.find(item => item.id === service).data.serviceCatalogueName, "Equipment calibration & maintenance");
+  await assert.rejects(call(employee, "request_expense", { data: {
+    ...payload.data, requestType: "purchase", purchaseKind: "service",
+    itemOrService: "TEST unknown service", serviceCatalogueId: "unknown",
+  } }), /EXPENSE_SERVICE_CATALOGUE_ENTRY_REQUIRED/);
+  const procurementItems = (await load(uuid(7))).items;
+  assert.equal(procurementItems.some(item => item.id === travel), false);
+  const serviceForReview = procurementItems.find(item => item.id === service);
+  assert.equal(serviceForReview.data.serviceCatalogueName, "Equipment calibration & maintenance");
+  await call(uuid(7), "approve_expense", { id: service, version: serviceForReview.version, data: {} });
+  const forwardedService = (await load(employee)).items.find(item => item.id === service);
+  assert.equal(forwardedService.data.status, "Pending_Finance");
+  assert.equal(forwardedService.data.serviceCatalogueId, "calibration");
+  const linkedServiceRequest = (await call(employee, "request_expense", { data: {
+    ...payload.data, requestType: "purchase", purchaseKind: "service",
+    itemOrService: "TEST annual GitHub subscription", serviceCatalogueId: "github",
+    supplierId: supplierMasterId, supplierName: "Forged supplier label", projectId: projectMasterId,
+  } })).id;
+  const linkedServiceEmployeeView = (await load(employee)).items.find(item => item.id === linkedServiceRequest);
+  assert.equal(linkedServiceEmployeeView.projectId, projectMasterId, "service request retains the selected canonical Project ID");
+  assert.equal(linkedServiceEmployeeView.data.serviceCatalogueId, "github");
+  assert.equal(linkedServiceEmployeeView.data.serviceCatalogueName, "GitHub subscription");
+  assert.equal(linkedServiceEmployeeView.data.supplierId, supplierMasterId, "catalogue service retains the canonical Supplier ID");
+  assert.equal(linkedServiceEmployeeView.data.supplierName, "TEST approved component supplier", "current Supplier master overrides a submitted display label");
+  const linkedServiceProcurementView = (await load(uuid(7))).items.find(item => item.id === linkedServiceRequest);
+  assert.equal(linkedServiceProcurementView.projectId, projectMasterId, "Procurement receives the Project relationship");
+  assert.equal(linkedServiceProcurementView.data.supplierId, supplierMasterId, "Procurement receives the same canonical Supplier ID");
+  await call(uuid(7), "approve_expense", { id: linkedServiceRequest, version: linkedServiceProcurementView.version, data: {} });
+  const linkedServiceAfterForward = (await load(employee)).items.find(item => item.id === linkedServiceRequest);
+  assert.equal(linkedServiceAfterForward.projectId, projectMasterId, "Project relationship survives the Procurement-to-Finance handoff");
+  assert.equal(linkedServiceAfterForward.data.supplierId, supplierMasterId, "Supplier relationship survives the Procurement-to-Finance handoff");
+  assert.equal(linkedServiceAfterForward.data.serviceCatalogueId, "github", "service catalogue identity survives the handoff");
+  const departmentService = (id, name) => ({
+    id, name, category: "Maintenance & Calibration", provider: "",
+    cycle: "Annual", owner: "Department lead",
+  });
+  await db.query(
+    "INSERT INTO private.expense_catalogues(organization_id,scope,value,updated_by) VALUES ($1,$2,$3::jsonb,$6),($1,$4,$5::jsonb,$6)",
+    [org, hd, JSON.stringify({ services: [departmentService("ehw-calibration", "EHW calibration")] }),
+      qd, JSON.stringify({ services: [departmentService("qa-calibration", "QA calibration")] }), admin],
+  );
+  const departmentRequest = {
+    ...payload.data, requestType: "purchase", purchaseKind: "service",
+    itemOrService: "TEST calibration request", departmentId: hd,
+  };
+  const hardwareService = (await call(hw, "request_expense", {
+    data: { ...departmentRequest, serviceCatalogueId: "ehw-calibration" },
+  })).id;
+  assert.equal((await load(hw)).items.find(item => item.id === hardwareService).data.serviceCatalogueName, "EHW calibration");
+  await assert.rejects(call(hw, "request_expense", {
+    data: { ...departmentRequest, departmentId: qd, serviceCatalogueId: "qa-calibration" },
+  }), /EXPENSE_SERVICE_CATALOGUE_ENTRY_REQUIRED/);
   const ticket = (
     await call(employee, "ticket_create", {
       data: {
@@ -266,6 +366,22 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     (await load(qa)).items.some((i) => i.id === ticket),
     false,
   );
+  await assert.rejects(call(employee, "ticket_dispatch_help", { data: { ticketId: ticket, departmentCode: "QA", summary: "Please inspect this synthetic fault" } }), /SERVICE_AUTHORITY_REQUIRED/);
+  const helpRequest = (await call(uuid(8), "ticket_dispatch_help", { data: { ticketId: ticket, departmentCode: "QA", summary: "Please inspect this synthetic fault" } })).id;
+  const qaHelp = (await load(qa)).items.find(i => i.id === helpRequest);
+  assert.ok(qaHelp, "the receiving department lead sees the dispatched help request");
+  assert.ok((await load(qa)).notifications.some(n => n.itemId === helpRequest), "the receiving department lead gets a shared workspace notification");
+  assert.equal((await load(qa)).items.some(i => i.id === ticket), false, "the receiving department cannot read the original ticket");
+  assert.equal(qaHelp.projectId, null, "the help request does not expose the source project link");
+  assert.equal("replies" in qaHelp.data, false, "the limited help item does not copy ticket replies");
+  assert.equal("assetId" in qaHelp.data, false, "the limited help item does not copy asset links");
+  await assert.rejects(call(fw, "ticket_help_response", { id: helpRequest, version: qaHelp.version, data: { response: "Synthetic findings" } }), /ITEM_UNAVAILABLE/);
+  await call(qa, "ticket_help_response", { id: helpRequest, version: qaHelp.version, data: { response: "Synthetic QA inspection completed; no production action taken." } });
+  const respondedHelp = (await load(uuid(8))).items.find(i => i.id === helpRequest);
+  assert.equal(respondedHelp.data.status, "Responded");
+  assert.equal((await load(uuid(8))).items.find(i => i.id === ticket).data.replies.length, 0, "department response remains separate from the ticket's private thread");
+  await call(uuid(8), "ticket_help_close", { id: helpRequest, version: respondedHelp.version, data: {} });
+  assert.equal((await load(uuid(8))).items.find(i => i.id === helpRequest).data.status, "Closed");
   await assert.rejects(
     call(admin, "ticket_status", { id: ticket, version: 1, data: {} }),
     /INVALID_TICKET_TRANSITION/,

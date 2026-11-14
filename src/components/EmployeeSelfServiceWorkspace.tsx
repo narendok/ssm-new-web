@@ -288,7 +288,7 @@ export function EmployeeSelfServiceWorkspace({
           <div className="md:col-span-2 p-5 rounded-xl bg-card border border-border shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
               <User className="w-4 h-4 text-primary" />
-              {sharedProfile ? "Employment Profile" : "Verified Employment Profile"}
+              {sharedProfile ? "Employment Profile" : "Demo Employment Profile"}
             </h3>
 
             <div className="grid grid-cols-2 gap-4 text-xs">

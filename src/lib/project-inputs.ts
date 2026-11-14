@@ -45,8 +45,68 @@ export type InputSheet = {
   parameter_values: Record<string, ParameterValue>;
   custom_parameters: InputParameter[];
   client_evidence: string;
+  department_estimates?: Record<string, DepartmentFeasibilityEstimate>;
   updated_at: string;
 };
+export type DepartmentFeasibilityEstimate = {
+  currency: string;
+  departmentCode?: string;
+  engineeringHours: number;
+  lifecycleRevisionId?: string;
+  stageDurationDays?: Record<string, number>;
+  plannedDurationDays: number;
+  taskPlan: Record<string, { stageCode?: string; phase?: string; effortHours: number; startOffsetDays: number; durationDays: number }>;
+  preliminaryBomCost: number;
+  reusableMaterialValue: number;
+  consumableCost: number;
+  labCertificationFees: number;
+  toolingCapex: number;
+  assumptions: string;
+};
+
+/** Departments a lead may actually manage in shared feasibility work. */
+export function feasibilityDepartmentCodes(
+  departments: readonly { id: string; code: string; active?: boolean }[],
+  roles: readonly { departmentId: string; active: boolean; memberIds: string[]; permissions: string[]; hierarchyLevel?: number | null | undefined }[],
+  membershipId: string,
+  primaryDepartmentCode: string | null | undefined,
+) {
+  const available = new Map(departments.filter(department => department.active !== false).map(department => [department.id, department.code]));
+  const codes = new Set<string>();
+  if (primaryDepartmentCode && departments.some(department => department.code === primaryDepartmentCode && department.active !== false)) codes.add(primaryDepartmentCode);
+  for (const role of roles) {
+    const code = available.get(role.departmentId);
+    // Only an explicitly classified L1 role is an organization-chart lead.
+    // Unclassified roles must not inherit feasibility-lead behavior.
+    if (role.active && role.hierarchyLevel === 1 && role.memberIds.includes(membershipId) && role.permissions.includes("records:edit") && code) codes.add(code);
+  }
+  return [...codes].sort((a, b) => a.localeCompare(b));
+}
+
+/** Preserve a lead's saved schedule; fill only newly added tasks from the current suggestion. */
+export function mergeFeasibilityTaskPlan(
+  tasks: readonly { key: string; stageCode: string; phase: string }[],
+  saved: DepartmentFeasibilityEstimate["taskPlan"] | undefined,
+  suggested: DepartmentFeasibilityEstimate["taskPlan"],
+): DepartmentFeasibilityEstimate["taskPlan"] {
+  return Object.fromEntries(tasks.map(({ key, stageCode, phase }) => [
+    key,
+    { ...suggested[key], ...saved?.[key], stageCode, phase },
+  ])) as DepartmentFeasibilityEstimate["taskPlan"];
+}
+
+/** Flag lifecycle or stage-window changes so saved lead plans are reviewed explicitly. */
+export function feasibilityEstimateReview(
+  saved: Pick<DepartmentFeasibilityEstimate, "lifecycleRevisionId" | "stageDurationDays">,
+  currentRevisionId: string | undefined,
+  currentStageDays: Record<string, number>,
+) {
+  const lifecycleChanged = Boolean(saved.lifecycleRevisionId && currentRevisionId && saved.lifecycleRevisionId !== currentRevisionId);
+  const changedStageCodes = Object.entries(currentStageDays)
+    .filter(([stageCode, days]) => saved.stageDurationDays?.[stageCode] !== days)
+    .map(([stageCode]) => stageCode);
+  return { lifecycleChanged, changedStageCodes, requiresReview: lifecycleChanged || changedStageCodes.length > 0 };
+}
 export function inputReadiness(
   values: InputSheet["parameter_values"],
   parameters: InputParameter[] = PROJECT_INPUT_PARAMETERS,

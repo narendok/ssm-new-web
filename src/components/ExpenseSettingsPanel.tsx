@@ -7,36 +7,12 @@ import {
   type ExpenseCatalogue,
 } from "@/lib/expense-settings.functions";
 import { Button } from "./ui/button";
+import { SharedMasterSelect } from "./SharedMasterSelect";
+import { parseExpenseServices } from "@/lib/expense-service-editor";
 
 type ServiceOption = ExpenseCatalogue["services"][number];
 const line = (service: ServiceOption) =>
   [service.name, service.category, service.provider, service.cycle, service.owner].join(" | ");
-function parseServices(value: string): ServiceOption[] {
-  return value
-    .split("\n")
-    .map((row) => row.trim())
-    .filter(Boolean)
-    .map((row) => {
-      const parts = row.split("|").map((part) => part.trim());
-      const name = parts[0] || "";
-      const category = parts[1] || "";
-      const provider = parts[2] || "";
-      const cycle = parts[3] || "Annual";
-      const owner = parts[4] || "Requesting department lead";
-      return {
-        id: name
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "")
-          .slice(0, 80),
-        name,
-        category,
-        provider,
-        cycle,
-        owner,
-      };
-    });
-}
 
 export function ExpenseSettingsPanel({
   departments,
@@ -102,6 +78,9 @@ function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
   const [tab, setTab] = useState<"categories" | "services">("categories");
   const [categories, setCategories] = useState(data.categories.join("\n"));
   const [services, setServices] = useState(data.services.map(line).join("\n"));
+  const [supplierByService, setSupplierByService] = useState<Record<string, string>>(
+    () => Object.fromEntries(data.services.filter(service => service.supplierId).map(service => [service.id, service.supplierId!])),
+  );
   const [ops, setOps] = useState(data.operationsEnabled);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -111,7 +90,11 @@ function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
     setBusy(true);
     setMessage("");
     try {
-      const serviceValues = parseServices(services);
+      const serviceValues = parseExpenseServices(services, data.services).map(service => {
+        const supplierId = supplierByService[service.id] ?? data.services.find(existing => existing.id === service.id)?.supplierId;
+        const supplier = supplierId ? data.suppliers.find(option => option.id === supplierId) : undefined;
+        return { ...service, provider: supplier?.title ?? service.provider, ...(supplierId ? { supplierId } : {}) };
+      });
       if (
         kind === "services" &&
         (serviceValues.some((s) => !s.name || !s.category) ||
@@ -199,8 +182,9 @@ function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
         <>
           <p className="text-xs text-muted-foreground">
             One service per line: name | finance category | provider | billing cycle | responsible
-            owner. Department leads manage only their own department. Company defaults are
-            Admin-managed.
+            owner. Link each service to the canonical Supplier master when a supplier is known;
+            linked supplier names are refreshed from that record. Department leads manage only
+            their own department. Company defaults are Admin-managed.
           </p>
           <label className="grid gap-1 text-sm">
             Services
@@ -213,6 +197,17 @@ function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
               placeholder="GitHub subscription | Software & Subscriptions | GitHub | Monthly | Software lead"
             />
           </label>
+          {parseExpenseServices(services, data.services).map(service => (
+            <div key={service.id} className="grid gap-1 text-xs">
+              <span className="font-medium">Supplier for {service.name}</span>
+              <SharedMasterSelect
+                label={`Supplier for ${service.name}`}
+                value={supplierByService[service.id] ?? data.services.find(existing => existing.id === service.id)?.supplierId ?? ""}
+                options={data.suppliers.map(supplier => ({ value: supplier.id, label: `${supplier.reference} · ${supplier.title} · ${supplier.status}` }))}
+                onChange={value => setSupplierByService(current => ({ ...current, [service.id]: value }))}
+              />
+            </div>
+          ))}
           {data.canManageServices ? (
             <Button disabled={busy} onClick={() => void submit("services")}>
               {busy ? "Saving…" : "Save services"}

@@ -42,3 +42,6 @@ Thumbs.db
 .agents/
 scratch/
 temp/
+
+# Disposable Vite optimizer cache
+.vite-cache/

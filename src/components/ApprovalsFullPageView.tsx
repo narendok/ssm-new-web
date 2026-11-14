@@ -7,7 +7,6 @@ import {
   RotateCcw,
   Search,
   Filter,
-  ArrowLeft,
   FileCheck2,
   AlertTriangle,
   Clock,
@@ -17,13 +16,14 @@ import {
   ExternalLink,
   Lock,
   Plus,
-  Bell,
   Send,
   UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SharedMasterSelect } from "@/components/SharedMasterSelect";
 import type { Persona } from "@/components/RoleAwareSidebar";
 import { approvalInDepartment, canDepartmentSign, departmentCode } from "@/lib/department-scope";
+import { resolveApprovalProjectFromRecord, validateApprovalProjectLink } from "@/lib/approval-master-links";
 
 export interface ApprovalRecord {
   id: string;
@@ -46,11 +46,11 @@ export interface ApprovalRecord {
 interface ApprovalsFullPageViewProps {
   approvals: ApprovalRecord[];
   projects?: { id?: string; reference: string; title: string }[] | undefined;
+  departments?: { id: string; code: string; name: string }[] | undefined;
   records?: { id: string; reference: string; title: string; fields: Record<string, string> }[] | undefined;
   onApprove: (id: string, notes?: string) => boolean | void | Promise<boolean | void>;
   onReject: (id: string, reason: string) => boolean | void | Promise<boolean | void>;
   onReturn: (id: string, reworkNotes: string) => boolean | void | Promise<boolean | void>;
-  onBack: () => void;
   currentUser?: string | undefined;
   userRole?: string | undefined;
   persona?: Persona | undefined;
@@ -61,11 +61,11 @@ interface ApprovalsFullPageViewProps {
 export function ApprovalsFullPageView({
   approvals,
   projects = [],
+  departments = [],
   records = [],
   onApprove,
   onReject,
   onReturn,
-  onBack,
   currentUser = "Executive Admin / MD",
   userRole = "Admin",
   persona,
@@ -189,13 +189,18 @@ export function ApprovalsFullPageView({
       alert("Enter a title, source record reference and designated approver.");
       return;
     }
+    const source = records.find(record => record.id === reqRecordId);
+    if (!source) { alert("Select a current source record from the register."); return; }
+    let project: string;
+    try { project = validateApprovalProjectLink(source.fields, reqProject, projects); }
+    catch (error) { alert(error instanceof Error ? error.message : "Review the source project link."); return; }
     const saved = await onRequestApproval?.({
       title: reqTitle.trim(),
-      recordId: reqRecordId.trim() || `GATE-${myDept}-${Date.now().toString().slice(-4)}`,
+      recordId: source.id,
       requester: `${currentUser} (${userRole})`,
       department: myDept,
       approverAuthority: reqAuthority,
-      project: reqProject,
+      project,
       riskLevel: reqRiskLevel,
       iatfClause: reqClause,
       description: reqDescription.trim() || "Controlled gate review submitted for designated human sign-off.",
@@ -240,40 +245,25 @@ export function ApprovalsFullPageView({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header Bar */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-border/40 pb-5">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-b border-border/40 pb-3">
         <div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onBack}
-              className="h-8 gap-1 px-2.5 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeft className="size-3.5" />
-              Return
-            </Button>
-            <span className="font-mono text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-              GOVERNANCE GATE
-            </span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">Human approvals</h1>
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">Review policy</summary>
+              <p className="mt-1 max-w-2xl">Configured quality, procurement, commercial and engineering gates require an authorized human decision. Automated actions do not replace sign-off.</p>
+            </details>
           </div>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-            <ShieldAlert className="size-6 text-amber-500" />
-            Human Approvals & Governance Sign-Off Center
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground max-w-3xl">
-            Mandatory human engineering and commercial sign-offs under <strong>IATF 16949:2016</strong> and{" "}
-            <strong>ISO 9001:2015</strong>. Automated workflows cannot bypass official quality, procurement, or
-            architectural sign-off boundaries.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {persona?.kind !== "client" && onRequestApproval && (
             <Button
               onClick={() => {
-                setReqRecordId(`GATE-${myDept}-${Date.now().toString().slice(-4)}`);
+                setReqRecordId("");
+                setReqProject("");
                 setIsRequestModalOpen(true);
               }}
               className="h-9 gap-1.5 px-3.5 text-xs font-semibold bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
@@ -283,10 +273,7 @@ export function ApprovalsFullPageView({
             </Button>
           )}
 
-          <div className="rounded-xl border border-border/60 bg-card px-4 py-2 text-right">
-            <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              Signer Context
-            </span>
+          <div className="rounded-lg border border-border/60 bg-card px-3 py-1.5 text-right">
             <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 justify-end">
               <Lock className="size-3 text-emerald-500" />
               {currentUser} ({userRole})
@@ -295,61 +282,12 @@ export function ApprovalsFullPageView({
         </div>
       </div>
 
-      {/* KPI Overview Strip */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-xs font-medium uppercase tracking-wider text-amber-600 dark:text-amber-400">
-              Pending Decisions
-            </span>
-            <Clock className="size-4 text-amber-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-foreground">{pendingCount}</span>
-            <span className="text-xs text-muted-foreground">Awaiting human sign-off</span>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-xs font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-              Approved & Endorsed
-            </span>
-            <CheckCircle2 className="size-4 text-emerald-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-foreground">{approvedCount}</span>
-            <span className="text-xs text-muted-foreground">Audit cleared</span>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-xs font-medium uppercase tracking-wider text-rose-600 dark:text-rose-400">
-              Rejected / Returned
-            </span>
-            <XCircle className="size-4 text-rose-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight text-foreground">{rejectedCount}</span>
-            <span className="text-xs text-muted-foreground">Needs rework or closed</span>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-border/60 bg-card p-4 transition-all">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Compliance Standard
-            </span>
-            <Award className="size-4 text-blue-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-base font-bold text-foreground">IATF 16949 §8.3.4</span>
-            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-              100% Traceable
-            </span>
-          </div>
-        </div>
+      {/* Compact summary keeps the decision list prominent when many approvals exist. */}
+      <div aria-label="Approval counts" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400"><Clock className="size-3.5"/>{pendingCount} pending</span>
+        <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="size-3.5"/>{approvedCount} approved</span>
+        <span className="inline-flex items-center gap-1.5 text-rose-600 dark:text-rose-400"><XCircle className="size-3.5"/>{rejectedCount} rejected / returned</span>
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground"><UserCheck className="size-3.5"/>{myActionCount} awaiting my sign-off</span>
       </div>
 
       <ResponsiveFilterBar label="Approval filters" className="rounded-xl border border-border/60 bg-card p-2" activeCount={Number(statusFilter !== "ALL" || filterScope !== "ALL")}>
@@ -393,9 +331,9 @@ export function ApprovalsFullPageView({
                 : "bg-blue-500/10 text-blue-600 border-blue-500/30";
 
             return (
-              <div
+                <div
                 key={appr.id}
-                className={`rounded-xl border bg-card p-5 transition-all shadow-sm ${
+                className={`rounded-xl border bg-card p-3.5 transition-all shadow-sm ${
                   isPending
                     ? "border-amber-500/40 hover:border-amber-500/70"
                     : isApproved
@@ -403,90 +341,72 @@ export function ApprovalsFullPageView({
                     : "border-border/60"
                 }`}
               >
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-2 flex-1">
+                <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
                         {appr.recordId}
                       </span>
-                      <span className="rounded border px-2 py-0.5 font-mono text-[11px] font-semibold uppercase bg-secondary text-secondary-foreground">
-                        Req: {appr.department}
+                      <span className="rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase bg-secondary text-secondary-foreground">
+                        {appr.department}
                       </span>
-                      <span className="rounded border border-primary/30 px-2 py-0.5 font-mono text-[11px] font-semibold uppercase bg-primary/5 text-primary">
-                        Signer: {appr.approverAuthority || (appr.riskLevel === "Critical" ? "QA" : appr.department)}
+                      <span className="rounded border border-primary/30 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase bg-primary/5 text-primary">
+                        Signer · {appr.approverAuthority || (appr.riskLevel === "Critical" ? "QA" : appr.department)}
                       </span>
                       <span className={`rounded border px-2 py-0.5 font-mono text-[10px] font-semibold uppercase ${riskTone}`}>
-                        Risk: {appr.riskLevel}
+                        {appr.riskLevel}
                       </span>
-                      <span className="font-mono text-[11px] text-muted-foreground">
+                      <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
                         {appr.project}
                       </span>
                     </div>
 
-                    <h3 className="text-base font-bold text-foreground tracking-tight">{appr.title}</h3>
+                    <h3 className="text-sm font-bold text-foreground tracking-tight">{appr.title}</h3>
 
-                    <p className="text-xs text-muted-foreground leading-relaxed max-w-4xl">
-                      {appr.description}
-                    </p>
+                    <details className="text-xs">
+                      <summary className="w-fit cursor-pointer text-primary">Review details</summary>
+                      <div className="mt-2 space-y-1.5 rounded-lg bg-muted/30 p-2.5">
+                        <p className="max-w-4xl text-muted-foreground leading-relaxed">{appr.description}</p>
+                        <p className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
+                          <Award className="size-3.5" />
+                          {appr.iatfClause}
+                        </p>
+                      </div>
+                    </details>
 
-                    <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground pt-1">
-                      <span className="flex items-center gap-1 font-medium">
+                    <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
+                          <span className="flex min-w-0 items-center gap-1 font-medium">
                         <Building2 className="size-3.5 text-muted-foreground" />
-                        Requester: <strong className="text-foreground font-semibold">{appr.requester}</strong>
+                        <strong className="text-foreground font-semibold">{appr.requester}</strong>
                       </span>
-                      <span className="flex items-center gap-1 font-mono text-[11px]">
+                      <span className="flex items-center gap-1 font-mono">
                         <Clock className="size-3.5 text-muted-foreground" />
-                        Updated: {appr.updatedAt}
-                      </span>
-                      <span className="flex items-center gap-1 font-mono text-[11px] text-primary">
-                        <Award className="size-3.5" />
-                        {appr.iatfClause}
+                        {appr.updatedAt}
                       </span>
                     </div>
 
                     {/* Signed seal or rejection note if not pending */}
                     {isApproved && (
-                      <div className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-400">
-                        <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                        <span>
-                          <strong>Digitally Endorsed & Approved</strong> by {appr.signedBy ?? "Executive Signer"} on{" "}
-                          {appr.signedAt ?? appr.updatedAt}.{" "}
-                          {appr.comments && <em>“{appr.comments}”</em>}
-                        </span>
+                      <div className="mt-2 flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
+                        <CheckCircle2 className="size-4 shrink-0" />
+                        <span><strong>Approved</strong> · {appr.signedBy ?? "Signer not recorded"} · {appr.signedAt ?? appr.updatedAt}</span>
                       </div>
                     )}
+                    {isApproved && appr.comments && <details className="text-xs"><summary className="w-fit cursor-pointer text-muted-foreground">Decision note</summary><p className="mt-1 text-muted-foreground">{appr.comments}</p></details>}
 
                     {(isRejected || isReturned) && (
                       <div className="mt-3 flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-400">
                         <XCircle className="size-4 shrink-0 text-rose-600 dark:text-rose-400" />
                         <span>
                           <strong>{isReturned ? "Returned for Rework" : "Rejected"}</strong>:{" "}
-                          {appr.comments ?? "Does not meet compliance gating criteria."}
+                          <details className="ml-1 text-[11px]">
+                            <summary className="cursor-pointer underline decoration-dotted">Decision note</summary>
+                            <p className="mt-1 max-w-3xl whitespace-pre-wrap">{appr.comments ?? "No decision note recorded."}</p>
+                          </details>
                         </span>
                       </div>
                     )}
 
-                    {/* Synchronized Notification Indicator */}
-                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-mono">
-                      <Bell className="size-3 text-primary shrink-0" />
-                      {isApproved ? (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                          ✓ Sync: Requester ({appr.department}) notified of governance sign-off
-                        </span>
-                      ) : isReturned ? (
-                        <span className="text-amber-600 dark:text-amber-400 font-semibold">
-                          ↻ Sync: Rework modification alert dispatched to {appr.requester}
-                        </span>
-                      ) : isRejected ? (
-                        <span className="text-rose-600 dark:text-rose-400 font-semibold">
-                          ✕ Sync: Rejection notice dispatched to {appr.department}
-                        </span>
-                      ) : (
-                        <span className="text-amber-500 font-medium">
-                          🔔 Sync: Pending sign-off · Approvers ({appr.approverAuthority || (appr.riskLevel === "Critical" ? "QA" : appr.department)}) notified
-                        </span>
-                      )}
-                    </div>
                   </div>
 
                   {/* Actions Column */}
@@ -533,7 +453,7 @@ export function ApprovalsFullPageView({
                             className="h-8 gap-1.5 text-xs px-2.5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 border-amber-500/30"
                           >
                             <RotateCcw className="size-3.5" />
-                            Return
+                            Return for rework
                           </Button>
                           <Button
                             variant="outline"
@@ -599,7 +519,7 @@ export function ApprovalsFullPageView({
                     ? "Confirm Governance Sign-off & Approval"
                     : actionType === "reject"
                     ? "Reject Approval Gate with Non-Conformance Note"
-                    : "Return Approval for Engineering Rework"}
+                    : "Return for rework"}
                 </h3>
                 <p className="font-mono text-xs text-muted-foreground">
                   Record ID: {selectedApproval.recordId} · {selectedApproval.project}
@@ -711,7 +631,16 @@ export function ApprovalsFullPageView({
                   <label className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                     Deliverable / Task Ref ID
                   </label>
-                  <select aria-label="Source record" value={reqRecordId} onChange={event => { setReqRecordId(event.target.value); const source = records.find(record => record.reference === event.target.value); const code = source?.fields["projectId"] || source?.fields["projectCode"] || ""; setReqProject(projects.find(project => project.reference === code || project.id === code)?.reference || ""); }} className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs"><option value="">Select a source record</option>{records.map(record => <option key={record.id} value={record.reference}>{record.reference} · {record.title}</option>)}</select>
+                  <SharedMasterSelect
+                    label="Source record"
+                    value={reqRecordId}
+                    options={records.map(record => ({ value: record.id, label: `${record.reference} · ${record.title}` }))}
+                    onChange={value => {
+                      setReqRecordId(value);
+                      const source = records.find(record => record.id === value || record.reference === value);
+                      setReqProject(resolveApprovalProjectFromRecord(source?.fields, projects)?.reference || "");
+                    }}
+                  />
                 </div>
 
                 <div>
@@ -742,19 +671,10 @@ export function ApprovalsFullPageView({
                   className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="">Select approver authority</option>
-                  <option value="QA">QA (Quality Assurance Lead)</option>
                   <option value="Admin">Admin (Executive Director / Plant Management)</option>
-                  <option value="PUR">PUR (Purchasing & Supply Chain Head)</option>
-                  <option value="FIN">FIN (Finance Controller)</option>
-                  <option value="EHW">EHW (Hardware Engineering Lead)</option>
-                  <option value="FW">FW (Firmware Lead)</option>
-                  <option value="SW">SW (Cloud & Application Software Lead)</option>
-                  <option value="EMF">EMF (Manufacturing Lead)</option>
-                  <option value="SAL">SAL (Sales Lead)</option>
-                  <option value="MECH">MECH (Mechanical Lead)</option>
-                  <option value="TST">TST (Production Test Lead)</option>
-                  <option value="SIT">SIT (Service & IT Lead)</option>
-                  <option value="HR">HR (HR & Operations Lead)</option>
+                  {departments.filter(department => department.code.toUpperCase() !== "CLIENT").map(department => (
+                    <option key={department.id} value={department.code}>{department.code} ({department.name} lead)</option>
+                  ))}
                 </select>
               </div>
 
@@ -762,15 +682,15 @@ export function ApprovalsFullPageView({
                 <label className="block font-mono text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
                   Target Program / Vehicle
                 </label>
-                <select
-                  aria-label="Approval project"
-                  value={reqProject}
-                  onChange={(e) => setReqProject(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary"
-                >
-                  <option value="">No project selected</option>
-                  {projects.map(project => <option key={project.reference} value={project.reference}>{project.reference} · {project.title}</option>)}
-                </select>
+                <SharedMasterSelect
+                  label="Approval project"
+                  value={projects.find(project => project.reference === reqProject)?.id || reqProject}
+                  options={projects.map(project => ({ value: project.id || project.reference, label: `${project.reference} · ${project.title}` }))}
+                  onChange={value => {
+                    const project = projects.find(item => item.id === value || item.reference === value);
+                    setReqProject(project?.reference || "");
+                  }}
+                />
               </div>
 
               <div>

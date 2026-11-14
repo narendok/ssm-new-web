@@ -23,6 +23,26 @@ export const getProjectInputs = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return data as unknown as InputSnapshot;
   });
+
+export const saveDepartmentFeasibilityEstimate = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((data) => z.object({
+    sheetId: z.string().uuid(),
+    expectedVersion: z.number().int().positive(),
+    estimate: z.record(z.unknown()),
+  }).parse(data))
+  .handler(async ({ context, data }) => {
+    const rpc = context.supabase as unknown as {
+      rpc(name: string, args: Record<string, Json>): Promise<{ data: Json; error: { message: string } | null }>;
+    };
+    const { data: result, error } = await rpc.rpc("save_project_department_feasibility_estimate", {
+      p_sheet: data.sheetId,
+      p_expected_version: data.expectedVersion,
+      p_estimate: JSON.parse(JSON.stringify(data.estimate)) as Json,
+    });
+    if (error) throw new Error(error.message);
+    return result as unknown as InputSheet;
+  });
 const request = z.object({
   action: z.enum([
     "create",

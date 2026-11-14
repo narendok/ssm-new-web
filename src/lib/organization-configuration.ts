@@ -11,7 +11,10 @@ export function useOrganizationConfiguration(scopeKey?:string) {
   const query=useQuery({queryKey:['organization-configuration',scopeKey],queryFn:()=>load(),enabled:!!scopeKey,retry:false,refetchOnWindowFocus:true,refetchInterval:30000});
   useEffect(()=>{
     if(!scopeKey)return;
-    const channel=supabase.channel(`organization-configuration:${scopeKey}`).on('postgres_changes',{event:'*',schema:'public',table:'departments'},()=>{
+    // Multiple workspaces can mount this hook together. Supabase reuses channels
+    // by topic, so each effect needs its own topic, including during remounts
+    // while an earlier channel's asynchronous cleanup is still pending.
+    const channel=supabase.channel(`organization-configuration:${scopeKey}:${crypto.randomUUID()}`).on('postgres_changes',{event:'*',schema:'public',table:'departments'},()=>{
       void cache.invalidateQueries({queryKey:['organization-configuration']});
       void cache.invalidateQueries({queryKey:['shared-test-workspace']});
       void cache.invalidateQueries({queryKey:['shared-operational-workspace']});

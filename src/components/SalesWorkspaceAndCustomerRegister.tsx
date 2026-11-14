@@ -78,6 +78,7 @@ export type EnquiryOpportunity = {
   reference: string;
   kind: "opportunity" | "enquiry";
   title: string;
+  customerId?: string | undefined;
   customerCode: string;
   customerName: string;
   spocName: string;
@@ -1252,6 +1253,7 @@ export function UnifiedSalesIntakeModal({
   onAddCustomer,
   onCreateCustomer,
   reviewDepartments,
+  feasibilityRaci,
 }: {
   isOpen: boolean;
   initialMode?: "enquiry" | "opportunity" | "convert";
@@ -1273,6 +1275,7 @@ export function UnifiedSalesIntakeModal({
     track?: "turnkey" | "software" | "firmware" | "ready_made";
     dispatchFeasibility: boolean;
     feasibilityDepts: string[];
+    feasibilityRaciRevision?: string | undefined;
     enquiryIdToConvert?: string | undefined;
     expectedUpdatedAt?: string | undefined;
     parameterValues?: Record<string, string> | undefined;
@@ -1280,8 +1283,10 @@ export function UnifiedSalesIntakeModal({
   onAddCustomer?: ((customer: CustomerRecord) => void) | undefined;
   onCreateCustomer?: ((values: {name:string;contact:string;email:string;operationId:string}) => Promise<CustomerRecord>) | undefined;
   reviewDepartments?: {code:string;name:string}[] | undefined;
+  feasibilityRaci?: { revision: string; departmentCodes: string[] } | null | undefined;
 }) {
-  const defaultReviewers=()=>["EHW","FW","SW","MECH","PUR","QA","EMF","MMF"].filter(code=>!reviewDepartments||reviewDepartments.some(d=>d.code===code));
+  const settingsDrivenRaci = feasibilityRaci !== undefined;
+  const defaultReviewers=()=>settingsDrivenRaci ? feasibilityRaci?.departmentCodes ?? [] : ["EHW","FW","SW","MECH","PUR","QA","EMF","MMF"].filter(code=>!reviewDepartments||reviewDepartments.some(d=>d.code===code));
   const [mode, setMode] = useState<"enquiry" | "opportunity" | "convert">(initialMode);
   const [selectedEnquiryId, setSelectedEnquiryId] = useState(initialEnquiryId || "");
   const [sourceVersion,setSourceVersion]=useState("");
@@ -1297,6 +1302,12 @@ export function UnifiedSalesIntakeModal({
   const [error, setError] = useState("");
   const [inlineCustomerOpen, setInlineCustomerOpen] = useState(false);
 
+  useEffect(() => {
+    if (!settingsDrivenRaci) return;
+    setSelectedDepts(feasibilityRaci?.departmentCodes ?? []);
+    setDispatchFeasibility(Boolean(feasibilityRaci));
+  }, [settingsDrivenRaci, feasibilityRaci?.revision]);
+
   // Sync when initialMode or initialEnquiryId changes
   useEffect(() => {
     setMode(initialMode);
@@ -1305,7 +1316,7 @@ export function UnifiedSalesIntakeModal({
       const enq = enquiries.find((e) => e.id === initialEnquiryId);
       if (enq) {
         setSourceVersion(enq.updatedAt);
-        setSelectedCustomerCode(enq.customerCode);
+        setSelectedCustomerCode(enq.customerId || customers.find(customer => customer.code === enq.customerCode)?.id || "");
         setTitle(enq.title);
         setSelectedDepts(defaultReviewers());
         setScopeSummary(enq.scopeSummary);
@@ -1321,7 +1332,7 @@ export function UnifiedSalesIntakeModal({
     const enq = enquiries.find((e) => e.id === id);
     if (enq) {
       setSourceVersion(enq.updatedAt);
-      setSelectedCustomerCode(enq.customerCode);
+      setSelectedCustomerCode(enq.customerId || customers.find(customer => customer.code === enq.customerCode)?.id || "");
       setTitle(enq.title);
       setSelectedDepts(defaultReviewers());
       setScopeSummary(enq.scopeSummary);
@@ -1330,8 +1341,9 @@ export function UnifiedSalesIntakeModal({
     }
   };
 
-  const selectableCustomers = inlineCreatedCustomer && !customers.some(c=>c.id===inlineCreatedCustomer.id) ? [...customers,inlineCreatedCustomer] : customers;
-  const currentCustomer = selectableCustomers.find((c) => c.code === selectedCustomerCode);
+  const customerChoices = customers.filter(customer => customer.status !== "Inactive");
+  const selectableCustomers = inlineCreatedCustomer && !customerChoices.some(c=>c.id===inlineCreatedCustomer.id) ? [...customerChoices,inlineCreatedCustomer] : customerChoices;
+  const currentCustomer = selectableCustomers.find((c) => c.id === selectedCustomerCode || c.code === selectedCustomerCode);
 
   const configuredDepts = [
     { code:"SAL",label:"SAL · Sales",desc:"Commercial scope and client coordination" },
@@ -1388,6 +1400,7 @@ export function UnifiedSalesIntakeModal({
         targetClosureDate: targetClosureDate || "",
         dispatchFeasibility: mode !== "enquiry" && dispatchFeasibility,
         feasibilityDepts: selectedDepts,
+        ...(dispatchFeasibility && feasibilityRaci ? { feasibilityRaciRevision: feasibilityRaci.revision } : {}),
         enquiryIdToConvert: mode === "convert" ? selectedEnquiryId : undefined,
         expectedUpdatedAt: mode === "convert" ? sourceVersion : undefined,
       });
@@ -1496,7 +1509,7 @@ export function UnifiedSalesIntakeModal({
               <label className="block font-semibold text-foreground">
                 Customer OEM / Client Account:
               </label>
-              <SharedMasterSelect label="Customer" value={selectedCustomerCode} onChange={setSelectedCustomerCode} options={selectableCustomers.map(c=>({value:c.code,label:`${c.name} · ${c.code}`}))}/>
+              <SharedMasterSelect label="Customer" value={selectedCustomerCode} onChange={setSelectedCustomerCode} options={selectableCustomers.map(c=>({value:c.id,label:`${c.name} · ${c.code}`}))}/>
             </div>
             <div>
               <button
@@ -1577,12 +1590,13 @@ export function UnifiedSalesIntakeModal({
                   <input
                     type="checkbox"
                     checked={dispatchFeasibility}
+                disabled={settingsDrivenRaci && !feasibilityRaci}
                     onChange={(e) => setDispatchFeasibility(e.target.checked)}
                     className="size-4 rounded border-border text-primary focus:ring-primary"
                   />
-                  <span>Assign departments for feasibility review</span>
+                  <span>{settingsDrivenRaci ? "Dispatch using the configured feasibility RACI" : "Assign departments for feasibility review"}</span>
                 </label>
-                {dispatchFeasibility && (
+                {dispatchFeasibility && !settingsDrivenRaci && (
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
@@ -1602,7 +1616,21 @@ export function UnifiedSalesIntakeModal({
                 )}
               </div>
 
-              {dispatchFeasibility && (
+              {dispatchFeasibility && settingsDrivenRaci && !feasibilityRaci && <p role="status" className="text-xs text-muted-foreground">Loading feasibility departments from Settings…</p>}
+              {dispatchFeasibility && settingsDrivenRaci && feasibilityRaci && (
+                <fieldset className="grid gap-1 rounded-lg border border-border/60 bg-card p-2.5 sm:grid-cols-2">
+                  <legend className="px-1 text-[11px] font-semibold">Required reviews · current Settings</legend>
+                  {feasibilityRaci.departmentCodes.map(code => {
+                    const department = allDepts.find(item => item.code === code);
+                    return <label key={code} className="flex items-center gap-2 text-xs" title={department?.desc}>
+                      <input type="checkbox" checked disabled aria-label={`${code} required review`} />
+                      {department?.label || code}
+                    </label>;
+                  })}
+                  <p className="text-[10px] text-muted-foreground sm:col-span-2">Change required reviewers in Phases, stages &amp; RACI Settings. This popup follows that saved revision.</p>
+                </fieldset>
+              )}
+              {dispatchFeasibility && !settingsDrivenRaci && (
                 <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 pt-1">
                   {allDepts.map((d) => {
                     const isChecked = selectedDepts.includes(d.code);
@@ -1642,7 +1670,7 @@ export function UnifiedSalesIntakeModal({
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || (dispatchFeasibility && settingsDrivenRaci && !feasibilityRaci && mode !== "enquiry")}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 font-bold text-primary-foreground shadow-xs hover:opacity-90 transition disabled:opacity-50"
             >
               {submitting ? (
@@ -1671,14 +1699,14 @@ export function UnifiedSalesIntakeModal({
       {/* Inline Customer Modal */}
       {inlineCustomerOpen && onCreateCustomer && <CanonicalCustomerModal onClose={()=>setInlineCustomerOpen(false)} onSave={async values=>{
         const saved=await onCreateCustomer(values);
-        setInlineCreatedCustomer(saved);setSelectedCustomerCode(saved.code);setInlineCustomerOpen(false);
+        setInlineCreatedCustomer(saved);setSelectedCustomerCode(saved.id);setInlineCustomerOpen(false);
       }}/>}
       {inlineCustomerOpen && !onCreateCustomer && (
         <InlineCustomerModal
           onClose={() => setInlineCustomerOpen(false)}
           onCustomerCreated={(newCust) => {
             onAddCustomer?.(newCust);
-            setSelectedCustomerCode(newCust.code);
+            setSelectedCustomerCode(newCust.id);
             setInlineCustomerOpen(false);
           }}
         />
@@ -1705,6 +1733,7 @@ export function SalesEnquiriesAndOpportunities({
   onCreateCustomer,
   onOpenSourceInputs,
   reviewDepartments,
+  feasibilityRaci,
 }: {
   customers: CustomerRecord[];
   enquiries: EnquiryOpportunity[];
@@ -1731,6 +1760,7 @@ export function SalesEnquiriesAndOpportunities({
     track?: "turnkey" | "software" | "firmware" | "ready_made";
     dispatchFeasibility: boolean;
     feasibilityDepts: string[];
+    feasibilityRaciRevision?: string | undefined;
     enquiryIdToConvert?: string | undefined;
     expectedUpdatedAt?: string | undefined;
     parameterValues?: Record<string, string> | undefined;
@@ -1739,6 +1769,7 @@ export function SalesEnquiriesAndOpportunities({
   onCreateCustomer?: ((values: {name:string;contact:string;email:string;operationId:string}) => Promise<CustomerRecord>) | undefined;
   onOpenSourceInputs?: ((sourceId:string)=>void) | undefined;
   reviewDepartments?: {code:string;name:string}[] | undefined;
+  feasibilityRaci?: { revision: string; departmentCodes: string[] } | null | undefined;
 }) {
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [sorImporterOpen, setSorImporterOpen] = useState(false);
@@ -2215,6 +2246,7 @@ export function SalesEnquiriesAndOpportunities({
           onAddCustomer={onAddCustomer}
           onCreateCustomer={onCreateCustomer}
           reviewDepartments={reviewDepartments}
+          feasibilityRaci={feasibilityRaci}
         />
       )}
       {sorImporterOpen && (
@@ -2250,6 +2282,7 @@ export function SalesEnquiriesAndOpportunities({
                 targetClosureDate: parsedSor.targetClosureDate,
                 dispatchFeasibility: true,
                 feasibilityDepts: parsedSor.feasibilityDepartments,
+                ...(feasibilityRaci ? { feasibilityRaciRevision: feasibilityRaci.revision } : {}),
               });
             }
             setSorImporterOpen(false);

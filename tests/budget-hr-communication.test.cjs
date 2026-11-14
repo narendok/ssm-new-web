@@ -3,14 +3,22 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
+const tsModuleCache = new Map();
 
 function loadTsModule(relativePath) {
   const filename = path.resolve(__dirname, relativePath);
+  if (tsModuleCache.has(filename)) return tsModuleCache.get(filename);
+  const mod = { exports: {} };
+  tsModuleCache.set(filename, mod.exports);
   const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const mod = { exports: {} };
-  new Function('module', 'exports', compiled)(mod, mod.exports);
+  new Function('module', 'exports', 'require', compiled)(mod, mod.exports, (request) => {
+    if (!request.startsWith('.')) return require(request);
+    const target = path.resolve(path.dirname(filename), request.endsWith('.ts') ? request : `${request}.ts`);
+    return loadTsModule(path.relative(__dirname, target));
+  });
+  tsModuleCache.set(filename, mod.exports);
   return mod.exports;
 }
 
@@ -221,6 +229,15 @@ test('hr self-service: unrecognized identities and client accounts fail closed w
   assert.ok(ehwProfile, 'Avery Vale profile must resolve');
   assert.equal(ehwProfile.employeeCode, 'HLPL-EMP-103');
   assert.equal(ehwProfile.departmentCode, 'EHW');
+  assert.equal(ehwProfile.securityClearance, 'Not recorded', 'Demo clearance must not imply verified access rights');
+  assert.match(ehwProfile.facilityLocation, /^DEMO ONLY/);
+  assert.match(ehwProfile.emergencyContact, /^DEMO ONLY/);
+  assert.match(ehwProfile.phone, /non-callable/);
+
+  const qaProfile = DEFAULT_EMPLOYEE_PROFILES.qa;
+  assert.equal(qaProfile.securityClearance, 'Not recorded');
+  assert.match(qaProfile.emergencyContact, /^DEMO ONLY/);
+  assert.ok(Object.values(DEFAULT_EMPLOYEE_PROFILES).every((entry) => entry.securityClearance === 'Not recorded' && entry.facilityLocation.startsWith('DEMO ONLY') && entry.emergencyContact.startsWith('DEMO ONLY') && entry.email.endsWith('.test') && entry.phone.includes('non-callable')), 'Demo profiles must share marked fictional contact data and must not claim clearance');
 
   // Executive Admin resolves Admin profile explicitly
   const adminPersona = { kind: 'admin', person: 'Full master access', id: 'admin' };

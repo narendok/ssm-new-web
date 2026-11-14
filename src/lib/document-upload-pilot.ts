@@ -72,6 +72,16 @@ export type UploadDocument = {
   linkedRecordRefs?: string[] | undefined;
   localFiles?: { revision: string; checksum?: string | undefined }[] | undefined;
 };
+export function eligibleUploadDepartments(
+  departments: UploadDepartment[],
+  actor: { kind: string; departmentId?: string | undefined },
+): UploadDepartment[] {
+  return departments.filter(
+    (department) =>
+      department.active &&
+      (actor.kind === "admin" || department.id === actor.departmentId),
+  );
+}
 export function assertUploadContextCurrent(
   draft: {
     departmentId?: string | undefined;

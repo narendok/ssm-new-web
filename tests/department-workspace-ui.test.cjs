@@ -57,6 +57,9 @@ test('DepartmentLeadCoordinationCenter source includes Checklist, Kanban, and Ta
   assert.match(coordSource, /const \[completedExpanded, setCompletedExpanded\] = useState<boolean>\(false\)/, 'Completed group collapsed by default');
   assert.match(coordSource, /hideHeader/, 'hideHeader prop supported for clean embedding without duplicate headings');
   assert.match(coordSource, /hideProjectsAndTeam/, 'hideProjectsAndTeam prop supported for My Tasks isolation');
+  assert.match(coordSource, /<SharedMasterSelect label="Task project" required/, 'Task creation uses a searchable project master picker');
+  assert.match(coordSource, /options=\{projects\.map\(p=>\(\{value:p\.id,label:/, 'Picker options come from the permitted project records and use stable IDs');
+  assert.match(coordSource, /value=\{newTaskProject\} onChange=\{setNewTaskProject\}/, 'Task form retains the selected canonical project ID');
 });
 
 test('record and project labels use saved stage names and phase assignments', () => {
@@ -79,21 +82,45 @@ test('DepartmentProjectWorkspace combines project records and linked deliverable
 
   // Verify compact header
   assert.match(workspaceSource, /Lead:\s*<strong className="text-foreground">\{lead\}<\/strong>/, 'Lead displayed in compact context');
-  assert.match(workspaceSource, /<CompactFilterSelect label="Workspace project"/, 'Searchable compact project selector present in header');
+  assert.match(workspaceSource, /<SharedMasterSelect label="Workspace project" value=\{workspaceProjectSelection\}/, 'Project header uses the searchable canonical master selector');
+  assert.match(workspaceSource, /options=\{\[\{value:"all",label:"All projects"\}.*projects\.map\(item=>\(\{value:item\.id,label:`\$\{item\.reference\} · \$\{item\.title\}`\}\)\)\]\}/, 'Workspace search shows reference/title but uses canonical project IDs');
 
   // Verify sub-navigation tabs
   assert.match(workspaceSource, /activeTab === "overview"/, 'Overview subview present');
   assert.match(workspaceSource, /activeTab === "tasks"/, 'Tasks subview present');
   assert.match(workspaceSource, /activeTab === "approvals"/, 'Approvals subview present');
   assert.match(workspaceSource, /activeTab === "records"/, 'Records subview present');
-  assert.match(workspaceSource, /activeTab === "team"/, 'Team subview present');
+  assert.doesNotMatch(workspaceSource, /aria-label="Workspace subviews"/, 'Sidebar routes replace the duplicate in-page tab strip');
+  assert.doesNotMatch(workspaceSource, /activeTab === "team"/, 'Team capacity is not a duplicate subview');
+  assert.match(workspaceSource, /Team & capacity/, 'Team roster is available from the Overview summary');
+  assert.match(workspaceSource, /activeTab === "overview" && project && <ProjectMasterSpecSheet/, 'Project master details stay inside Overview');
+  assert.match(workspaceSource, /activeTab === "overview" && <section aria-label="Workspace summary"/, 'Cross-team summary metrics stay inside Overview');
+  assert.match(workspaceSource, /props\.onOpenRecords \? props\.onOpenRecords\(\) : setActiveTab\("records"\)/, 'Overview record shortcut opens the sidebar-owned records destination');
+  assert.match(workspaceSource, /props\.onOpenApprovals \? props\.onOpenApprovals\(\) : setActiveTab\("approvals"\)/, 'Overview approval shortcut opens the sidebar-owned approvals destination');
+
+  const vaultSource = fs.readFileSync(path.resolve(__dirname, '../src/components/SharedDocumentVault.tsx'), 'utf8');
+  assert.match(vaultSource, /<details aria-label="Lifecycle and draft source context"/, 'Document lifecycle and source context is available on demand');
+  assert.match(vaultSource, />All documents<\/Button>/, 'Document detail keeps a focused in-feature route back to the library');
+
+  const approvalsSource = fs.readFileSync(path.resolve(__dirname, '../src/components/ApprovalsFullPageView.tsx'), 'utf8');
+  assert.match(approvalsSource, /Return for rework/, 'Approval decision action states its workflow purpose');
+  assert.match(approvalsSource, /rounded-xl border bg-card p-3\.5/, 'Approval list uses compact full-page cards');
+  assert.doesNotMatch(approvalsSource, /onBack/, 'Full-page approvals do not duplicate sidebar navigation with a back action');
+  assert.match(approvalsSource, /className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border\/50 bg-muted\/20 px-3 py-2 text-xs"/, 'Approval counts use a single compact strip instead of tall KPI cards');
+  assert.match(approvalsSource, /<details className="text-xs">\s*<summary className="w-fit cursor-pointer text-primary">Review details<\/summary>/, 'Long approval descriptions remain collapsed until requested');
+  assert.match(approvalsSource, /<summary className="cursor-pointer underline decoration-dotted">Decision note<\/summary>/, 'Long rejection and return notes remain collapsed until requested');
+
+  const pmssSource = fs.readFileSync(path.resolve(__dirname, '../src/components/ProjectMasterSpecSheet.tsx'), 'utf8');
+  assert.doesNotMatch(pmssSource, /aria-label="PMSS tabs"/, 'Project spec sheet does not add another tab strip');
+  assert.match(pmssSource, /<dl aria-label="Project overview"/, 'Project spec sheet keeps its key overview visible');
+  assert.match(pmssSource, /<summary className="cursor-pointer text-xs font-semibold">Phases & gates/, 'Project gate detail remains available on demand');
 
   // Department record and its controlled document are shown together as one row group.
   assert.match(workspaceSource, /Records & Deliverables \(\{registerRowCount\}\)/, 'One combined project register heading present');
   assert.match(workspaceSource, /documentsForRecord\(record\)/, 'Linked documents are grouped with their department record');
   assert.match(workspaceSource, /Conflicting duplicate reference ·/, 'Duplicate controlled references are visibly flagged without deleting source records');
   assert.match(workspaceSource, /recordStageLabel\(record\.fields,\s*record\.type,\s*project\?\.fields\)/, 'Register resolves the selected project configuration');
-  assert.match(routeSource, /recordStageLabel\(\{ \.\.\.record\.fields, recordStage: String\(value\) \}, record\.type\)/, 'Legacy stored stage fields are presented canonically in record details without rewriting the source');
+  assert.match(routeSource, /recordStageLabel\(\s*\{ \.\.\.record\.fields, recordStage: String\(value\) \},\s*record\.type,?\s*\)/, 'Legacy stored stage fields are presented canonically in record details without rewriting the source');
   assert.match(workspaceSource, /Open file details/, 'Linked original opens from its record group');
   assert.match(routeSource, /onCreateDeliverable=\{\(\) => \{[\s\S]*setDocumentUploadRequested\(true\);[\s\S]*setModal\("documents"\)/, 'Project Add document opens the upload dialog directly instead of the template chooser');
   assert.match(routeSource, /initialProjectId=\{documentUploadProjectId\}/, 'Current project selection is passed to the upload dialog');
@@ -116,12 +143,16 @@ test('legacy RecordForm keeps PRS editable and assigns a fixed HW stage without 
 
 test('decision stage choices and browser-local validation use the selected project lifecycle codes', () => {
   const decisionSource = fs.readFileSync(path.resolve(__dirname, '../src/components/DecisionDeviationLog.tsx'), 'utf8');
+  const approvalsSource = fs.readFileSync(path.resolve(__dirname, '../src/components/ApprovalsFullPageView.tsx'), 'utf8');
   const routeSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
 
   assert.match(decisionSource, /lifecycleStages\.some\(\(item\) => item\.code === stage\)/, 'The form accepts its pinned lifecycle stage code');
+  assert.match(decisionSource, /<SharedMasterSelect\s+label="Decision project"[\s\S]*?options=\{projects\.map/, 'Decision project selection searches the permitted canonical project list');
+  assert.match(approvalsSource, /<SharedMasterSelect\s+label="Source record"[\s\S]*?options=\{records\.map/, 'Approval source record selection searches permitted records');
+  assert.match(approvalsSource, /resolveApprovalProjectFromRecord\(source\?\.fields, projects\)/, 'Selecting a source record keeps its exact canonical project link across supported aliases');
   assert.doesNotMatch(decisionSource, /stageOptions\.includes\(stage\)/, 'Legacy chronicle labels no longer reject canonical stage codes');
-  assert.match(routeSource, /const decisionBaseline = readLifecycleBaseline\(decisionProject\?\.fields\["lifecycleBaseline"\]\)/, 'Local save validation loads the selected project baseline');
-  assert.match(routeSource, /\)\.map\(stage => stage\.code\)/, 'Local save validation permits only stages in that project baseline');
+  assert.match(routeSource, /const decisionBaseline = readLifecycleBaseline\(\s*decisionProject\?\.fields\["lifecycleBaseline"\],?\s*\)/, 'Local save validation loads the selected project baseline');
+  assert.match(routeSource, /\)\.map\(\(?stage\)? => stage\.code\)/, 'Local save validation permits only stages in that project baseline');
 });
 
 test('QA CAPA shortcut preserves its record filter and explains empty filtered registers', () => {

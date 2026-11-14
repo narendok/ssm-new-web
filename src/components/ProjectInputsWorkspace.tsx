@@ -2,18 +2,27 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { changedInputDrafts, readInputDraft } from "@/lib/project-input-drafts";
 import { useServerFn } from "@tanstack/react-start";
-import { getProjectInputs, mutateProjectInputs } from "@/lib/project-inputs.functions";
+import { getProjectInputs, mutateProjectInputs, saveDepartmentFeasibilityEstimate } from "@/lib/project-inputs.functions";
 import { getSharedTestWorkspace } from "@/lib/shared-test.functions";
 import {
   PROJECT_INPUT_PARAMETERS,
   FEASIBILITY_STATES,
   inputReadiness,
+  feasibilityEstimateReview,
+  feasibilityDepartmentCodes,
+  mergeFeasibilityTaskPlan,
   type InputSheet,
   type ParameterValue,
   type ParameterResponse,
+  type DepartmentFeasibilityEstimate,
 } from "@/lib/project-inputs";
+import { COMPANY_PHASES, DEFAULT_PHASE_DURATIONS, defaultLifecycleRevision, getDefaultStageDurationDays, readLifecycleBaseline, type CompanyPhase, type PhaseDurationDefault } from "@/lib/lifecycle-baseline";
+import { feasibilityLifecycleStages } from "@/lib/feasibility-lifecycle";
+import { getLifecycleWorkspace } from "@/lib/lifecycle-workspace.functions";
+import { getSharedDepartmentRoleConfiguration } from "@/lib/department-roles.functions";
 import type { TestMembership } from "@/lib/test-auth.functions";
 import type { AnalysisRecord } from "@/lib/project-analysis-data";
+import { isSelectableMasterStatus } from "@/lib/shared-master-options";
 import { SharedMasterSelect } from "./SharedMasterSelect";
 import { CustomerChangeRequestsPanel } from "./CustomerChangeRequestsPanel";
 import { SmartParameterField } from "./SmartParameterField";
@@ -210,7 +219,10 @@ export function ProjectInputsWorkspace({
 }) {
   const load = useServerFn(getProjectInputs),
     write = useServerFn(mutateProjectInputs),
-    loadMembers = useServerFn(getSharedTestWorkspace);
+    loadMembers = useServerFn(getSharedTestWorkspace),
+    loadLifecycle = useServerFn(getLifecycleWorkspace),
+    loadDepartmentRoles = useServerFn(getSharedDepartmentRoleConfiguration),
+    saveEstimate = useServerFn(saveDepartmentFeasibilityEstimate);
   const effectiveMembership: TestMembership = membership ?? {
     membershipId: "demo-admin-id",
     organizationId: "demo-org-id",
@@ -237,6 +249,18 @@ export function ProjectInputsWorkspace({
     queryKey: ["shared-test-workspace", effectiveMembership.organizationId, effectiveMembership.membershipId],
     queryFn: () => loadMembers(),
     enabled: !!membership,
+  });
+  const lifecycle = useQuery({
+    queryKey: ["lifecycle-workspace", effectiveMembership.organizationId, effectiveMembership.membershipId],
+    queryFn: () => membership ? loadLifecycle() : Promise.resolve(null),
+    enabled: !!membership,
+    retry: false,
+  });
+  const departmentRoles = useQuery({
+    queryKey: ["shared-department-role-configuration", effectiveMembership.organizationId, effectiveMembership.membershipId],
+    queryFn: () => loadDepartmentRoles(),
+    enabled: !!membership && effectiveMembership.role === "department_lead",
+    retry: false,
   });
   const [sourceId, setSourceId] = useState(
     initialSourceId && initialSourceId !== "all" ? initialSourceId : "",
@@ -268,12 +292,19 @@ export function ProjectInputsWorkspace({
   const inputBaseVersion = useRef(0);
   const [assessmentDrafts, setAssessmentDrafts] = useState<Record<string, ParameterResponse>>({});
   const [assessmentDraftDirty, setAssessmentDraftDirty] = useState(false);
+  const [estimateDraft, setEstimateDraft] = useState<DepartmentFeasibilityEstimate | null>(null);
+  const [estimateScheduleReviewed, setEstimateScheduleReviewed] = useState(false);
+  const [estimateDepartmentCode, setEstimateDepartmentCode] = useState(membership?.departmentCode || "");
+  const [estimateBusy, setEstimateBusy] = useState(false);
   const inputDraftSheetId = useRef("");
   const assessmentDraftScope = useRef("");
   const assessmentGeneration = useRef(0);
   const sheet = query.data?.sheets.find(
     (s) => s.source_record_id === sourceId || s.project_record_id === sourceId,
   );
+  const lifecycleRevision = (lifecycle.data?.revision
+    ? readLifecycleBaseline(JSON.stringify(lifecycle.data.revision.definition))
+    : undefined) ?? defaultLifecycleRevision();
   const savedSheets = (query.data?.sheets || []).filter((saved) => {
     if (sourceId && saved.source_record_id !== sourceId && saved.project_record_id !== sourceId) return false;
     const source = sources.find((record) => record.id === saved.source_record_id || record.id === saved.project_record_id);
@@ -301,14 +332,71 @@ export function ProjectInputsWorkspace({
     !!sheet && (sheet.input_owner_id === effectiveMembership.membershipId || effectiveMembership.role === "admin");
   const editable = sheet?.status === "Draft";
   const dept = effectiveMembership.departmentCode || "";
+  const estimateDepartments = membership && effectiveMembership.role === "department_lead"
+    ? feasibilityDepartmentCodes(
+        departmentRoles.data?.departments ?? people.data?.departments ?? [],
+        departmentRoles.data?.roles ?? [],
+        effectiveMembership.membershipId,
+        dept,
+      )
+    : [];
+  const estimateDept = estimateDepartments.includes(estimateDepartmentCode)
+    ? estimateDepartmentCode
+    : estimateDepartments[0] || "";
+  useEffect(() => {
+    if (estimateDept && estimateDept !== estimateDepartmentCode) setEstimateDepartmentCode(estimateDept);
+  }, [estimateDept, estimateDepartmentCode]);
   const members =
     people.data?.members.filter(
-      (m) => m.department_id === people.data?.departments.find((d) => d.code === dept)?.id,
+      (m) => m.department_id === people.data?.departments.find((d) => d.code === estimateDept)?.id,
     ) || [];
   const parameters = [...PROJECT_INPUT_PARAMETERS, ...(sheet?.custom_parameters || [])];
+  const estimateForDepartment = sheet?.department_estimates?.[estimateDept];
+  const selectedFeasibilitySource = sources.find((source) => source.id === sourceId);
+  const { track: recordedTrack, stages: applicableLifecycleStages } = feasibilityLifecycleStages(lifecycleRevision, selectedFeasibilitySource?.fields);
+  const departmentLifecycleTasks = applicableLifecycleStages.flatMap((stage) => stage.tasks.filter((task) => task.department === estimateDept).map((task) => ({ stage, task, key: `${stage.code}:${task.id}` })));
+  const phaseDurationDefaults = Object.fromEntries(COMPANY_PHASES.map(([phase]) => [phase, lifecycleRevision.phaseDurations?.[phase] ?? DEFAULT_PHASE_DURATIONS[phase]])) as Record<CompanyPhase, PhaseDurationDefault>;
+  const defaultStageDurationDays = Object.fromEntries(applicableLifecycleStages.map((stage) => [stage.code, getDefaultStageDurationDays(lifecycleRevision, stage)])) as Record<string, number>;
+  const estimateReview = estimateDraft && lifecycle.data?.revision?.id
+    ? feasibilityEstimateReview(estimateDraft, lifecycle.data.revision.id, defaultStageDurationDays)
+    : null;
+  const phaseZeroDuration = phaseDurationDefaults.TG_0;
+  const autoPlanFeasibilityTasks = (stageDays: Record<string, number>) => Object.fromEntries(departmentLifecycleTasks.map(({ stage, task, key }) => {
+    const stageTasks = departmentLifecycleTasks.filter((item) => item.stage.code === stage.code);
+    const stageIndex = stageTasks.findIndex((item) => item.key === key);
+    const duration = Math.max(1, stageDays[stage.code] ?? defaultStageDurationDays[stage.code] ?? 1);
+    return [key, {
+      stageCode: stage.code, phase: stage.phase,
+      effortHours: task.estimatedHoursMin ?? phaseDurationDefaults[stage.phase].taskSlaMinHours,
+      startOffsetDays: stageTasks.length ? Math.min(duration - 1, Math.floor(stageIndex * duration / stageTasks.length)) : 0,
+      durationDays: 1,
+    }];
+  }));
+  const visibleEstimates = sheet?.department_estimates ?? {};
+  const estimateTotal = Object.values(visibleEstimates).reduce((total, estimate) => total + estimate.preliminaryBomCost + estimate.reusableMaterialValue + estimate.consumableCost + estimate.labCertificationFees + estimate.toolingCapex, 0);
+  useEffect(() => {
+    setEstimateScheduleReviewed(false);
+    if (!sheet) { setEstimateDraft(null); return; }
+    const saved = sheet.department_estimates?.[dept];
+    if (saved) {
+      const suggested = autoPlanFeasibilityTasks(defaultStageDurationDays);
+      const taskPlan = mergeFeasibilityTaskPlan(
+        departmentLifecycleTasks.map(({ stage, key }) => ({ key, stageCode: stage.code, phase: stage.phase })),
+        saved.taskPlan,
+        suggested,
+      );
+      setEstimateDraft({ ...structuredClone(saved), stageDurationDays: saved.stageDurationDays ?? defaultStageDurationDays, taskPlan });
+      return;
+    }
+    setEstimateDraft({
+      currency: "INR", engineeringHours: 0, plannedDurationDays: Math.round((phaseZeroDuration.minWorkingDays + phaseZeroDuration.maxWorkingDays) / 2), stageDurationDays: defaultStageDurationDays,
+      taskPlan: autoPlanFeasibilityTasks(defaultStageDurationDays), preliminaryBomCost: 0, reusableMaterialValue: 0,
+      consumableCost: 0, labCertificationFees: 0, toolingCapex: 0, assumptions: "",
+    });
+  }, [sheet?.id, sheet?.version, estimateDept, lifecycle.data?.revision?.id]);
   const draftKey = sheet ? `ssm:input-draft:${effectiveMembership.organizationId}:${effectiveMembership.membershipId}:${sheet.id}:${sheet.revision}` : "";
   const draftMatchesSheet = !!sheet && inputDraftSheetId.current === draftKey;
-  const assessmentKey = draftKey ? `${draftKey}:assessment:${dept}` : "";
+  const assessmentKey = draftKey ? `${draftKey}:assessment:${estimateDept}` : "";
   useEffect(() => {
     if (!sheet) {
       inputDraftSheetId.current = "";
@@ -366,8 +454,8 @@ export function ProjectInputsWorkspace({
     if (!scopeChanged && assessmentDraftDirty) return;
     assessmentDraftScope.current = currentScope;
     const saved = Object.fromEntries(parameters
-      .filter((p) => p.lead === dept || p.reviewers.includes(dept))
-      .map((p) => [p.id, { ...emptyResponse, ...sheet.parameter_values[p.id]?.responses[dept] }]));
+      .filter((p) => p.lead === estimateDept || p.reviewers.includes(estimateDept))
+      .map((p) => [p.id, { ...emptyResponse, ...sheet.parameter_values[p.id]?.responses[estimateDept] }]));
     let recovered: ReturnType<typeof readAssessmentDraft>;
     if (scopeChanged && editable && membership) {
       try { recovered = readAssessmentDraft(localStorage.getItem(assessmentKey), sheet.revision); } catch { /* Recovery is optional. */ }
@@ -379,13 +467,13 @@ export function ProjectInputsWorkspace({
       setAssessmentDraftDirty(Object.keys(restored).length > 0);
       if (Object.keys(restored).length) setNotice("Recovered your department assessment draft. Review it before saving; no approval was submitted.");
     }
-  }, [sheet?.id, sheet?.version, dept, assessmentDraftDirty, assessmentKey]);
+  }, [sheet?.id, sheet?.version, estimateDept, assessmentDraftDirty, assessmentKey]);
   useEffect(() => {
     if (!sheet || !editable || !membership || !assessmentDraftDirty || assessmentDraftScope.current !== assessmentKey) return;
     assessmentGeneration.current++;
     try {
       const changed = Object.fromEntries(Object.entries(assessmentDrafts).filter(([id, row]) => {
-        const saved = sheet.parameter_values[id]?.responses[dept] || emptyResponse;
+        const saved = sheet.parameter_values[id]?.responses[estimateDept] || emptyResponse;
         return ["status", "remarks", "evidence", "ownerId", "dueDate"].some(key => row[key as keyof ParameterResponse] !== saved[key as keyof ParameterResponse]);
       }));
       localStorage.setItem(assessmentKey, JSON.stringify({revision: sheet.revision, version: sheet.version, values: changed}));
@@ -398,9 +486,9 @@ export function ProjectInputsWorkspace({
     const after = quickInputsDraft[p.id] || { input: "", source: "", finalValue: "" };
     return before.input !== after.input || before.source !== after.source || before.finalValue !== after.finalValue;
   }).length : 0;
-  const assessmentParameters = parameters.filter((p) => p.lead === dept || p.reviewers.includes(dept));
+  const assessmentParameters = parameters.filter((p) => p.lead === estimateDept || p.reviewers.includes(estimateDept));
   const changedAssessmentCount = sheet ? assessmentParameters.filter((p) => {
-    const before = sheet.parameter_values[p.id]?.responses[dept] || emptyResponse;
+    const before = sheet.parameter_values[p.id]?.responses[estimateDept] || emptyResponse;
     const after = assessmentDrafts[p.id] || emptyResponse;
     return before.status !== after.status || before.remarks !== after.remarks || before.evidence !== after.evidence || before.ownerId !== after.ownerId || before.dueDate !== after.dueDate;
   }).length : 0;
@@ -553,7 +641,7 @@ export function ProjectInputsWorkspace({
     const savingScope = assessmentKey;
     const generation = assessmentGeneration.current;
     const changed = assessmentParameters.filter((p) => {
-      const before = sheet.parameter_values[p.id]?.responses[dept] || emptyResponse;
+      const before = sheet.parameter_values[p.id]?.responses[estimateDept] || emptyResponse;
       const after = assessmentDrafts[p.id] || emptyResponse;
       return before.status !== after.status || before.remarks !== after.remarks || before.evidence !== after.evidence || before.ownerId !== after.ownerId || before.dueDate !== after.dueDate;
     });
@@ -573,7 +661,7 @@ export function ProjectInputsWorkspace({
           sheetId: sheet.id,
           expectedVersion: currentVersion,
           parameterId: p.id,
-          department: dept,
+          department: estimateDept,
           status: response.status,
           remarks: response.remarks,
           evidence: response.evidence,
@@ -588,7 +676,7 @@ export function ProjectInputsWorkspace({
         setAssessmentDraftDirty(false);
         try { localStorage.removeItem(savingScope); } catch { /* Shared save is confirmed. */ }
       }
-      setNotice(changed.length ? `Saved ${saved} ${dept} department assessment${saved === 1 ? "" : "s"}.` : "No department assessment changes to save.");
+      setNotice(changed.length ? `Saved ${saved} ${estimateDept} department assessment${saved === 1 ? "" : "s"}.` : "No department assessment changes to save.");
     } catch (e) {
       await query.refetch();
       setError(saved
@@ -596,6 +684,34 @@ export function ProjectInputsWorkspace({
         : e instanceof Error ? e.message : "Department update failed. Your edits are preserved.");
     } finally {
       setBusy(false);
+    }
+  }
+  async function saveFeasibilityEstimate() {
+    if (!sheet || !estimateDraft || !membership || effectiveMembership.role !== "department_lead" || !estimateDept) return;
+    if (!lifecycle.data?.revision?.id) { setError("The saved lifecycle settings could not be confirmed. Reload settings before saving this estimate."); return; }
+    const stageDays = { ...defaultStageDurationDays };
+    const tasks = departmentLifecycleTasks.map(({ stage, task, key }) => ({ stage, task, plan: estimateDraft.taskPlan[key] }));
+    if (tasks.some(({ stage, plan }) => !plan || plan.effortHours <= 0 || plan.durationDays <= 0 || plan.startOffsetDays < 0 || plan.startOffsetDays + plan.durationDays > (stageDays[stage.code] ?? 1))) {
+      setError("Give each configured department task an effort estimate and a timeline within its own stage duration.");
+      return;
+    }
+    setEstimateBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const engineeringHours = tasks.reduce((total, item) => total + (item.plan?.effortHours || 0), 0);
+      await saveEstimate({ data: {
+        sheetId: sheet.id,
+        expectedVersion: sheet.version,
+        estimate: { ...estimateDraft, departmentCode: estimateDept, lifecycleRevisionId: lifecycle.data.revision.id, stageDurationDays: stageDays, taskPlan: Object.fromEntries(Object.entries(estimateDraft.taskPlan).map(([key, plan]) => [key, { ...plan, phase: plan.phase, stageCode: plan.stageCode }])), engineeringHours },
+      } });
+      await query.refetch();
+      setNotice(`${estimateDept} task schedule and feasibility estimate saved to the shared sheet. This is a planning estimate, not spend approval.`);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Estimate did not save. Reload the sheet before retrying.");
+      void query.refetch();
+    } finally {
+      setEstimateBusy(false);
     }
   }
   return (
@@ -805,6 +921,90 @@ export function ProjectInputsWorkspace({
               </div>
             ))}
           </div>
+          {membership && sheet.status === "Draft" && (
+            <section className="space-y-3 rounded-lg border border-border bg-card p-3" aria-label="Department lifecycle budget and task timeline estimate">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold">Feasibility budget and lifecycle task plan</h3>
+                  <p className="text-xs text-muted-foreground">Admin sets each stage’s default duration. During feasibility, department leads estimate their assigned tasks and schedule them inside the applicable stage window.</p>
+                </div>
+                <span className="rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1 text-[10px] font-medium text-amber-800 dark:text-amber-200">Estimate only · no spend approval</span>
+              </div>
+              {(effectiveMembership.role === "admin" || dept === "FIN") && Object.keys(visibleEstimates).length > 0 && (
+                <div className="rounded border border-border p-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="font-semibold">Visible departmental estimate subtotal</span>
+                    <span className="font-mono font-semibold">{visibleEstimates[Object.keys(visibleEstimates)[0]!]!.currency} {estimateTotal.toLocaleString("en-IN")}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                    {Object.entries(visibleEstimates).map(([code, value]) => <span key={code} className="rounded bg-muted px-2 py-1">{code} · {value.engineeringHours} h · {Object.keys(value.taskPlan).length} lifecycle tasks</span>)}
+                  </div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">Subtotal includes BOM, reusable/consumable materials, lab and tooling. Engineering effort remains in hours until approved role rates are configured.</p>
+                </div>
+              )}
+              {effectiveMembership.role === "department_lead" && estimateDept && (
+                <>
+                  {estimateDepartments.length > 1 && <label className="grid max-w-sm gap-1 text-xs">Work as configured department role<select aria-label="Feasibility department role" className={field} value={estimateDept} onChange={event => setEstimateDepartmentCode(event.target.value)}>{estimateDepartments.map(code => <option key={code} value={code}>{people.data?.departments.find(department => department.code === code)?.name || code} · {code}</option>)}</select></label>}
+                  {departmentRoles.error && <p role="status" className="text-[10px] text-amber-700 dark:text-amber-300">Additional department roles could not be loaded; only your primary department is available until Settings reconnects.</p>}
+                  <p className="text-xs font-medium">{estimateDept} · {departmentLifecycleTasks.length} configured lifecycle tasks · {Object.values(estimateDraft?.taskPlan ?? {}).reduce((sum, plan) => sum + plan.effortHours, 0)} estimated engineering hours</p>
+                  {!recordedTrack && selectedFeasibilitySource && <p role="status" className="text-[11px] text-muted-foreground">No engineering track is recorded yet. These are provisional tasks across configured candidate tracks; the saved track will filter out stages that do not apply.</p>}
+                  <p className="text-[10px] text-muted-foreground" aria-label="Phase duration planning reference">Phase duration ranges remain Admin planning targets; task offsets below are relative to their own stage duration.</p>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <label className="grid gap-1 text-[10px] text-muted-foreground">Preliminary BOM cost ({estimateDraft?.currency || "INR"})<input aria-label="Preliminary BOM estimate" className={field} type="number" min="0" step="0.01" value={estimateDraft?.preliminaryBomCost ?? 0} onChange={(event) => setEstimateDraft((current) => current ? { ...current, preliminaryBomCost: Number(event.target.value) || 0 } : current)} /></label>
+                    <label className="grid gap-1 text-[10px] text-muted-foreground">Reusable material value ({estimateDraft?.currency || "INR"})<input aria-label="Reusable material estimate" className={field} type="number" min="0" step="0.01" value={estimateDraft?.reusableMaterialValue ?? 0} onChange={(event) => setEstimateDraft((current) => current ? { ...current, reusableMaterialValue: Number(event.target.value) || 0 } : current)} /></label>
+                    <label className="grid gap-1 text-[10px] text-muted-foreground">Consumables ({estimateDraft?.currency || "INR"})<input aria-label="Consumable estimate" className={field} type="number" min="0" step="0.01" value={estimateDraft?.consumableCost ?? 0} onChange={(event) => setEstimateDraft((current) => current ? { ...current, consumableCost: Number(event.target.value) || 0 } : current)} /></label>
+                    <label className="grid gap-1 text-[10px] text-muted-foreground">Lab / certification fees ({estimateDraft?.currency || "INR"})<input aria-label="Lab and certification estimate" className={field} type="number" min="0" step="0.01" value={estimateDraft?.labCertificationFees ?? 0} onChange={(event) => setEstimateDraft((current) => current ? { ...current, labCertificationFees: Number(event.target.value) || 0 } : current)} /></label>
+                    <label className="grid gap-1 text-[10px] text-muted-foreground">Tooling CapEx ({estimateDraft?.currency || "INR"})<input aria-label="Tooling capital expenditure estimate" className={field} type="number" min="0" step="0.01" value={estimateDraft?.toolingCapex ?? 0} onChange={(event) => setEstimateDraft((current) => current ? { ...current, toolingCapex: Number(event.target.value) || 0 } : current)} /></label>
+                  </div>
+                  {departmentLifecycleTasks.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium">Tasks are auto-planned within their own stage duration; lead can edit effort and timing</p>
+                        <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => { setEstimateDraft((current) => current ? { ...current, ...(lifecycle.data?.revision?.id ? { lifecycleRevisionId: lifecycle.data.revision.id } : {}), stageDurationDays: defaultStageDurationDays, taskPlan: autoPlanFeasibilityTasks(defaultStageDurationDays) } : current); setEstimateScheduleReviewed(true); }}>Auto-plan tasks</button>
+                      </div>
+                      {estimateReview?.requiresReview && <div className="space-y-2 rounded border border-amber-500/40 bg-amber-500/10 p-2 text-xs"><p role="status">Lifecycle settings changed{estimateReview.changedStageCodes.length ? ` for ${estimateReview.changedStageCodes.join(", ")}` : ""}. Saved task timings are preserved. Review each task against the current Admin stage window, or choose “Auto-plan tasks” to propose a fresh schedule.</p><label className="flex items-start gap-2"><input aria-label="Confirm feasibility task schedule review" type="checkbox" checked={estimateScheduleReviewed} onChange={event => setEstimateScheduleReviewed(event.target.checked)} /><span>I reviewed this department’s task timeline against the current lifecycle settings.</span></label></div>}
+                      {COMPANY_PHASES.map(([phase, label]) => {
+                        const phaseStages = [...new Set(departmentLifecycleTasks.filter(({ stage }) => stage.phase === phase).map(({ stage }) => stage.code))];
+                        if (!phaseStages.length) return null;
+                        return <details key={phase} open={phase === "TG_0"} className="rounded border border-border">
+                          <summary className="cursor-pointer bg-muted/40 px-3 py-2 text-xs font-medium">{phase.replace("TG_", "Phase ")} · {label} · {phaseStages.length} stages</summary>
+                          <div className="space-y-2 p-2">
+                            {phaseStages.map((stageCode) => {
+                              const items = departmentLifecycleTasks.filter(({ stage }) => stage.code === stageCode);
+                              const stage = items[0]!.stage;
+                              const days = defaultStageDurationDays[stage.code] ?? 1;
+                              const sla = phaseDurationDefaults[phase].taskSlaMinHours;
+                              return <details key={stage.code} open className="rounded border border-border">
+                                <summary className="cursor-pointer px-3 py-2 text-xs">{stage.code} · {stage.name} · Admin default {days} working days · {items.length} tasks</summary>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full min-w-[620px] text-left text-xs">
+                                    <thead className="bg-muted/50"><tr><th className="p-2">Task</th><th>Effort (h)</th><th>Start offset (days)</th><th>Duration (days)</th></tr></thead>
+                                    <tbody>{items.map(({ task, key }) => {
+                                      const plan = estimateDraft?.taskPlan[key] ?? { stageCode: stage.code, phase, effortHours: task.estimatedHoursMin ?? sla, startOffsetDays: 0, durationDays: 1 };
+                                      const updatePlan = (patch: Partial<typeof plan>) => setEstimateDraft((current) => current ? { ...current, taskPlan: { ...current.taskPlan, [key]: { ...plan, ...patch, stageCode: stage.code, phase } } } : current);
+                                      return <tr className="border-t border-border" key={key}>
+                                        <td className="p-2" title={task.description}>{task.title}</td>
+                                        <td><input aria-label={`${stage.code} ${task.title} estimated effort hours`} className={`${field} min-w-20`} type="number" min="1" value={plan.effortHours} onChange={(event) => updatePlan({ effortHours: Number(event.target.value) || 0 })} /></td>
+                                        <td><input aria-label={`${stage.code} ${task.title} start offset days`} className={`${field} min-w-20`} type="number" min="0" max={Math.max(0, days - 1)} value={plan.startOffsetDays} onChange={(event) => updatePlan({ startOffsetDays: Number(event.target.value) || 0 })} /></td>
+                                        <td><input aria-label={`${stage.code} ${task.title} duration days`} className={`${field} min-w-20`} type="number" min="1" max={days} value={plan.durationDays} onChange={(event) => updatePlan({ durationDays: Number(event.target.value) || 0 })} /></td>
+                                      </tr>;
+                                    })}</tbody>
+                                  </table>
+                                </div>
+                              </details>;
+                            })}
+                          </div>
+                        </details>;
+                      })}
+                    </div>
+                  )}
+                  <label className="grid gap-1 text-[10px] text-muted-foreground">Assumptions / exclusions<textarea aria-label="Feasibility estimate assumptions" className={field} rows={2} maxLength={2000} value={estimateDraft?.assumptions || ""} onChange={(event) => setEstimateDraft((current) => current ? { ...current, assumptions: event.target.value } : current)} /></label>
+                  <Button size="sm" disabled={estimateBusy || !estimateDraft || !departmentLifecycleTasks.length || Boolean(estimateReview?.requiresReview && !estimateScheduleReviewed)} onClick={() => void saveFeasibilityEstimate()}>{estimateBusy ? "Saving estimate…" : estimateForDepartment ? "Update department estimate" : "Save department estimate"}</Button>
+                </>
+              )}
+              {effectiveMembership.role !== "department_lead" && effectiveMembership.role !== "admin" && <p className="text-xs text-muted-foreground">Department leads submit effort, task timing and cost inputs. Finance reviews the roll-up; saving an estimate does not authorize spend.</p>}
+            </section>
+          )}
           {editable && inputOwner && <p role="status" className="text-[11px] text-muted-foreground">{busy ? (membership ? "Saving to shared project inputs…" : "Saving browser-local demo inputs…") : autoSavePaused ? "Automatic save paused — review your draft and use Save inputs to retry." : inputDraftDirty ? "Draft changed · automatically saving after you finish typing…" : membership ? "Inputs saved · draft autosave is on." : "Demo inputs saved in this browser · draft autosave is on."}{draftRecoveryError ? ` ${draftRecoveryError}` : ""}</p>}
           <div className="flex flex-wrap gap-2">
             <input
@@ -840,11 +1040,11 @@ export function ProjectInputsWorkspace({
             )}
             {editable && effectiveMembership.role === "department_lead" && changedAssessmentCount > 0 && (
               <Button size="sm" variant="outline" disabled={busy} onClick={() => void saveDepartmentInputs()}>
-                {busy ? "Saving…" : `Save ${dept} updates · ${changedAssessmentCount}`}
+                {busy ? "Saving…" : `Save ${estimateDept} updates · ${changedAssessmentCount}`}
               </Button>
             )}
           </div>
-          {departmentView !== "All" && <p className="text-[11px] text-muted-foreground">Showing {rows.length} shared parameters related to {departmentView}; lead fields are editable only by that primary department, while assigned reviewers can add review questions.</p>}
+          {departmentView !== "All" && <p className="text-[11px] text-muted-foreground">Showing {rows.length} shared parameters related to {departmentView}; department actions are enabled only for your configured {estimateDept || dept} role.</p>}
           <div className="space-y-2">
             {rows.map((p) => {
               const row = sheet.parameter_values[p.id] || emptyRow;
@@ -891,14 +1091,14 @@ export function ProjectInputsWorkspace({
                     <p className="mt-2 text-[10px] text-muted-foreground">Dependent teams: {p.consumers.join(", ") || "None listed"}</p>
                     {assigned.map((code) => {
                       const response = row.responses[code];
-                      const canAssess = code === dept && p.lead === dept && editable && effectiveMembership.role === "department_lead";
-                      const canQuery = code === dept && p.lead !== dept && p.reviewers.includes(dept) && editable && effectiveMembership.role === "department_lead";
+                      const canAssess = code === estimateDept && p.lead === estimateDept && editable && effectiveMembership.role === "department_lead" && estimateDepartments.includes(estimateDept);
+                      const canQuery = code === estimateDept && p.lead !== estimateDept && p.reviewers.includes(estimateDept) && editable && effectiveMembership.role === "department_lead" && estimateDepartments.includes(estimateDept);
                       const responseDraft = assessmentDrafts[p.id] || { ...emptyResponse, ...response };
                       return (
                         <div className="mt-2 border-t border-border/50 pt-2" key={code}>
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <p className="text-xs font-medium">{code} · {response?.status || "Awaiting assessment"}{response?.reviewedBy ? " · Reviewed" : ""}{p.lead === code ? " · Primary owner" : " · Reviewer"}</p>
-                            {canAssess && response && response.status !== "Pending" && !response.reviewedBy && <Button size="sm" variant="outline" disabled={busy} onClick={() => void save("review_response", { parameterId: p.id, department: dept })}>Confirm department review</Button>}
+                            {canAssess && response && response.status !== "Pending" && !response.reviewedBy && <Button size="sm" variant="outline" disabled={busy} onClick={() => void save("review_response", { parameterId: p.id, department: estimateDept })}>Confirm department review</Button>}
                           </div>
                           {canAssess && <div className="mt-2 grid gap-2 md:grid-cols-2">
                             <label className="grid gap-1 text-[10px] text-muted-foreground">Department feasibility
@@ -937,7 +1137,7 @@ export function ProjectInputsWorkspace({
             })}
             {!rows.length && <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">No parameters match these filters.</p>}
             <div className="flex justify-end gap-2">
-              {editable && effectiveMembership.role === "department_lead" && changedAssessmentCount > 0 && <Button variant="outline" disabled={busy} onClick={() => void saveDepartmentInputs()}>{busy ? "Saving…" : `Save ${dept} assessments · ${changedAssessmentCount}`}</Button>}
+              {editable && effectiveMembership.role === "department_lead" && changedAssessmentCount > 0 && <Button variant="outline" disabled={busy} onClick={() => void saveDepartmentInputs()}>{busy ? "Saving…" : `Save ${estimateDept} assessments · ${changedAssessmentCount}`}</Button>}
               {editable && inputOwner && <Button disabled={busy || changedInputCount === 0} onClick={() => void saveQuickInputs()}>{busy ? "Saving…" : `Save project inputs${changedInputCount ? ` · ${changedInputCount} changed` : ""}`}</Button>}
             </div>
           </div>
@@ -1102,7 +1302,7 @@ export function ProjectInputsWorkspace({
                 <SharedMasterSelect
                   label="Link accepted project"
                   options={sources
-                    .filter((s) => s.type === "Project")
+                    .filter((s) => s.type === "Project" && isSelectableMasterStatus(s.status))
                     .map((s) => ({ value: s.id, label: `${s.reference} · ${s.title}` }))}
                   value={linkId}
                   onChange={setLinkId}

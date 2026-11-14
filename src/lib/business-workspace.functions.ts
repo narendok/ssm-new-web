@@ -24,6 +24,7 @@ export type BusinessSnapshot = {
   departments: { id: string; code: string; name: string }[];
   members: { id: string; name: string; role: string; departmentId: string | null }[];
   projects: { id: string; reference: string; title: string; currentStage: string | null }[];
+  suppliers: { id: string; reference: string; title: string; status: string }[];
   surveyResults: { template_id: string; response_count: number; answers: Json[] | null }[];
   notifications: { itemId: string; kind: string; event: string; at: string }[];
   votes: { message_id: string; choice: number; total: number; my_vote: boolean }[];
@@ -56,6 +57,7 @@ const snapshot = z.object({
     }),
   ),
   projects: z.array(z.object({ id: z.string(), reference: z.string(), title: z.string(), currentStage: z.string().nullable() })),
+  suppliers: z.array(z.object({ id: z.string(), reference: z.string(), title: z.string(), status: z.string() })),
   surveyResults: z.array(
     z.object({
       template_id: z.string(),
@@ -85,6 +87,9 @@ export type BusinessAction =
   | "ticket_create"
   | "ticket_reply"
   | "ticket_status"
+  | "ticket_dispatch_help"
+  | "ticket_help_response"
+  | "ticket_help_close"
   | "save_profile"
   | "publish_template"
   | "submit_assignment"
@@ -102,6 +107,9 @@ const mutation = z.object({
     "ticket_create",
     "ticket_reply",
     "ticket_status",
+    "ticket_dispatch_help",
+    "ticket_help_response",
+    "ticket_help_close",
     "save_profile",
     "publish_template",
     "submit_assignment",

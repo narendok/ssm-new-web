@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import type { Json } from '@/integrations/supabase/types';
 const scope = z.object({ department: z.string().uuid().nullable() });
-const serviceOption=z.object({id:z.string(),name:z.string(),category:z.string(),provider:z.string(),cycle:z.string(),owner:z.string()});
-const result = z.object({ categories:z.array(z.string()), purposes:z.array(z.string()), services:z.array(serviceOption).default([]), operationsEnabled:z.boolean(), version:z.number(), canManage:z.boolean(), canManageServices:z.boolean().default(false), isAdmin:z.boolean() });
+const serviceOption=z.object({id:z.string(),name:z.string(),category:z.string(),provider:z.string(),cycle:z.string(),owner:z.string(),supplierId:z.string().uuid().optional()});
+const supplierOption=z.object({id:z.string().uuid(),reference:z.string(),title:z.string(),status:z.string()});
+const result = z.object({ categories:z.array(z.string()), purposes:z.array(z.string()), services:z.array(serviceOption).default([]), suppliers:z.array(supplierOption).default([]), operationsEnabled:z.boolean(), version:z.number(), canManage:z.boolean(), canManageServices:z.boolean().default(false), isAdmin:z.boolean() });
 export type ExpenseCatalogue = z.infer<typeof result>;
 interface Rpc { rpc(name:string,args:Record<string,Json>):Promise<{data:unknown;error:{message:string}|null}> }
 export const getExpenseCatalogue=createServerFn({method:'GET'}).middleware([requireSupabaseAuth]).validator(scope.parse).handler(async({context,data})=>{

@@ -28,6 +28,14 @@ export function SharedSalesPipeline({snapshot,onRefresh,onOpenInputs}:{
   const [trackDecision,setTrackDecision]=useState<{source:EnquiryOpportunity;track:CanonicalProjectTrack|""}|null>(null);
   const [busy,setBusy]=useState(false);
   const {customers,enquiries}=sharedSalesPipeline(snapshot);
+  const feasibilityRaci = (() => {
+    const saved = lifecycle.data?.revision;
+    if (!saved) return null;
+    const definition = readLifecycleBaseline(JSON.stringify(saved.definition));
+    const stage = definition?.stages.find(item => item.code === "CM_02");
+    if (!definition || !stage?.raci?.R.length) return null;
+    return { revision: definition.id, departmentCodes: [...stage.raci.R] };
+  })();
   const refresh=async()=>{
     await Promise.all([onRefresh(),cache.invalidateQueries({queryKey:["project-inputs"]}),cache.invalidateQueries({queryKey:["project-coordination"]})]);
   };
@@ -77,6 +85,7 @@ export function SharedSalesPipeline({snapshot,onRefresh,onOpenInputs}:{
     {notice&&<p role="status" className="text-xs text-muted-foreground">{notice}</p>}
     <SalesEnquiriesAndOpportunities customers={customers} enquiries={enquiries}
       reviewDepartments={snapshot.departments.filter(d=>d.code!=="CLIENT")}
+      feasibilityRaci={feasibilityRaci}
       onOpenNewEnquiry={()=>setNotice("Use Add Enquiry to create a shared Sales intake.")}
       onOpenCustomerRegister={()=>setCustomersOpen(true)}
       onOpenFeasibilityGate={id=>onOpenInputs?.(id)} onOpenSourceInputs={id=>onOpenInputs?.(id)}

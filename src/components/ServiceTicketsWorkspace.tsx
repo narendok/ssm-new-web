@@ -31,7 +31,7 @@ import {
 export type ServiceTicketsWorkspaceProps = {
   departmentOptions?: { code: string; name: string }[] | undefined;
   ticketGroups?: DepartmentTicketGroup[] | undefined;
-  sharedActions?: {onCreate:(category?: TicketCategory)=>void;onStatus:(id:string)=>void;onReply:(id:string,text:string,internal:boolean)=>Promise<boolean>} | undefined;
+  sharedActions?: {onCreate:(category?: TicketCategory)=>void;onStatus:(id:string)=>void;onReply:(id:string,text:string,internal:boolean)=>Promise<boolean>;onDispatchHelp?:(ticketId:string,departmentCode:string,summary:string)=>Promise<boolean>;onHelpResponse?:(requestId:string,response:string)=>Promise<boolean>;onHelpClose?:(requestId:string)=>Promise<boolean>} | undefined;
   onCreateLinkedRecord?: (ticket: ServiceTicket) => void;
   tickets: ServiceTicket[];
   currentUser: {
@@ -64,6 +64,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
     currentUser.role.toLowerCase() === "admin" ||
     currentUser.role.toLowerCase() === "sit" ||
     currentUser.department?.toLowerCase() === "sit";
+  const canRespondToHelp = currentUser.role.toLowerCase() === "admin" || currentUser.role.toLowerCase() === "department_lead";
 
   // Filter visible tickets strictly according to role boundaries
   const authorizedTickets = sharedActions ? tickets : filterAuthorizedTickets(tickets, {
@@ -129,11 +130,19 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
     onUpdateTickets(tickets.map(ticket => ticket.id === ticketId ? transform(ticket) : ticket));
   };
 
-  const handleDispatchHelp = (event: React.FormEvent) => {
+  const handleDispatchHelp = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!activeTicket || !helpDepartment || helpSummary.trim().length < 8) return;
     const department = localDepartments.find(item => item.code === helpDepartment);
     if (!department) return;
+    if (sharedActions?.onDispatchHelp) {
+      if (await sharedActions.onDispatchHelp(activeTicket.id, department.code, helpSummary.trim())) {
+        setHelpDialogOpen(false);
+        setHelpDepartment("");
+        setHelpSummary("");
+      }
+      return;
+    }
     const requests = activeTicket.departmentHelpRequests ?? [];
     if (requests.some(request => request.departmentCode === department.code && request.status !== "Closed")) return;
     const request: DepartmentHelpRequest = {
@@ -156,9 +165,13 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
     setHelpSummary("");
   };
 
-  const handleHelpResponse = (event: React.FormEvent) => {
+  const handleHelpResponse = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!activeTicket || !activeHelpRequest || helpResponse.trim().length < 3) return;
+    if (sharedActions?.onHelpResponse) {
+      if (await sharedActions.onHelpResponse(activeHelpRequest.id, helpResponse.trim())) setHelpResponse("");
+      return;
+    }
     const at = new Date().toISOString();
     updateOriginalTicket(activeTicket.id, ticket => ({
       ...ticket,
@@ -591,7 +604,7 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
                     )}
                   </div>
                 ))}
-                {isServiceOrAdmin && !sharedActions && localDepartments.length > 0 && <button onClick={() => setHelpDialogOpen(true)} className="rounded border border-sky-500/40 bg-sky-500/5 px-3 py-1.5 text-xs text-sky-700 dark:text-sky-300">Request department help</button>}
+                {isServiceOrAdmin && localDepartments.length > 0 && <button onClick={() => setHelpDialogOpen(true)} className="rounded border border-sky-500/40 bg-sky-500/5 px-3 py-1.5 text-xs text-sky-700 dark:text-sky-300">Request department help</button>}
                 {isServiceOrAdmin && !sharedActions && onCreateLinkedRecord && <button onClick={() => onCreateLinkedRecord(activeTicket)} className="rounded border border-border px-3 py-1.5 text-xs">Create linked record</button>}
               </div>
 
@@ -654,19 +667,21 @@ export const ServiceTicketsWorkspace: React.FC<ServiceTicketsWorkspaceProps> = (
                 </p>
               </div>
 
-              {isServiceOrAdmin && !sharedActions && (activeTicket.departmentHelpRequests?.length ?? 0) > 0 && <section className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 space-y-2 text-xs">
+              {isServiceOrAdmin && (activeTicket.departmentHelpRequests?.length ?? 0) > 0 && <section className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 space-y-2 text-xs">
                 <h3 className="font-semibold">Linked department help requests</h3>
                 {activeTicket.departmentHelpRequests?.map(request => <article key={request.id} className="rounded border border-border bg-background/70 p-2">
                   <div className="flex flex-wrap justify-between gap-2"><b>{request.departmentName} · {request.status}</b><span>{new Date(request.createdAt).toLocaleString()}</span></div>
                   <p className="mt-1">{request.summary}</p>
                   {request.response && <p className="mt-1 border-t pt-1"><b>Response · {request.respondedBy}:</b> {request.response}</p>}
+                  {request.response && request.status !== "Closed" && sharedActions?.onHelpClose && <button type="button" className="mt-2 rounded border px-2 py-1 text-[11px]" onClick={() => void sharedActions.onHelpClose!(request.id)}>Close help request</button>}
                 </article>)}
               </section>}
 
               {helpInbox && activeHelpRequest && <form onSubmit={handleHelpResponse} className="rounded-lg border border-border p-3 space-y-2">
                 {activeHelpRequest.response && <p className="text-xs"><b>Latest response:</b> {activeHelpRequest.response} · {activeHelpRequest.respondedBy}</p>}
-                <label className="grid gap-1 text-xs font-medium">Response to Service & IT<textarea rows={2} value={helpResponse} onChange={event=>setHelpResponse(event.target.value)} className="rounded border bg-background p-2" placeholder="Share the help, findings, or next action from your department." /></label>
-                <button disabled={helpResponse.trim().length < 3} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50">Send help response</button>
+                {canRespondToHelp && activeHelpRequest.status !== "Responded" && <><label className="grid gap-1 text-xs font-medium">Response to Service & IT<textarea rows={2} value={helpResponse} onChange={event=>setHelpResponse(event.target.value)} className="rounded border bg-background p-2" placeholder="Share the help, findings, or next action from your department." /></label>
+                <button disabled={helpResponse.trim().length < 3} className="rounded bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50">Send help response</button></>}
+                {!canRespondToHelp && <p className="text-[11px] text-muted-foreground">The department lead or Admin can send the response.</p>}
               </form>}
 
               {/* Activity / Discussion History */}

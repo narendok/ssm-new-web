@@ -26,6 +26,7 @@ import {
   DEFAULT_ASSIGNED_TRAININGS,
   DEFAULT_ASSIGNED_FORMS,
 } from "../lib/employee-services";
+import { DEMO_ORGANIZATION_ADMIN, DEMO_ORGANIZATION_ROSTER } from "../lib/demo-organization-roster";
 
 export type HREmployeeRecord = {
   id: string;
@@ -38,19 +39,24 @@ export type HREmployeeRecord = {
 };
 
 export const INITIAL_HR_EMPLOYEES: HREmployeeRecord[] = [
-  { id: "HLPL-EMP-101", name: "Executive Admin", email: "admin@hexenselabs.com", department: "ADMIN", designation: "Managing Director", status: "Active", joinedDate: "2024-01-15" },
-  { id: "HLPL-EMP-102", name: "Priya Sharma", email: "priya.sharma@hexenselabs.com", department: "SAL", designation: "Sales & BD Lead", status: "Active", joinedDate: "2024-03-01" },
-  { id: "HLPL-EMP-103", name: "Avery Vale", email: "avery.vale@hexenselabs.com", department: "EHW", designation: "Hardware Lead", status: "Active", joinedDate: "2024-02-10" },
-  { id: "HLPL-EMP-104", name: "Devon Lane", email: "devon.lane@hexenselabs.com", department: "ESW", designation: "Firmware Lead", status: "Active", joinedDate: "2024-02-15" },
-  { id: "HLPL-EMP-105", name: "Samira Holt", email: "samira.holt@hexenselabs.com", department: "MECH", designation: "Mechanical Lead", status: "Active", joinedDate: "2024-04-01" },
-  { id: "HLPL-EMP-106", name: "Morgan Reed", email: "morgan.reed@hexenselabs.com", department: "PUR", designation: "Procurement Lead", status: "Active", joinedDate: "2024-01-20" },
-  { id: "HLPL-EMP-107", name: "Jordan Blake", email: "jordan.blake@hexenselabs.com", department: "QA", designation: "Quality Assurance Lead", status: "Active", joinedDate: "2024-03-15" },
-  { id: "HLPL-EMP-108", name: "Casey Rowan", email: "casey.rowan@hexenselabs.com", department: "EMF", designation: "Manufacturing Lead", status: "Active", joinedDate: "2024-05-01" },
-  { id: "HLPL-EMP-109", name: "Mina Cross", email: "mina.cross@hexenselabs.com", department: "TST", designation: "EOL Testing Lead", status: "Active", joinedDate: "2024-06-15" },
-  { id: "HLPL-EMP-110", name: "Priya Voss", email: "priya.voss@hexenselabs.com", department: "FIN", designation: "Finance Lead", status: "Active", joinedDate: "2024-02-01" },
-  { id: "HLPL-EMP-111", name: "Kai Morgan", email: "kai.morgan@hexenselabs.com", department: "SIT", designation: "Service & IT Lead", status: "Active", joinedDate: "2024-03-10" },
-  { id: "HLPL-EMP-112", name: "Taylor Quinn", email: "taylor.quinn@hexenselabs.com", department: "HROPS", designation: "HR & Operations Lead", status: "Active", joinedDate: "2024-01-10" },
-  { id: "HLPL-EMP-201", name: "EHW Test Engineer", email: "ehw.test@hexenselabs.com", department: "EHW", designation: "Hardware Test Engineer", status: "Active", joinedDate: "2025-02-01" },
+  {
+    id: DEMO_ORGANIZATION_ADMIN.employeeCode,
+    name: DEMO_ORGANIZATION_ADMIN.name,
+    email: DEMO_ORGANIZATION_ADMIN.workEmail,
+    department: DEMO_ORGANIZATION_ADMIN.departmentCode,
+    designation: DEMO_ORGANIZATION_ADMIN.roleTitle,
+    status: "Active",
+    joinedDate: DEMO_ORGANIZATION_ADMIN.joiningDate,
+  },
+  ...DEMO_ORGANIZATION_ROSTER.map((person) => ({
+    id: person.employeeCode,
+    name: person.name,
+    email: person.workEmail,
+    department: person.departmentCode,
+    designation: person.roleTitle,
+    status: "Active" as const,
+    joinedDate: person.joiningDate,
+  })),
 ];
 
 export type HRAdministrationWorkspaceProps = {

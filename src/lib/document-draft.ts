@@ -5,6 +5,12 @@ export type DraftSource = {
   attachments?: AttachmentMeta[] | undefined;
 };
 
+const wordDraftTypes = new Set(["SOR", "REVIEW", "QUO", "PRS", "EHW-PRS"]);
+
+export function supportsDraftDocx(type: string | undefined) {
+  return !!type && wordDraftTypes.has(type);
+}
+
 export type Section = { title: string; fields: string[] };
 
 export type AttachmentMeta = {
@@ -14,6 +20,23 @@ export type AttachmentMeta = {
   sha256: string;
   uploadedAt: string;
   uploaderName: string;
+};
+
+export type PersistedDocumentDraftSnapshot = {
+  templateType: string | null;
+  templateVersion: string;
+  catalogueFamilyId: string | null;
+  sourceRecordId: string | null;
+  projectRecordId: string | null;
+  sourceReference?: string | null;
+  projectReference?: string | null;
+  projectPhase?: string | null;
+  projectStage?: string | null;
+  classification?: string;
+  releaseStatus: "Unissued";
+  completionPercentage: number;
+  missingFields: string[];
+  sections: { title: string; rows: string[][] }[];
 };
 
 export const CATALOGUE_FAMILY_MAP: Record<string, string> = {
@@ -273,7 +296,7 @@ export function buildDocumentDraft(
       source: source ? { ...source, fields: { ...source.fields }, attachments: source.attachments ? [...source.attachments] : [] } : null,
       project: project ? { ...project, fields: { ...project.fields } } : null,
       releaseStatus: "Unissued",
-      classification: isClient ? "Client deliverable — client access authorized" : "Internal engineering document — internal confidential",
+      classification: isClient ? "Client deliverable — release and access require explicit authorization" : "Internal engineering document — internal confidential",
     },
     supported: Boolean(sections),
     sections: (sections ?? [{ title: "Source document", fields: ["scope", "requirements", "evidence"] }]).map((section) => ({
@@ -289,5 +312,42 @@ export function buildDocumentDraft(
         ];
       }),
     })),
+  };
+}
+
+/** Rehydrates the exact stored field/provenance rows for preview; it never rereads mutable source records. */
+export function restoreDocumentDraftSnapshot(snapshot: PersistedDocumentDraftSnapshot) {
+  const type = snapshot.templateType && Object.hasOwn(DOCUMENT_FORMATS, snapshot.templateType) ? snapshot.templateType : undefined;
+  if (!type || !snapshot.templateVersion || snapshot.releaseStatus !== "Unissued" || !Array.isArray(snapshot.sections)) return undefined;
+  const sections = snapshot.sections.filter(section =>
+    typeof section.title === "string" && Array.isArray(section.rows) && section.rows.every(row => Array.isArray(row) && row.length >= 2 && row.every(value => typeof value === "string"))
+  ).map(section => ({ title: section.title, rows: section.rows.map(row => [row[0] ?? "", row[1] ?? "", row[2] ?? ""]) }));
+  if (sections.length !== snapshot.sections.length) return undefined;
+  const isClientDeliverable = CLIENT_DELIVERABLE_TYPES.has(type);
+  return {
+    type,
+    templateVersion: snapshot.templateVersion,
+    catalogueFamilyId: snapshot.catalogueFamilyId,
+    isClientDeliverable,
+    completionPercentage: snapshot.completionPercentage,
+    missingFields: [...snapshot.missingFields],
+    attachments: [] as AttachmentMeta[],
+    supported: true,
+    snapshot: {
+      templateType: type,
+      templateVersion: snapshot.templateVersion,
+      catalogueFamilyId: snapshot.catalogueFamilyId,
+      source: snapshot.sourceReference ? { reference: snapshot.sourceReference, fields: {}, attachments: [] } : null,
+      project: snapshot.projectReference ? {
+        reference: snapshot.projectReference,
+        fields: {
+          ...(snapshot.projectPhase ? { companyPhase: snapshot.projectPhase } : {}),
+          ...(snapshot.projectStage ? { currentStage: snapshot.projectStage } : {}),
+        },
+      } : null,
+      releaseStatus: "Unissued" as const,
+      classification: snapshot.classification || (isClientDeliverable ? "Client deliverable — release and access require explicit authorization" : "Internal engineering document — internal confidential"),
+    },
+    sections,
   };
 }
