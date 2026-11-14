@@ -55,6 +55,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261112204537_backfill_exact_project_reference_ids',
     '20261112205712_register_test_orion_customer_link',
     '20261112221934_require_canonical_customer_for_project_start',
+    '20261114033959_validate_project_record_links',
   ];
 
   for (const name of migrationNames) {
@@ -510,6 +511,34 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   const canonicalCustomerAfterEdit = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
   assert.equal(canonicalCustomerAfterEdit.customer, 'Fictional TEST Customer', 'same-ID edits retain the canonical customer display label');
   assert.equal(canonicalCustomerAfterEdit.customerId, customerMaster.id, 'same-ID edits retain the canonical customer ID');
+  const customerProjectEditRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
+  await call(ehwLead, 'update_record', {
+    record_id: linkedCustomerRecord.id,
+    expected_updated_at: customerProjectEditRow.updated_at.toISOString(),
+    fields: { ...canonicalCustomerAfterEdit, projectId: p06Project.id, project_id: p06Project.id, linkedProjectId: p06Project.id, projectCode: p06Project.reference, project_code: p06Project.reference, projectReference: p06Project.reference, project: p06Project.reference },
+  });
+  const canonicalProjectFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
+  assert.equal(canonicalProjectFields.projectId, p06Project.id, 'project ID alias resolves to the canonical Project');
+  assert.equal(canonicalProjectFields.project_id, p06Project.id, 'snake-case project ID alias matches the canonical Project');
+  assert.equal(canonicalProjectFields.projectCode, p06Project.reference, 'project reference is refreshed from the master');
+  assert.equal(canonicalProjectFields.projectName, p06Project.title, 'project name is refreshed from the master');
+  const invalidProjectEditRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
+  await assert.rejects(call(ehwLead, 'update_record', {
+    record_id: linkedCustomerRecord.id,
+    expected_updated_at: invalidProjectEditRow.updated_at.toISOString(),
+    fields: { ...canonicalProjectFields, projectId: uuid(998) },
+  }), /PROJECT_LINK_INVALID/);
+  const preservedProjectFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
+  assert.equal(preservedProjectFields.projectId, p06Project.id, 'invalid project edits leave the prior link unchanged');
+  const clearProjectEditRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
+  await call(ehwLead, 'update_record', {
+    record_id: linkedCustomerRecord.id,
+    expected_updated_at: clearProjectEditRow.updated_at.toISOString(),
+    fields: { ...preservedProjectFields, projectId: '', project_id: '', linkedProjectId: '', projectCode: '', project_code: '', projectReference: '', project: '', projectName: '', project_name: '' },
+  });
+  const clearedProjectFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
+  assert.equal(Object.hasOwn(clearedProjectFields, 'projectId'), false, 'clearing Project removes every canonical ID alias');
+  assert.equal(Object.hasOwn(clearedProjectFields, 'projectCode'), false, 'clearing Project removes stale reference labels');
   const linkedCustomerEditedRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
   await call(ehwLead, 'update_record', {
     record_id: linkedCustomerRecord.id,

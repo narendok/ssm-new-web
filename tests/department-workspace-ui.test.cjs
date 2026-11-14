@@ -99,11 +99,15 @@ test('DepartmentProjectWorkspace combines project records and linked deliverable
   assert.match(workspaceSource, /props\.onOpenApprovals \? props\.onOpenApprovals\(\) : setActiveTab\("approvals"\)/, 'Overview approval shortcut opens the sidebar-owned approvals destination');
 
   const vaultSource = fs.readFileSync(path.resolve(__dirname, '../src/components/SharedDocumentVault.tsx'), 'utf8');
+  const sharedTestSource = fs.readFileSync(path.resolve(__dirname, '../src/components/SharedTestWorkspace.tsx'), 'utf8');
   assert.match(vaultSource, /<details aria-label="Lifecycle and draft source context"/, 'Document lifecycle and source context is available on demand');
   assert.match(vaultSource, />All documents<\/Button>/, 'Document detail keeps a focused in-feature route back to the library');
   assert.match(vaultSource, /setSourceFilesStatus\("loading"\)/, 'Native source revisions are checked before the picker can be used');
   assert.match(vaultSource, /No current Gerber revision is linked to this project/, 'Missing native source packages explain why panel drafts are unavailable');
   assert.match(vaultSource, /Panel ZIP and Stencil PCB fab need a project and its current Gerber source revision/, 'Native manufacturing packages explain the project prerequisite');
+  assert.match(sharedTestSource, /aria-label="Editable master links"/, 'Shared TEST record updates expose linked Project and Supplier controls');
+  assert.match(sharedTestSource, /resolveEditableMasterLink/, 'Existing aliases must resolve unambiguously before showing a saved master link');
+  assert.match(sharedTestSource, /replaceEditableMasterLink/, 'Changing a master link replaces its ID, reference, and display-name aliases together');
 
   const approvalsSource = fs.readFileSync(path.resolve(__dirname, '../src/components/ApprovalsFullPageView.tsx'), 'utf8');
   assert.match(approvalsSource, /Return for rework/, 'Approval decision action states its workflow purpose');

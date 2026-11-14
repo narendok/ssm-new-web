@@ -18,6 +18,7 @@ import {
 import { registerSharedDocument } from "@/lib/shared-vault.functions";
 import { getSharedDepartmentRoleConfiguration } from "@/lib/department-roles.functions";
 import { sharedTaskAssigneeOptions } from "@/lib/shared-task-assignees";
+import { resolveEditableMasterLink, replaceEditableMasterLink } from "@/lib/shared-record-master-edit";
 import {
   beginControlledDocumentUpload,
   completeControlledDocumentUpload,
@@ -201,6 +202,16 @@ export function SharedTestWorkspace({
   const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
   const generatedReference = generatedReferenceBase ? referenceAtRevision(generatedReferenceBase, selectedRevision) : "";
   const projects = data.records.filter((r) => r.record_type === "Project" && isSelectableMasterStatus(r.status));
+  const projectLinkAliases = { ids: ["projectId", "project_id", "linkedProjectId"], references: ["projectCode", "project_code", "projectReference", "project"], names: ["projectName", "project_name"] };
+  const supplierLinkAliases = { ids: ["supplierId", "supplier_id"], references: ["supplierCode", "supplier_code"], names: ["supplier", "supplierName", "supplier_name"] };
+  const projectLinkMasters = [...new Map([
+    ...data.projectOptions.map(option => [option.id, option] as const),
+    ...data.records.filter(record => record.record_type === "Project").map(record => [record.id, { id: record.id, reference: record.reference, title: record.title, status: record.status }] as const),
+  ]).values()];
+  const selectableProjectLinks = projectLinkMasters.filter(option => isSelectableMasterStatus(option.status));
+  const projectLinkSelectOptions = selectableProjectLinks.map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
+  const supplierLinkMasters = data.supplierOptions.length ? data.supplierOptions : data.records.filter(record => record.record_type === "Supplier").map(record => ({ id: record.id, reference: record.reference, title: record.title, status: record.status }));
+  const supplierLinkSelectOptions = supplierLinkMasters.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
   const recordMasterOptions = (master: NonNullable<RecordField["master"]>) => {
     const fromRecords = (types: string[]) => data.records
       .filter(record => types.includes(record.record_type.toLowerCase()) && isSelectableMasterStatus(record.status))
@@ -318,6 +329,9 @@ export function SharedTestWorkspace({
   );
   function open(action: SharedTestAction, initial: Record<string, string> = {}) {
     setError("");
+    const record = action === "update_record" ? data.records.find(item => item.id === initial["record_id"]) : undefined;
+    const projectLink = resolveEditableMasterLink(record?.fields || {}, projectLinkMasters, [...projectLinkAliases.ids, ...projectLinkAliases.references]);
+    const supplierLink = resolveEditableMasterLink(record?.fields || {}, supplierLinkMasters, [...supplierLinkAliases.ids, ...supplierLinkAliases.references]);
     if(action==="create_record"){
       setRecordFile(null);setPersistedRecord(null);setRecordAttachmentDocumentId(null);
       createRecordRequestId.current=null;createRecordDocumentRequestId.current=null;
@@ -328,6 +342,12 @@ export function SharedTestWorkspace({
       department_id: ownDepartment || data.departments[0]?.id || "",
       fields: '{"revision":"01"}',
       revision: "01",
+      project_master_id: projectLink.id,
+      project_master_unresolved: String(projectLink.unresolved),
+      project_master_changed: "false",
+      supplier_master_id: supplierLink.id,
+      supplier_master_unresolved: String(supplierLink.unresolved),
+      supplier_master_changed: "false",
       ...initial,
     });
   }
@@ -350,14 +370,27 @@ export function SharedTestWorkspace({
     e.preventDefault();
     const payload: Record<string, SharedJson> = { ...values };
     try {
-      if (form === "create_record" || form === "update_record")
+      if (form === "create_record" || form === "update_record") {
+        let recordFields = JSON.parse(values["fields"] || "{}");
+        if (form === "update_record" && values["project_master_changed"] === "true") {
+          const selected = selectableProjectLinks.find(option => option.id === values["project_master_id"]);
+          if (values["project_master_id"] && !selected) throw new Error("Choose an active Project from the searchable list.");
+          recordFields = replaceEditableMasterLink(recordFields, selected, projectLinkAliases);
+        }
+        if (form === "update_record" && values["supplier_master_changed"] === "true") {
+          const selected = supplierLinkMasters.find(option => option.id === values["supplier_master_id"] && isSelectableMasterStatus(option.status));
+          if (values["supplier_master_id"] && !selected) throw new Error("Choose an active Supplier from the searchable list.");
+          recordFields = replaceEditableMasterLink(recordFields, selected, supplierLinkAliases);
+        }
+        for (const key of ["project_master_id", "project_master_unresolved", "project_master_changed", "supplier_master_id", "supplier_master_unresolved", "supplier_master_changed"]) delete payload[key];
         payload["fields"] = {
-          ...JSON.parse(values["fields"] || "{}"),
+          ...recordFields,
           revision: selectedRevision,
           scope: values["scope"] || "",
           requirements: values["requirements"] || "",
           acceptanceCriteria: values["acceptanceCriteria"] || "",
         };
+      }
       if (form === "create_record") {
         if (!spec) throw new Error("No record types configured for this department.");
         const recordType = values["record_type"] || "";
@@ -1102,15 +1135,10 @@ export function SharedTestWorkspace({
             <form onSubmit={(e) => void submit(e)} className="grid min-w-0 gap-3 sm:grid-cols-2 [&>*]:min-w-0">
               {form !== "update_record" && field("title", "Title")}
               {form === "update_record" && originalRecord && (
-                <div aria-label="Saved master links" className="rounded-md border border-border p-3 text-xs sm:col-span-2">
-                  <div className="font-semibold">Linked records</div>
-                  {([ ["Project", originalRecord.fields["projectId"] || originalRecord.fields["project_id"] || originalRecord.fields["linkedProjectId"], [...data.projectOptions, ...data.records.filter(record => record.record_type === "Project")]],
-                      ["Supplier", originalRecord.fields["supplierId"] || originalRecord.fields["supplier_id"], data.supplierOptions] ] as const).map(([label, identity, options]) => {
-                    if (!identity) return null;
-                    const master = options.find(option => option.id === identity || option.reference === identity);
-                    return <div key={label} className="mt-1"><span className="text-muted-foreground">{label}: </span>{master ? `${master.reference} · ${master.title}` : `Unresolved link · ${String(identity)}`}</div>;
-                  })}
-                  <p className="mt-2 text-muted-foreground">These saved links are preserved when revising findings and notes.</p>
+                <div aria-label="Editable master links" className="grid min-w-0 gap-3 rounded-md border border-border p-3 text-xs sm:col-span-2 sm:grid-cols-[repeat(2,minmax(0,1fr))] [&>*]:min-w-0">
+                  <div className="sm:col-span-2"><div className="font-semibold">Linked Project and Supplier</div><p className="mt-1 text-muted-foreground">Choose a canonical master or clear the link. Leaving a selector untouched preserves its saved aliases.</p></div>
+                  <div className="grid min-w-0 gap-1"><SharedMasterSelect label="Project" options={projectLinkSelectOptions} value={values["project_master_id"] || ""} onChange={id => setValues(current => ({ ...current, project_master_id: id, project_master_changed: "true" }))}/>{values["project_master_unresolved"] === "true" && <p role="note" className="text-amber-700 dark:text-amber-300">Saved Project aliases do not resolve to one active master. Choose a Project to replace them, or clear the link.</p>}</div>
+                  <div className="grid min-w-0 gap-1"><SharedMasterSelect label="Supplier" options={supplierLinkSelectOptions} value={values["supplier_master_id"] || ""} onChange={id => setValues(current => ({ ...current, supplier_master_id: id, supplier_master_changed: "true" }))}/>{values["supplier_master_unresolved"] === "true" && <p role="note" className="text-amber-700 dark:text-amber-300">Saved Supplier aliases do not resolve to one active master. Choose a Supplier to replace them, or clear the link.</p>}</div>
                 </div>
               )}
               {(form === "create_project" || form === "create_record") &&
