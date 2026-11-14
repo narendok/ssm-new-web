@@ -1,6 +1,6 @@
 # SSM One Web Implementation Plan
 
-**Updated:** 13 November 2026
+**Updated:** 14 November 2026
 **Status:** Active web subplan. The cross-platform master plan is the authority for shared product, lifecycle and governance decisions. This document contains only the web delivery approach and acceptance checks.
 
 ## Read these sources
@@ -21,6 +21,7 @@ Older portal-master, lifecycle-only and Antigravity review documents are superse
 - RACI describes responsibility; it does not grant access or sign-off authority. Enforce membership, record scope and capability on the server. Gate decisions remain attributable, auditable and idempotent.
 - Enforce document visibility separately at list, metadata and original-file download. A selected project, `?role=client`, display filter, document scope label, filename or metadata link is never authorization. Verify the actor's project/department entitlement and exact document revision server-side; client access requires an explicitly released revision and matching project grant. Fail closed on conflicting links and repeat the checks before issuing a private-file URL. Cross-department access requires an explicit server-authorized grant.
 - Changes to lifecycle, departments, RACI or catalogues are versioned. New projects use the selected current configuration; existing projects retain their pinned version until an explicit reviewed change. Do not silently rewrite completed work, IDs, evidence or signed decisions.
+- 14 November role-routing safeguard: L1–L4 task assignees must resolve to an active role in the task department with the exact configured hierarchy level. Unclassified roles cannot be used as a level-specific fallback. A forward migration and PostgreSQL regression now cover matching, mismatched and unclassified roles, plus the task-creation resolver. Local web suite passed 368/368. This migration is local only until separately reviewed and applied to Shared TEST; production was not touched. Shared TEST's existing generic roles remain unchanged and need the user's actual L1 mapping before role routing can be demonstrated there.
 
 ## Project lifecycle and configurable settings
 
