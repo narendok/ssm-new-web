@@ -51,6 +51,7 @@ import { projectLifecycleContext, recordStageLabel } from "@/lib/lifecycle-recor
 import { SharedBusinessWorkspace } from "@/components/SharedBusinessWorkspace";
 import { SharedSupplierDirectoryWorkspace } from "@/components/SharedSupplierDirectoryWorkspace";
 import { SharedProcurementWorkspace } from "@/components/SharedProcurementWorkspace";
+import { SharedSupplyChainWorkspace } from "@/components/SharedSupplyChainWorkspace";
 import { SharedDecisionLog } from "@/components/SharedDecisionLog";
 import { SharedProjectAnalysis } from "@/components/SharedProjectAnalysis";
 import { scopeRecordDefaults } from "@/lib/record-form-defaults";
@@ -6678,6 +6679,17 @@ function Portal() {
                 setVaultDocumentId(documentId);
                 setView("vault");
               }}
+            />
+          ) : testMembership && (view === "smart_bom" || view === "ingestion_gate") ? (
+            <SharedSupplyChainWorkspace
+              key={`${testMembership.membershipId}:${view}`}
+              membership={testMembership}
+              view={view}
+              onOpenRecords={(type) => {
+                setRecordTypeFilter(type);
+                setView("records");
+              }}
+              onOpenOrders={() => setView("orders")}
             />
           ) : view === "orders" ||
             view === "quotations" ||
