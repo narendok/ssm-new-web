@@ -1,7 +1,7 @@
 import { CANONICAL_TRACK_METADATA, type CanonicalProjectTrack } from './canonical-lifecycle';
 import { COMPANY_PHASES, pinLifecycleRevision, projectLifecycleStages, type LifecycleRevision } from './lifecycle-baseline';
 import { departmentCode } from './department-scope';
-import type { EnquiryOpportunity } from '../components/SalesWorkspaceAndCustomerRegister';
+import type { CustomerRecord, EnquiryOpportunity } from '../components/SalesWorkspaceAndCustomerRegister';
 
 export const ROLE_LIFECYCLE_PACK = 'SCMS-ROLE-LIFECYCLE-2026-11-10-v1';
 const areaMap = {SAL:'sales',EHW:'ehw',FW:'fw',SW:'sw',MECH:'mech',PUR:'pur',QA:'qa',EMF:'emf',MMF:'mmf',FIN:'fin',SIT:'sit',HR:'hrops'} as const;
@@ -39,6 +39,7 @@ export function buildRoleLifecyclePack(revision:LifecycleRevision, departments:S
   const sales=find('SAL');
   const records:RoleSampleRecord[]=[];
   const enquiries:EnquiryOpportunity[]=[];
+  const customers:CustomerRecord[]=[];
   const manifest:RoleLifecyclePackManifest={version:ROLE_LIFECYCLE_PACK,environment:'browser-local TEST',loadedAt:at,lifecycleRevision:revision.id,
     configuration:{departments:active.map(d=>({id:d.id,code:departmentCode(d.code.replace(/^DEMO-/,'')),lead:d.lead})),phaseCount:COMPANY_PHASES.length,stageCount:revision.stages.length,defaultTaskCount:revision.stages.reduce((n,s)=>n+s.tasks.length,0)},
     records:[],walkthroughs:[],checkpoints:[],gaps:[
@@ -53,15 +54,23 @@ export function buildRoleLifecyclePack(revision:LifecycleRevision, departments:S
       fields:{revision:'01',fixturePack:ROLE_LIFECYCLE_PACK,fixtureKey:key,testOnly:'true',...fields}};
     records.push(record);return record;
   };
+  for(let index=0;index<2;index++){
+    const number=String(index+1).padStart(2,'0');
+    const name=`Fictional Test Customer ${index+1}`;
+    const record=add(`CUS-${number}`,'Customer',name,'SAL',{name,customerType:'Fictional TEST account',fixtureMode:'canonical-master'},'Fictional customer master for browser-local TEST only. Contact, tax and commercial details are intentionally blank.');
+    customers.push({id:record.id,code:record.reference,name,division:'Fictional TEST',spocName:'',spocEmail:'',spocPhone:'',cityState:'',gstin:'',status:'Prospect',activeOpportunitiesCount:0,assignedLead:sales.lead,createdAt:at});
+  }
   for(const [index,scenario] of scenarios.entries()){
     const n=String(index+1).padStart(2,'0');
-    const enquiry=add(`ENQ-${n}`,'Enquiry',scenario.title,'SAL',{scope:scenario.internal?'Internal request':'Client request',owner:sales.lead,customer:scenario.internal?'Internal fictional TEST':`Fictional Test Customer ${index%2+1}`,demoIntendedTrack:scenario.track,fixtureMode:'walkthrough'},'Fresh request. Track is scenario intent only; no Project or accepted feasibility exists.');
-    enquiries.push({id:enquiry.id,reference:enquiry.reference,kind:'enquiry',title:enquiry.title,customerCode:'',customerName:enquiry.fields['customer']??'Fictional TEST',spocName:'',spocEmail:'',scopeSummary:enquiry.notes,targetVolume:'Not recorded',targetClosureDate:'',salesOwner:sales.lead,status:'Pending Enquiry',feasibilitySignedDepts:[],totalFeasibilityDepts:0,createdAt:at,updatedAt:at});
+    const customer=scenario.internal?undefined:customers[index%2];
+    const customerFields=customer?{customerId:customer.id,customer_id:customer.id,customerCode:customer.code,customerName:customer.name,customer:customer.name}:{};
+    const enquiry=add(`ENQ-${n}`,'Enquiry',scenario.title,'SAL',{scope:scenario.internal?'Internal request':'Client request',owner:sales.lead,customer:customer?.name??'Internal fictional TEST',...customerFields,demoIntendedTrack:scenario.track,fixtureMode:'walkthrough'},'Fresh request. Track is scenario intent only; no Project or accepted feasibility exists.');
+    enquiries.push({id:enquiry.id,reference:enquiry.reference,kind:'enquiry',title:enquiry.title,...(customer?{customerId:customer.id}:{}),customerCode:customer?.code??'',customerName:customer?.name??'Internal fictional TEST',spocName:'',spocEmail:'',scopeSummary:enquiry.notes,targetVolume:'Not recorded',targetClosureDate:'',salesOwner:sales.lead,status:'Pending Enquiry',feasibilitySignedDepts:[],totalFeasibilityDepts:0,createdAt:at,updatedAt:at});
     manifest.walkthroughs.push({scenario:scenario.key,title:scenario.title,intendedTrack:scenario.track,enquiryId:enquiry.id});
     const stages=projectLifecycleStages(revision,scenario.track);
     const entry=stages.find(s=>s.prerequisites.length===0);
     if(!entry)throw new Error(`${scenario.track}: no eligible entry stage in the selected lifecycle.`);
-    const project=add(`PRJ-${n}`,'Project',`${scenario.title} · checkpoint`,entry.department,{track:scenario.track,projectTrack:scenario.track,scope:scenario.internal?'Internal':'Client',lifecycleBaseline:baseline,currentStage:entry.code,lifecycleStage:entry.code,completedStages:'[]',fixtureMode:'checkpoint',syntheticHistory:'Simulated prerequisite feasibility only; no executed review or signature',demoScenario:scenario.key},'Fictional project checkpoint for the selected track. No gate is completed and no approval, release, stock transaction or real business decision is represented.');
+    const project=add(`PRJ-${n}`,'Project',`${scenario.title} · checkpoint`,entry.department,{track:scenario.track,projectTrack:scenario.track,scope:scenario.internal?'Internal':'Client',...customerFields,lifecycleBaseline:baseline,currentStage:entry.code,lifecycleStage:entry.code,completedStages:'[]',fixtureMode:'checkpoint',syntheticHistory:'Simulated prerequisite feasibility only; no executed review or signature',demoScenario:scenario.key},'Fictional project checkpoint for the selected track. No gate is completed and no approval, release, stock transaction or real business decision is represented.');
     const row={scenario:scenario.key,title:scenario.title,track:scenario.track,projectId:project.id,projectReference:project.reference,applicableStages:stages.length,plannedTasks:stages.reduce((n,s)=>n+s.tasks.length,0),phaseCoverage:[...new Set(stages.map(s=>s.phase))]};
     manifest.checkpoints.push(row);
     for(const task of entry.tasks){
@@ -77,5 +86,17 @@ export function buildRoleLifecyclePack(revision:LifecycleRevision, departments:S
     add(`ROLE-${code}`,'Task',`${d.name} role document readiness review`,code,{workflowKind:'operational',assignee:d.lead,workStatus:'To do',expectedAction:'Review applicable common documents, supported record types and role Docs Vault coverage',fixtureMode:'role-action'},'TEST operational review task. No generated document or audit completion is claimed.');
   }
   manifest.records=records.map(r=>r.id);
-  return {manifest,records,enquiries,trackLabels:CANONICAL_TRACK_METADATA};
+  return {manifest,records,enquiries,customers,trackLabels:CANONICAL_TRACK_METADATA};
+}
+
+export function linkUnchangedRoleSampleProject<T extends {fields:Record<string,string>}>(record:T, expected:RoleSampleRecord|undefined):T{
+  if(!expected||expected.type!=='Project'||!expected.fields.customerId||record.fields.fixturePack!==ROLE_LIFECYCLE_PACK||record.fields.customer!==expected.fields.customer)return record;
+  const linkedIds=[record.fields.customerId,record.fields.customer_id].map(value=>value?.trim()).filter(Boolean);
+  if(linkedIds.length)return record;
+  return {...record,fields:{...record.fields,customerId:expected.fields.customerId,customer_id:expected.fields.customerId,customerCode:expected.fields.customerCode!,customerName:expected.fields.customerName!}};
+}
+
+export function linkUnchangedRoleSampleEnquiry(enquiry:EnquiryOpportunity, expected:EnquiryOpportunity|undefined):EnquiryOpportunity{
+  if(!expected?.customerId||enquiry.customerId||enquiry.customerCode||enquiry.customerName!==expected.customerName)return enquiry;
+  return {...enquiry,customerId:expected.customerId,customerCode:expected.customerCode};
 }

@@ -36,7 +36,20 @@ test('updated pack uses seven pinned track checkpoints and genuinely pre-project
   assert.equal(pack.manifest.checkpoints.length,7);
   assert.equal(new Set(pack.manifest.checkpoints.map(x=>x.track)).size,7);
   assert.equal(pack.enquiries.length,7);
+  const customerRecords=pack.records.filter(r=>r.type==='Customer');
+  assert.equal(customerRecords.length,2);
+  assert.equal(pack.customers.length,2);
+  assert.ok(pack.customers.every(c=>customerRecords.some(r=>r.id===c.id&&r.reference===c.code)));
+  assert.ok(pack.customers.every(c=>!c.spocName&&!c.spocEmail&&!c.spocPhone&&!c.gstin),"fictional sample masters do not invent personal, tax or contact details");
   assert.ok(pack.enquiries.every(e=>!e.projectTrack&&!e.linkedProjectCode&&e.status==='Pending Enquiry'));
+  const projects=pack.records.filter(r=>r.type==='Project');
+  assert.equal(projects.filter(p=>p.fields.scope==='Client').length,5);
+  assert.ok(projects.filter(p=>p.fields.scope==='Client').every(p=>{
+    const customer=pack.customers.find(c=>c.id===p.fields.customerId);
+    return customer&&p.fields.customer_id===customer.id&&p.fields.customerCode===customer.code&&p.fields.customer===customer.name;
+  }),"client project checkpoints bind the exact canonical fictional Customer identity");
+  assert.ok(projects.filter(p=>p.fields.scope==='Internal').every(p=>!p.fields.customerId&&!p.fields.customer_id),"internal projects do not receive an external Customer link");
+  assert.ok(pack.enquiries.filter(e=>e.customerId).every(e=>pack.customers.some(c=>c.id===e.customerId&&c.code===e.customerCode)),"client enquiries and projects use the same canonical customer master");
   assert.equal(new Set(pack.records.map(r=>r.id)).size,pack.records.length);
   assert.equal(new Set(pack.records.map(r=>r.reference)).size,pack.records.length);
   const tasks=pack.records.filter(r=>r.type==='Task'&&r.fields.projectId);
@@ -50,6 +63,26 @@ test('updated pack uses seven pinned track checkpoints and genuinely pre-project
   assert.deepEqual(pack.manifest.records,replay.manifest.records);
   revision.stages[0].tasks[0].title='Later change';
   assert.ok(JSON.parse(pack.records.find(r=>r.type==='Project').fields.lifecycleBaseline).stages.find(s=>s.code==='CM_01').tasks[0].title!=='Later change');
+});
+test('customer-link refresh upgrades only unchanged fictional sample rows and preserves edits or conflicts',()=>{
+  const {linkUnchangedRoleSampleProject,linkUnchangedRoleSampleEnquiry}=load('role-lifecycle-samples');
+  const pack=buildRoleLifecyclePack(defaultLifecycleRevision(),departments,'2026-11-14T12:00:00Z');
+  const expectedProject=pack.records.find(r=>r.type==='Project'&&r.fields.scope==='Client');
+  const expectedEnquiry=pack.enquiries.find(e=>e.customerId);
+  assert.ok(expectedProject&&expectedEnquiry);
+  const {customerId,customer_id,customerCode,customerName,...oldFields}=expectedProject.fields;
+  const oldProject={...expectedProject,fields:oldFields};
+  const linkedProject=linkUnchangedRoleSampleProject(oldProject,expectedProject);
+  assert.equal(linkedProject.fields.customerId,expectedProject.fields.customerId);
+  assert.equal(linkedProject.fields.customer_id,expectedProject.fields.customerId);
+  const editedProject={...oldProject,fields:{...oldFields,customer:'Manually edited label'}};
+  assert.equal(linkUnchangedRoleSampleProject(editedProject,expectedProject),editedProject);
+  const conflictingProject={...oldProject,fields:{...oldFields,customerId:'another-id'}};
+  assert.equal(linkUnchangedRoleSampleProject(conflictingProject,expectedProject),conflictingProject);
+  const oldEnquiry={...expectedEnquiry,customerId:undefined,customerCode:''};
+  assert.equal(linkUnchangedRoleSampleEnquiry(oldEnquiry,expectedEnquiry).customerId,expectedEnquiry.customerId);
+  const editedEnquiry={...oldEnquiry,customerName:'Manually edited customer'};
+  assert.equal(linkUnchangedRoleSampleEnquiry(editedEnquiry,expectedEnquiry),editedEnquiry);
 });
 test('missing task-owning department blocks construction instead of assigning unrelated work',()=>{
   const revision=defaultLifecycleRevision();

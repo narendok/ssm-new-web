@@ -10,6 +10,8 @@ import {
 import { SharedLifecycleWorkspace } from "@/components/SharedLifecycleWorkspace";
 import {
   buildRoleLifecyclePack,
+  linkUnchangedRoleSampleEnquiry,
+  linkUnchangedRoleSampleProject,
   ROLE_LIFECYCLE_PACK,
   type RoleLifecyclePackManifest,
 } from "@/lib/role-lifecycle-samples";
@@ -4243,21 +4245,98 @@ function Portal() {
       const saved = await update((state) => {
         if (!state.demoLoaded)
           throw new Error("Load the fictional browser-local TEST workspace first.");
-        if (state.roleLifecyclePack?.version === ROLE_LIFECYCLE_PACK) {
-          const missing = state.roleLifecyclePack.records.filter(
-            (id) => !state.records.some((r) => r.id === id),
-          );
-          if (missing.length)
-            throw new Error(
-              `${missing.length} pack records are missing. Review the partial pack before restoring it.`,
-            );
-          return state;
-        }
         const pack = buildRoleLifecyclePack(
           state.lifecycleRevisions?.at(-1) ?? defaultLifecycleRevision(),
           state.departments,
           now(),
         );
+        const customersRegistry = state.customersRegistry ?? defaultCustomers;
+        for (const customer of pack.customers) {
+          const collision = customersRegistry.find(
+            (existing) =>
+              (existing.id === customer.id || existing.code === customer.code) &&
+              (existing.id !== customer.id || existing.code !== customer.code),
+          );
+          if (collision)
+            throw new Error(
+              `Customer sample identity ${customer.code} is already used by another account. Review the existing customer before refreshing samples.`,
+            );
+        }
+        if (state.roleLifecyclePack?.version === ROLE_LIFECYCLE_PACK) {
+          const ownedIds = new Set(state.roleLifecyclePack.records);
+          const missing = [...ownedIds].filter((id) => !state.records.some((r) => r.id === id));
+          if (missing.length)
+            throw new Error(
+              `${missing.length} pack records are missing. Review the partial pack before restoring it.`,
+            );
+          for (const customer of pack.records.filter((record) => record.type === "Customer")) {
+            const collision = state.records.find(
+              (record) => record.reference === customer.reference && record.id !== customer.id,
+            );
+            if (collision)
+              throw new Error(
+                `Customer sample reference ${customer.reference} is already used by another record. Review the existing sample before refreshing it.`,
+              );
+          }
+          const expectedById = new Map(pack.records.map((record) => [record.id, record]));
+          let linkedProjectCount = 0;
+          const records = state.records.map((record) => {
+            const expected = expectedById.get(record.id);
+            if (!ownedIds.has(record.id)) return record;
+            const linked = linkUnchangedRoleSampleProject(record, expected);
+            if (linked !== record) linkedProjectCount++;
+            return linked;
+          });
+          let linkedEnquiryCount = 0;
+          const enquiriesOpportunities = (state.enquiriesOpportunities ?? []).map((enquiry) => {
+            if (!ownedIds.has(enquiry.id)) return enquiry;
+            const expected = pack.enquiries.find((candidate) => candidate.id === enquiry.id);
+            const linked = linkUnchangedRoleSampleEnquiry(enquiry, expected);
+            if (linked !== enquiry) linkedEnquiryCount++;
+            return linked;
+          });
+          const customerRecords = pack.records.filter(
+            (record) =>
+              record.type === "Customer" &&
+              !state.records.some((existing) => existing.id === record.id),
+          );
+          const newCustomers = pack.customers.filter(
+            (customer) =>
+              !customersRegistry.some(
+                (existing) => existing.id === customer.id || existing.code === customer.code,
+              ),
+          );
+          const changed =
+            customerRecords.length > 0 ||
+            newCustomers.length > 0 ||
+            linkedProjectCount > 0 ||
+            linkedEnquiryCount > 0;
+          if (!changed) return state;
+          const customerNames = pack.customers.map((customer) => customer.name);
+          return {
+            ...state,
+            roleLifecyclePack: {
+              ...state.roleLifecyclePack,
+              records: [...new Set([...state.roleLifecyclePack.records, ...customerRecords.map((record) => record.id)])],
+            },
+            records: [...records, ...customerRecords],
+            enquiriesOpportunities,
+            customersRegistry: [...customersRegistry, ...newCustomers],
+            masters: {
+              ...state.masters,
+              customers: [...new Set([...state.masters.customers, ...customerNames])],
+            },
+            audit: [
+              {
+                id: createId(),
+                at: now(),
+                action: "Role lifecycle demo customer links refreshed",
+                detail: `${customerRecords.length} fictional Customer masters added; ${linkedProjectCount} unchanged sample Projects and ${linkedEnquiryCount} unchanged enquiries linked by exact fixture identity. Edited rows were preserved.`,
+              },
+              ...state.audit,
+            ],
+          };
+        }
         if (
           pack.records.some((r) =>
             state.records.some(
@@ -4273,6 +4352,19 @@ function Portal() {
           roleLifecyclePack: pack.manifest,
           records: [...state.records, ...pack.records],
           enquiriesOpportunities: [...(state.enquiriesOpportunities ?? []), ...pack.enquiries],
+          customersRegistry: [
+            ...(state.customersRegistry ?? defaultCustomers),
+            ...pack.customers.filter(
+              (customer) =>
+                !(state.customersRegistry ?? defaultCustomers).some(
+                  (existing) => existing.id === customer.id || existing.code === customer.code,
+                ),
+            ),
+          ],
+          masters: {
+            ...state.masters,
+            customers: [...new Set([...state.masters.customers, ...pack.customers.map((customer) => customer.name)])],
+          },
           audit: [
             {
               id: createId(),
