@@ -56,6 +56,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261112205712_register_test_orion_customer_link',
     '20261112221934_require_canonical_customer_for_project_start',
     '20261114033959_validate_project_record_links',
+    '20261114082413_validate_shared_test_customer_record_links',
   ];
 
   for (const name of migrationNames) {
@@ -382,6 +383,12 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     title: 'Fictional TEST Customer',
     fields: { revision: '01' },
   });
+  const alternateCustomerMaster = await call(admin, 'create_record', {
+    record_type: 'Customer',
+    reference: 'HLPL-CUST-TEST-02',
+    title: 'Fictional Alternate TEST Customer',
+    fields: { revision: '01' },
+  });
   const partMaster = (await db.query(
     "INSERT INTO operational_records(organization_id,department_id,area,record_type,reference,title,status,fields,created_by,updated_by) VALUES($1,$2,'pur','Part','HLPL-PRT-DIRECTORY-01','Directory-only TEST part','draft','{\"mpn\":\"TEST-MPN-DIR-01\"}'::jsonb,$3,$3) RETURNING id",
     [org,dPur,admin],
@@ -511,6 +518,24 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   const canonicalCustomerAfterEdit = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
   assert.equal(canonicalCustomerAfterEdit.customer, 'Fictional TEST Customer', 'same-ID edits retain the canonical customer display label');
   assert.equal(canonicalCustomerAfterEdit.customerId, customerMaster.id, 'same-ID edits retain the canonical customer ID');
+  const customerRelinkRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
+  await call(ehwLead, 'update_record', {
+    record_id: linkedCustomerRecord.id,
+    expected_updated_at: customerRelinkRow.updated_at.toISOString(),
+    fields: { ...canonicalCustomerAfterEdit, customerId: alternateCustomerMaster.id, customer_id: alternateCustomerMaster.id, customerCode: alternateCustomerMaster.reference, customer_code: alternateCustomerMaster.reference, customer: 'Old customer label', customerName: 'Old customer name', customer_name: 'Old customer name' },
+  });
+  const canonicalRelinkedCustomerFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
+  assert.equal(canonicalRelinkedCustomerFields.customerId, alternateCustomerMaster.id, 'explicit customer relink stores the selected canonical ID');
+  assert.equal(canonicalRelinkedCustomerFields.customer_id, alternateCustomerMaster.id, 'explicit customer relink synchronizes the snake-case ID alias');
+  assert.equal(canonicalRelinkedCustomerFields.customerCode, 'HLPL-CUST-TEST-02', 'server refreshes customer reference from the selected master');
+  assert.equal(canonicalRelinkedCustomerFields.customer_code, 'HLPL-CUST-TEST-02', 'server refreshes the snake-case customer reference');
+  assert.equal(canonicalRelinkedCustomerFields.customer, 'Fictional Alternate TEST Customer', 'server refreshes the customer label from the selected master');
+  const conflictingCustomerLinkRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
+  await assert.rejects(call(ehwLead, 'update_record', {
+    record_id: linkedCustomerRecord.id,
+    expected_updated_at: conflictingCustomerLinkRow.updated_at.toISOString(),
+    fields: { ...canonicalRelinkedCustomerFields, customer_code: customerRow.reference },
+  }), /CUSTOMER_LINK_INVALID/);
   const customerProjectEditRow = (await db.query('SELECT updated_at FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0];
   await call(ehwLead, 'update_record', {
     record_id: linkedCustomerRecord.id,
@@ -543,7 +568,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   await call(ehwLead, 'update_record', {
     record_id: linkedCustomerRecord.id,
     expected_updated_at: linkedCustomerEditedRow.updated_at.toISOString(),
-    fields: { ...canonicalCustomerAfterEdit, customerId: '', customer_id: '', customer: '' },
+    fields: { ...canonicalRelinkedCustomerFields, customerId: '', customer_id: '', customerCode: '', customer_code: '', customer: '', customerName: '', customer_name: '' },
   });
   const clearedCustomerFields = (await db.query('SELECT fields FROM operational_records WHERE id=$1',[linkedCustomerRecord.id])).rows[0].fields;
   assert.equal(Object.hasOwn(clearedCustomerFields, 'customerCode'), false, 'clearing a customer link also removes stale canonical label metadata');
@@ -1019,7 +1044,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     [feasibilityOpportunity.id, 'HLPL-GEN-SAL-ENQ-19B263D68FB14FE38955B28519B6BBDF-01'],
   );
   await db.query(
-    "UPDATE operational_records SET fields = (fields - 'customerId' - 'customer_id') || jsonb_build_object('customer', $2::text, 'customerCode', 'TESTORION') WHERE id IN ($1, $3)",
+    "UPDATE operational_records SET fields = (fields - 'customerId' - 'customer_id' - 'customer_code') || jsonb_build_object('customer', $2::text, 'customerCode', 'TESTORION') WHERE id IN ($1, $3)",
     [feasibilityOpportunity.id, 'Orion Controls Private Limited (fictional)', projectFromOpportunity.id],
   );
   await db.exec(fs.readFileSync(path.join(root, 'supabase/migrations/20261112205712_register_test_orion_customer_link.sql'), 'utf8'));

@@ -106,6 +106,7 @@ test('DepartmentProjectWorkspace combines project records and linked deliverable
   assert.match(vaultSource, /No current Gerber revision is linked to this project/, 'Missing native source packages explain why panel drafts are unavailable');
   assert.match(vaultSource, /Panel ZIP and Stencil PCB fab need a project and its current Gerber source revision/, 'Native manufacturing packages explain the project prerequisite');
   assert.match(sharedTestSource, /aria-label="Editable master links"/, 'Shared TEST record updates expose linked Project and Supplier controls');
+  assert.match(sharedTestSource, /Linked Customer, Project and Supplier/, 'Shared TEST record updates expose a canonical Customer control');
   assert.match(sharedTestSource, /resolveEditableMasterLink/, 'Existing aliases must resolve unambiguously before showing a saved master link');
   assert.match(sharedTestSource, /replaceEditableMasterLink/, 'Changing a master link replaces its ID, reference, and display-name aliases together');
 
