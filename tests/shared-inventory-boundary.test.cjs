@@ -21,3 +21,9 @@ test("inventory route uses the original full workspace with quantity and assignm
   assert.match(branch, /onMove=\{moveInventory\}/);
   assert.match(branch, /onAssign=\{assignInventory\}/);
 });
+
+test("browser-local inventory fixtures are clearly distinguished from shared stock", () => {
+  assert.match(liveComponent, /Browser-local demo data\./);
+  assert.match(liveComponent, /do not update Shared TEST stock or appear in Android/i);
+  assert.match(liveComponent, /Demo component inventory/);
+});

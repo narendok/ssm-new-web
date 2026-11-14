@@ -1895,7 +1895,7 @@ export function LiveInventoryWorkspace({
                 </span>
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Authoritative component inventory, wire harness assemblies, serialized production machinery, and project-team issuance.
+                Demo component inventory, wire harness assemblies, serialized production machinery, and project-team issuance.
               </p>
             </div>
           </div>
@@ -1922,6 +1922,10 @@ export function LiveInventoryWorkspace({
             </>
           )}
         </div>
+      </div>
+
+      <div className="border-b border-amber-500/30 bg-amber-500/10 px-5 py-3 text-xs text-amber-950 dark:text-amber-100" role="status">
+        <span className="font-semibold">Browser-local demo data.</span> Parts, quantities, receipts and assignments here are fictional and stay in this browser. They do not update Shared TEST stock or appear in Android; the shared stock ledger is not connected yet. Use this screen to explore the full inventory workflow.
       </div>
 
       {/* KPI Status Ribbon */}
