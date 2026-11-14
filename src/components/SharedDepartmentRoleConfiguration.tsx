@@ -8,6 +8,8 @@ const permissions = [
   ['records:view','View department records'], ['records:create','Create records'], ['records:edit','Edit records'],
   ['tasks:assign','Assign tasks'], ['approvals:decide','Approve assigned department gates'], ['documents:manage','Manage documents'],
   ['documents:approve','Approve documents'], ['settings:manage','Manage department default tasks'], ['audit:manage','Manage audit records'],
+  ['inventory:issue','Allocate and return assigned stock'], ['inventory:receive','Receive against approved purchase orders'],
+  ['inventory:hold','Place stock on QA hold'], ['inventory:release_hold','Release stock from QA hold'],
 ] as const;
 const roleKeyFromName=(name:string)=>{const key=name.trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,64);return key.length>=2?key:`role_${key||'new'}`;};
 const field='h-9 w-full rounded border border-input bg-background px-2 text-sm';

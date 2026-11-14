@@ -6,6 +6,7 @@ import type { Json } from '@/integrations/supabase/types';
 const permissionKeys = [
   'records:view', 'records:create', 'records:edit', 'tasks:assign',
   'approvals:decide', 'documents:manage', 'settings:manage', 'audit:manage', 'documents:approve',
+  'inventory:issue', 'inventory:receive', 'inventory:hold', 'inventory:release_hold',
 ] as const;
 const roleConfiguration = z.object({
   canManage: z.boolean(),
