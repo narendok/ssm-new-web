@@ -50,6 +50,7 @@ import {
   type MouserComponentResult,
   type PriceBreak,
 } from "@/lib/mouser-service";
+import type { SharedInventoryPartMaster } from "@/lib/shared-inventory.schema";
 
 
 // =============================================================================
@@ -1052,7 +1053,7 @@ const getAvailable = (item: InventoryItem) => Math.max(0, getReleased(item) - it
 // 4. MAIN WORKSPACE COMPONENT
 // =============================================================================
 
-type Props = {
+export type LiveInventoryWorkspaceProps = {
   items: InventoryItem[];
   movements: InventoryMovement[];
   assignments: InventoryAssignment[];
@@ -1061,6 +1062,8 @@ type Props = {
   activeDepartment?: "EHW" | "PUR" | "MECH" | "QA" | "ALL";
   isFullPage?: boolean;
   onBack?: () => void;
+  sharedPartMasters?: SharedInventoryPartMaster[] | undefined;
+  sharedPartCatalogState?: "loading" | "ready" | "error" | undefined;
   onMove: (itemId: string, change: number, reason: InventoryMovement["reason"]) => void;
   onAssign: (
     itemId: string,
@@ -1081,12 +1084,14 @@ export function LiveInventoryWorkspace({
   activeDepartment = "ALL",
   isFullPage = false,
   onBack,
+  sharedPartMasters,
+  sharedPartCatalogState,
   onMove,
   onAssign,
-}: Props) {
+}: LiveInventoryWorkspaceProps) {
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<
-    "parts" | "harnesses" | "issuance" | "grn" | "assets" | "audit"
+    "parts" | "harnesses" | "issuance" | "grn" | "assets" | "audit" | "shared-parts"
   >("parts");
 
   // Department-adaptive column preset
@@ -1177,6 +1182,9 @@ export function LiveInventoryWorkspace({
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState("");
+  const [sharedPartSearch, setSharedPartSearch] = useState("");
+  const [sharedPartCategory, setSharedPartCategory] = useState("All");
+  const [sharedPartDepartment, setSharedPartDepartment] = useState("All");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedCrossTag, setSelectedCrossTag] = useState<string>("All");
   const [selectedProject, setSelectedProject] = useState<string>("All");
@@ -1925,7 +1933,7 @@ export function LiveInventoryWorkspace({
       </div>
 
       <div className="border-b border-amber-500/30 bg-amber-500/10 px-5 py-3 text-xs text-amber-950 dark:text-amber-100" role="status">
-        <span className="font-semibold">Browser-local demo data.</span> Parts, quantities, receipts and assignments here are fictional and stay in this browser. They do not update Shared TEST stock or appear in Android; the shared stock ledger is not connected yet. Use this screen to explore the full inventory workflow.
+        <span className="font-semibold">Browser-local stock demo.</span> Quantities, movements, receipts and assignments here are fictional and stay in this browser. The Shared Part Masters tab reads canonical Part records from Shared TEST; shared stock quantities are not connected yet.
       </div>
 
       {/* KPI Status Ribbon */}
@@ -1971,6 +1979,7 @@ export function LiveInventoryWorkspace({
           { id: "grn", label: "Goods Received (GRN) & IQC", icon: FileText, count: grnList.length },
           { id: "assets", label: "Governed Asset Register", icon: Wrench, count: assetList.length },
           { id: "audit", label: "Stock Movement History", icon: History, count: localMovements.length },
+          ...(sharedPartCatalogState ? [{ id: "shared-parts", label: "Shared Part Masters", icon: Tag, count: sharedPartMasters?.length ?? 0 }] : []),
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -2738,6 +2747,57 @@ export function LiveInventoryWorkspace({
             </table>
           </div>
         </div>
+      )}
+
+      {activeTab === "shared-parts" && (
+        <section aria-label="Shared Part Master" className="p-4">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-foreground">Shared Part Master</h3>
+              <p className="text-xs text-muted-foreground">Canonical part IDs and department/category views from the authenticated Shared TEST directory. Stock quantity is not recorded here.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <input aria-label="Search shared parts" className="h-8 min-w-56 rounded-md border border-input bg-background px-2 text-xs" placeholder="Search part, MPN or reference…" value={sharedPartSearch} onChange={event => setSharedPartSearch(event.target.value)} />
+              <select aria-label="Filter shared parts by category" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={sharedPartCategory} onChange={event => setSharedPartCategory(event.target.value)}>
+                <option value="All">All categories</option>
+                {Array.from(new Set((sharedPartMasters ?? []).map(part => part.category).filter((value): value is string => !!value))).sort().map(category => <option key={category} value={category}>{category}</option>)}
+              </select>
+              <select aria-label="Filter shared parts by department" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={sharedPartDepartment} onChange={event => setSharedPartDepartment(event.target.value)}>
+                <option value="All">All departments</option>
+                {Array.from(new Set((sharedPartMasters ?? []).flatMap(part => part.departmentViews))).sort().map(department => <option key={department} value={department}>{department}</option>)}
+              </select>
+            </div>
+          </div>
+          {sharedPartCatalogState === "loading" ? (
+            <div className="flex items-center gap-2 rounded-lg border border-border p-5 text-xs text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading Shared TEST Part masters…</div>
+          ) : sharedPartCatalogState === "error" ? (
+            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive">Shared Part masters could not be loaded. The browser-local stock demo remains separate.</p>
+          ) : (() => {
+            const query = sharedPartSearch.trim().toLocaleLowerCase();
+            const visibleParts = (sharedPartMasters ?? []).filter(part =>
+              (sharedPartCategory === "All" || part.category === sharedPartCategory) &&
+              (sharedPartDepartment === "All" || part.departmentViews.includes(sharedPartDepartment) || part.primaryDepartment === sharedPartDepartment) &&
+              (!query || [part.reference, part.title, part.mpn ?? "", part.category ?? ""].some(value => value.toLocaleLowerCase().includes(query)))
+            );
+            return visibleParts.length ? (
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full min-w-[820px] text-left text-xs">
+                  <thead className="border-b border-border bg-secondary/50 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2">Part master</th><th className="px-3 py-2">MPN</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Department views</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Shared stock</th></tr></thead>
+                  <tbody className="divide-y divide-border">
+                    {visibleParts.map(part => <tr key={part.id}>
+                      <td className="px-3 py-2.5"><div className="font-semibold text-foreground">{part.title}</div><div className="font-mono text-[10px] text-muted-foreground">{part.reference} · {part.id}</div>{part.isDemo && <span className="mt-1 inline-flex rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800 dark:text-amber-200">Fictional master example</span>}</td>
+                      <td className="px-3 py-2.5 font-mono">{part.mpn || "Not recorded"}</td>
+                      <td className="px-3 py-2.5">{part.category || "Not categorized"}{part.subcategory && <div className="text-[10px] text-muted-foreground">{part.subcategory}</div>}</td>
+                      <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1">{Array.from(new Set([...(part.departmentViews ?? []), ...(part.primaryDepartment ? [part.primaryDepartment] : [])])).map(department => <span key={department} className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">{department}</span>)}</div></td>
+                      <td className="px-3 py-2.5">{part.status}</td>
+                      <td className="px-3 py-2.5 text-right text-muted-foreground">Not recorded</td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="rounded-lg border border-dashed border-border p-5 text-xs text-muted-foreground">No Shared TEST parts match these filters.</p>;
+          })()}
+        </section>
       )}
 
       {/* =========================================================================

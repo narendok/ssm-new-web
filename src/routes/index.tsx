@@ -257,6 +257,7 @@ import {
   type InventoryItem,
   type InventoryMovement,
 } from "@/components/LiveInventoryWorkspace";
+import { SharedInventoryWorkspace } from "@/components/SharedInventoryWorkspace";
 import {
   CompanyDirectoryModal,
   OfficialDecisionLogModal,
@@ -6635,7 +6636,35 @@ function Portal() {
               selectedProjectId={selectedProjectId}
             />
           ) : view === "inventory" ? (
-            <LiveInventoryWorkspace
+            testMembership ? <SharedInventoryWorkspace
+              key={`${testMembership.membershipId}:inventory`}
+              membershipId={testMembership.membershipId}
+              items={portal.inventory ?? []}
+              movements={portal.inventoryMovements ?? []}
+              assignments={portal.inventoryAssignments ?? []}
+              allowedCategories={[
+                "Electronics",
+                "Connectors",
+                "Wire and Cable",
+                "Wire Harnesses",
+                "Mechanical Parts",
+                "Enclosures",
+                "Firmware Tools",
+                "Production Tools",
+                "Packaging & Consumables",
+                "Hardware / PCB",
+                "Mechanical",
+                "Firmware / Software",
+                "Test & Calibration",
+                "Packaging & Logistics",
+              ]}
+              readOnly={false}
+              onMove={moveInventory}
+              onAssign={assignInventory}
+              activeDepartment="PUR"
+              isFullPage={true}
+              onBack={() => setView("queue")}
+            /> : <LiveInventoryWorkspace
               items={portal.inventory ?? []}
               movements={portal.inventoryMovements ?? []}
               assignments={portal.inventoryAssignments ?? []}
