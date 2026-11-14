@@ -341,6 +341,8 @@ Found and fixed a client-side issue where reopening a saved department estimate 
 
 ### 14 November 2026 — migration ledger and verification checkpoint
 
+- Latest continuation check: the owner confirmed the local portal is working at `http://localhost:8083/`; no server restart or source change was needed for this check. The current full Web regression suite completed successfully at 378/378. This does not by itself verify authenticated live save/reload, Shared TEST stock movements, cross-member visibility, or Android parity. No database rows were changed in this check.
+
 - Vault registration clears the selected native source revision and its options immediately when Project, Scope or document type changes. New Panel/Stencil registration requires a selected revision from the currently loaded source choices before calling the server; an already-created Draft retains its original-file retry path. Focused vault/client-boundary regression passed 10/10. Hosted source authorization remains authoritative; no document was registered during this code change.
 
 - Generic Shared TEST Edit/revise now displays saved Project and Supplier master context with current canonical reference/name, resolving Project from the shared summary directory or authorized visible Project records. The authenticated side browser confirmed Orion/Texas Instruments labels alongside the saved revision and notes. Links are read-only in this generic findings/notes revision flow; changing master associations still needs a dedicated validated edit path. No revision was saved during this visual check.
