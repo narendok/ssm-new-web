@@ -19,6 +19,7 @@ import { registerSharedDocument } from "@/lib/shared-vault.functions";
 import { getSharedDepartmentRoleConfiguration } from "@/lib/department-roles.functions";
 import { sharedTaskAssigneeOptions } from "@/lib/shared-task-assignees";
 import { resolveEditableMasterLink, replaceEditableMasterLink } from "@/lib/shared-record-master-edit";
+import { setSharedProjectCustomerLink } from "@/lib/project-customer-link.functions";
 import {
   beginControlledDocumentUpload,
   completeControlledDocumentUpload,
@@ -62,6 +63,7 @@ export function SharedTestWorkspace({
     listFiles = useServerFn(listControlledDocumentFiles);
   const registerDocument = useServerFn(registerSharedDocument);
   const loadRoleConfiguration = useServerFn(getSharedDepartmentRoleConfiguration);
+  const saveProjectCustomerLink = useServerFn(setSharedProjectCustomerLink);
   const query = useQuery({
     queryKey: ["shared-test-workspace", membership.organizationId, membership.membershipId],
     queryFn: () => load(),
@@ -94,6 +96,10 @@ export function SharedTestWorkspace({
     [persistedRecord,setPersistedRecord]=useState<{id:string;reference:string;revision:string}|null>(null),
     [recordAttachmentDocumentId,setRecordAttachmentDocumentId]=useState<string|null>(null);
   const [stageTarget, setStageTarget] = useState<Record<string, string>>({});
+  const [projectCustomerEditor, setProjectCustomerEditor] = useState<SharedTestSnapshot["records"][number] | null>(null);
+  const [projectCustomerValue, setProjectCustomerValue] = useState("");
+  const [projectCustomerSaving, setProjectCustomerSaving] = useState(false);
+  const projectCustomerRequestId = useRef<string | null>(null);
   const [documentSearch, setDocumentSearch] = useState("");
   const [documentProjectFilter, setDocumentProjectFilter] = useState("all");
   const pendingRequest = useRef<{ signature: string; id: string } | null>(null);
@@ -215,6 +221,35 @@ export function SharedTestWorkspace({
   const projectLinkSelectOptions = selectableProjectLinks.map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
   const supplierLinkMasters = data.supplierOptions.length ? data.supplierOptions : data.records.filter(record => record.record_type === "Supplier").map(record => ({ id: record.id, reference: record.reference, title: record.title, status: record.status }));
   const supplierLinkSelectOptions = supplierLinkMasters.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
+  const canEditProjectCustomer = admin || (lead && actor.department_code === "SAL");
+  const openProjectCustomerEditor = (project: SharedTestSnapshot["records"][number]) => {
+    const link = resolveEditableMasterLink(project.fields, customerLinkMasters, [...customerLinkAliases.ids, ...customerLinkAliases.references]);
+    projectCustomerRequestId.current = crypto.randomUUID();
+    setProjectCustomerValue(link.unresolved ? "" : link.id);
+    setProjectCustomerEditor(project);
+    setError("");
+  };
+  const saveProjectCustomer = async () => {
+    if (!projectCustomerEditor || !projectCustomerRequestId.current) return;
+    setProjectCustomerSaving(true);
+    setError("");
+    try {
+      await saveProjectCustomerLink({ data: {
+        projectId: projectCustomerEditor.id,
+        customerId: projectCustomerValue || null,
+        expectedUpdatedAt: projectCustomerEditor.updated_at,
+        requestId: projectCustomerRequestId.current,
+      } });
+      projectCustomerRequestId.current = null;
+      setProjectCustomerEditor(null);
+      await query.refetch();
+      setNotice("Project Customer link saved from the canonical Customer master.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Customer link could not be saved.");
+    } finally {
+      setProjectCustomerSaving(false);
+    }
+  };
   const recordMasterOptions = (master: NonNullable<RecordField["master"]>) => {
     const fromRecords = (types: string[]) => data.records
       .filter(record => types.includes(record.record_type.toLowerCase()) && isSelectableMasterStatus(record.status))
@@ -675,7 +710,26 @@ export function SharedTestWorkspace({
                       {projects.map((p) => (
                         <tr className="border-t" key={p.id}>
                           <td className="p-2 font-mono">{p.reference}</td>
-                          <td>{p.title}</td>
+                          <td>
+                            <div>{p.title}</div>
+                            {(() => {
+                              const link = resolveEditableMasterLink(p.fields, customerLinkMasters, [...customerLinkAliases.ids, ...customerLinkAliases.references]);
+                              const linkedCustomer = customerLinkMasters.find(customer => customer.id === link.id);
+                              const label = linkedCustomer
+                                ? `${linkedCustomer.reference} · ${linkedCustomer.title}`
+                                : link.unresolved ? "Saved Customer text needs review" : "Not linked";
+                              return (
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                  <span>Customer: {label}</span>
+                                  {canEditProjectCustomer && p.status.toLowerCase() === "draft" && (
+                                    <button className={`${button} px-2 py-1 text-xs`} disabled={busy || projectCustomerSaving} onClick={() => openProjectCustomerEditor(p)}>
+                                      {link.unresolved ? "Review link" : link.id ? "Edit link" : "Link Customer"}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </td>
                           <td>{Object.values(projectLifecycleContext(p.fields as Record<string,string>)).filter(Boolean).join(' · ') || 'Lifecycle configuration required'}</td>
                           <td>
                             {(admin || (lead && p.department_id === ownDepartment)) && (
@@ -1280,6 +1334,48 @@ export function SharedTestWorkspace({
             </form>
           </DialogContent>
           )}
+        </Dialog>
+        <Dialog open={Boolean(projectCustomerEditor)} onOpenChange={(open) => {
+          if (!open && !projectCustomerSaving) {
+            setProjectCustomerEditor(null);
+            projectCustomerRequestId.current = null;
+          }
+        }}>
+          <DialogContent className="w-[calc(100vw-2rem)] max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Link Customer to Project</DialogTitle>
+              <DialogDescription>
+                This changes only the Customer link on a draft Project and records the change in audit history. A Project created from an Opportunity must keep that Opportunity’s Customer.
+              </DialogDescription>
+            </DialogHeader>
+            {projectCustomerEditor && (
+              <div className="grid gap-4">
+                <div className="text-sm">
+                  <div className="font-medium">{projectCustomerEditor.reference}</div>
+                  <div className="text-muted-foreground">{projectCustomerEditor.title}</div>
+                </div>
+                {resolveEditableMasterLink(projectCustomerEditor.fields, customerLinkMasters, [...customerLinkAliases.ids, ...customerLinkAliases.references]).unresolved && (
+                  <p role="status" className="text-xs text-amber-700 dark:text-amber-300">
+                    Saved Customer aliases do not resolve to exactly one active master. Choose the correct Customer explicitly; no name-based link is guessed.
+                  </p>
+                )}
+                <div className="grid gap-1 text-sm">
+                  <label htmlFor="project-customer-master">Customer master</label>
+                  <SharedMasterSelect label="Project Customer master" options={customerLinkSelectOptions} value={projectCustomerValue} onChange={(value) => {
+                    setProjectCustomerValue(value);
+                    projectCustomerRequestId.current = crypto.randomUUID();
+                  }} />
+                </div>
+                {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+                <div className="flex justify-end gap-2">
+                  <button className={button} disabled={projectCustomerSaving} onClick={() => setProjectCustomerEditor(null)}>Cancel</button>
+                  <button className={button} disabled={projectCustomerSaving} onClick={() => void saveProjectCustomer()}>
+                    {projectCustomerSaving ? "Saving…" : "Save Customer link"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
         </Dialog>
         {fileDocument && (
           <section
