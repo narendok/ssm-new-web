@@ -101,6 +101,9 @@ test('DepartmentProjectWorkspace combines project records and linked deliverable
   const vaultSource = fs.readFileSync(path.resolve(__dirname, '../src/components/SharedDocumentVault.tsx'), 'utf8');
   assert.match(vaultSource, /<details aria-label="Lifecycle and draft source context"/, 'Document lifecycle and source context is available on demand');
   assert.match(vaultSource, />All documents<\/Button>/, 'Document detail keeps a focused in-feature route back to the library');
+  assert.match(vaultSource, /setSourceFilesStatus\("loading"\)/, 'Native source revisions are checked before the picker can be used');
+  assert.match(vaultSource, /No current Gerber revision is linked to this project/, 'Missing native source packages explain why panel drafts are unavailable');
+  assert.match(vaultSource, /Panel ZIP and Stencil PCB fab need a project and its current Gerber source revision/, 'Native manufacturing packages explain the project prerequisite');
 
   const approvalsSource = fs.readFileSync(path.resolve(__dirname, '../src/components/ApprovalsFullPageView.tsx'), 'utf8');
   assert.match(approvalsSource, /Return for rework/, 'Approval decision action states its workflow purpose');
