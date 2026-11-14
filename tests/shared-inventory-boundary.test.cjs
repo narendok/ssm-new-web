@@ -28,6 +28,11 @@ test("browser-local inventory fixtures are clearly distinguished from shared sto
   assert.match(liveComponent, /classic inventory tabs keep their fictional quantities and actions in this browser/i);
   assert.match(liveComponent, /Shared TEST tabs use canonical Part IDs and a separate fictional stock ledger/i);
   assert.match(liveComponent, /Demo component inventory/);
+  assert.match(liveComponent, /QA hold/);
+  assert.match(liveComponent, /Receive approved PO/);
+  assert.match(liveComponent, /Admin adjustment/);
+  assert.match(liveComponent, /Return reusable stock/);
+  assert.match(liveComponent, /Consume \/ scrap/);
 });
 
 test("authenticated inventory keeps the full demo workspace and adds a canonical shared Part tab", () => {

@@ -1078,6 +1078,7 @@ export type LiveInventoryWorkspaceProps = {
   }> | undefined;
   sharedInventoryAssignments?: SharedInventoryAssignment[] | undefined;
   sharedInventoryMovements?: SharedInventoryMovement[] | undefined;
+  canAdjustSharedInventory?: boolean | undefined;
   onSharedInventoryEvent?: ((input: SharedInventoryEventInput) => Promise<void>) | undefined;
   sharedInventoryActionPending?: boolean | undefined;
   sharedInventoryActionError?: string | undefined;
@@ -1108,6 +1109,7 @@ export function LiveInventoryWorkspace({
   sharedInventoryReceiptOptions,
   sharedInventoryAssignments,
   sharedInventoryMovements,
+  canAdjustSharedInventory = false,
   onSharedInventoryEvent,
   sharedInventoryActionPending = false,
   sharedInventoryActionError,
@@ -1215,6 +1217,18 @@ export function LiveInventoryWorkspace({
   const [sharedAssignRoleId, setSharedAssignRoleId] = useState("");
   const [sharedAssignQuantity, setSharedAssignQuantity] = useState("1");
   const [sharedAssignNote, setSharedAssignNote] = useState("Project material allocation");
+  const [sharedStockActionPartId, setSharedStockActionPartId] = useState<string | null>(null);
+  const [sharedStockAction, setSharedStockAction] = useState<"receipt" | "hold" | "release_hold" | "adjustment">("hold");
+  const [sharedStockActionQuantity, setSharedStockActionQuantity] = useState("1");
+  const [sharedStockActionNote, setSharedStockActionNote] = useState("");
+  const [sharedStockActionLocation, setSharedStockActionLocation] = useState("Fictional TEST stockroom");
+  const [sharedStockActionBin, setSharedStockActionBin] = useState("");
+  const [sharedStockActionOrderId, setSharedStockActionOrderId] = useState("");
+  const [sharedStockActionDirection, setSharedStockActionDirection] = useState<"increase" | "decrease">("increase");
+  const [sharedAssignmentActionId, setSharedAssignmentActionId] = useState<string | null>(null);
+  const [sharedAssignmentAction, setSharedAssignmentAction] = useState<"return" | "consume">("return");
+  const [sharedAssignmentActionQuantity, setSharedAssignmentActionQuantity] = useState("1");
+  const [sharedAssignmentActionNote, setSharedAssignmentActionNote] = useState("");
   const [sharedInventoryNotice, setSharedInventoryNotice] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedCrossTag, setSelectedCrossTag] = useState<string>("All");
@@ -1924,6 +1938,68 @@ export function LiveInventoryWorkspace({
       setSharedAssignQuantity("1");
     } catch (error) {
       setSharedInventoryNotice(error instanceof Error ? error.message : "Shared inventory allocation failed.");
+    }
+  };
+
+  const submitSharedStockAction = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const part = sharedPartMasters?.find((candidate) => candidate.id === sharedStockActionPartId);
+    const quantity = Number(sharedStockActionQuantity);
+    if (!part || !onSharedInventoryEvent || !Number.isFinite(quantity) || quantity <= 0) return;
+    if ((sharedStockAction === "hold" && quantity > part.available) ||
+        (sharedStockAction === "release_hold" && quantity > part.held) ||
+        (sharedStockAction === "adjustment" && sharedStockActionDirection === "decrease" && quantity > part.available)) {
+      setSharedInventoryNotice("Quantity exceeds the available or held Shared TEST balance.");
+      return;
+    }
+    const common = {
+      requestId: crypto.randomUUID(), partId: part.id, quantity,
+      location: sharedStockActionLocation.trim() || "Fictional TEST stockroom",
+      bin: sharedStockActionBin.trim(),
+      note: sharedStockActionNote.trim() || "Shared TEST inventory action",
+    };
+    try {
+      if (sharedStockAction === "receipt") {
+        const option = sharedInventoryReceiptOptions?.find((entry) => entry.partId === part.id && entry.purchaseOrderId === sharedStockActionOrderId);
+        if (!option) throw new Error("Choose an approved purchase-order line for this exact Part.");
+        if (quantity > option.remainingQuantity) throw new Error(`Receipt exceeds the remaining approved quantity (${option.remainingQuantity}).`);
+        await onSharedInventoryEvent({ action: "receipt", ...common, purchaseOrderId: option.purchaseOrderId, supplierId: option.supplierId });
+      } else if (sharedStockAction === "adjustment") {
+        await onSharedInventoryEvent({ action: "adjustment", ...common, direction: sharedStockActionDirection });
+      } else {
+        await onSharedInventoryEvent({ action: sharedStockAction, ...common });
+      }
+      setSharedInventoryNotice(`${sharedStockAction.replaceAll("_", " ")} saved to the Shared TEST ledger for ${part.reference}.`);
+      setSharedStockActionPartId(null);
+      setSharedStockActionNote("");
+      setSharedStockActionOrderId("");
+    } catch (error) {
+      setSharedInventoryNotice(error instanceof Error ? error.message : "Shared TEST inventory action failed.");
+    }
+  };
+
+  const submitSharedAssignmentClose = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const assignment = sharedInventoryAssignments?.find((candidate) => candidate.id === sharedAssignmentActionId);
+    const quantity = Number(sharedAssignmentActionQuantity);
+    if (!assignment || !onSharedInventoryEvent || !Number.isFinite(quantity) || quantity <= 0 || quantity > assignment.quantity) return;
+    try {
+      const common = {
+        requestId: crypto.randomUUID(), partId: assignment.partId,
+        assignmentId: assignment.id, quantity,
+        location: assignment.location || "Fictional TEST stockroom", bin: assignment.bin,
+        note: sharedAssignmentActionNote.trim() || `Shared TEST allocation ${sharedAssignmentAction}`,
+      };
+      if (sharedAssignmentAction === "return") {
+        await onSharedInventoryEvent({ action: "return", ...common, disposition: "usable" });
+      } else {
+        await onSharedInventoryEvent({ action: "consume", ...common });
+      }
+      setSharedInventoryNotice(`${sharedAssignmentAction} saved for ${assignment.partReference}.`);
+      setSharedAssignmentActionId(null);
+      setSharedAssignmentActionNote("");
+    } catch (error) {
+      setSharedInventoryNotice(error instanceof Error ? error.message : "Shared TEST allocation update failed.");
     }
   };
 
@@ -2856,7 +2932,7 @@ export function LiveInventoryWorkspace({
                         <td className="px-3 py-2.5 text-right tabular-nums">{part.held.toLocaleString()}</td>
                         <td className="px-3 py-2.5 text-right tabular-nums">{part.allocated.toLocaleString()}</td>
                         <td className="px-3 py-2.5 text-right font-semibold tabular-nums">{part.available.toLocaleString()}</td>
-                        <td className="px-3 py-2.5 text-right">{sharedInventoryRoles?.length ? <button type="button" disabled={!onSharedInventoryEvent || part.available <= 0 || sharedInventoryActionPending} onClick={() => { setSharedAssignPartId(sharedAssignPartId === part.id ? null : part.id); setSharedAssignQuantity("1"); setSharedInventoryNotice(""); }} className="inline-flex h-7 items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 text-[10px] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"><UserPlus className="size-3" />Assign role</button> : <span className="text-[10px] text-muted-foreground">Role setup needed</span>}</td>
+                        <td className="px-3 py-2.5 text-right"><div className="inline-flex gap-1">{sharedInventoryRoles?.length ? <button type="button" disabled={!onSharedInventoryEvent || part.available <= 0 || sharedInventoryActionPending} onClick={() => { setSharedAssignPartId(sharedAssignPartId === part.id ? null : part.id); setSharedStockActionPartId(null); setSharedAssignQuantity("1"); setSharedInventoryNotice(""); }} className="inline-flex h-7 items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 text-[10px] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"><UserPlus className="size-3" />Assign</button> : <span className="text-[10px] text-muted-foreground">Role setup needed</span>}<button type="button" disabled={!onSharedInventoryEvent || sharedInventoryActionPending} onClick={() => { setSharedStockActionPartId(sharedStockActionPartId === part.id ? null : part.id); setSharedAssignPartId(null); setSharedStockAction("hold"); setSharedStockActionQuantity("1"); setSharedInventoryNotice(""); }} className="h-7 rounded border border-border bg-card px-2 text-[10px] font-semibold text-foreground disabled:opacity-50">Stock actions</button></div></td>
                       </tr>
                       {sharedAssignPartId === part.id && <tr className="bg-secondary/30"><td colSpan={10} className="px-4 py-3">
                         <form onSubmit={submitSharedAssignment} className="grid gap-3 md:grid-cols-[1fr_1fr_100px_1.3fr_auto] md:items-end">
@@ -2867,6 +2943,18 @@ export function LiveInventoryWorkspace({
                           <button type="submit" disabled={sharedInventoryActionPending || !sharedAssignProjectId || !sharedAssignRoleId} className="h-8 rounded bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50">{sharedInventoryActionPending ? "Saving…" : "Save allocation"}</button>
                         </form>
                         <p className="mt-2 text-[10px] text-muted-foreground">Assignment is saved against the stable role profile ID, not an employee name. Existing task/project history is unchanged.</p>
+                      </td></tr>}
+                      {sharedStockActionPartId === part.id && <tr className="bg-secondary/30"><td colSpan={10} className="px-4 py-3">
+                        <form onSubmit={submitSharedStockAction} className="grid gap-3 md:grid-cols-[140px_1fr_95px_1fr_1fr_auto] md:items-end">
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Action<select aria-label="Shared stock action" className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedStockAction} onChange={event => { setSharedStockAction(event.target.value as typeof sharedStockAction); setSharedStockActionOrderId(""); }}><option value="hold">QA hold</option><option value="release_hold" disabled={part.held <= 0}>Release hold</option><option value="receipt" disabled={!sharedInventoryReceiptOptions?.some(option => option.partId === part.id)}>Receive approved PO</option>{canAdjustSharedInventory && <option value="adjustment">Admin adjustment</option>}</select></label>
+                          {sharedStockAction === "receipt" ? <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Approved PO line<select required aria-label="Approved Shared TEST PO line" className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedStockActionOrderId} onChange={event => setSharedStockActionOrderId(event.target.value)}><option value="">Choose exact PO/Part…</option>{(sharedInventoryReceiptOptions ?? []).filter(option => option.partId === part.id).map(option => <option key={option.purchaseOrderId} value={option.purchaseOrderId}>{option.purchaseOrderReference} · {option.supplierReference} · remaining {option.remainingQuantity}</option>)}</select></label> : sharedStockAction === "adjustment" ? <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Direction<select aria-label="Adjustment direction" className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedStockActionDirection} onChange={event => setSharedStockActionDirection(event.target.value as typeof sharedStockActionDirection)}><option value="increase">Increase</option><option value="decrease">Decrease</option></select></label> : <div className="hidden md:block text-[10px] text-muted-foreground">{sharedStockAction === "hold" ? `Up to ${part.available} ${part.unit} available` : `Up to ${part.held} ${part.unit} held`}</div>}
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Quantity<input aria-label="Shared stock action quantity" type="number" min="0.001" step="0.001" max={sharedStockAction === "release_hold" ? part.held : sharedStockAction === "receipt" ? sharedInventoryReceiptOptions?.find(option => option.partId === part.id && option.purchaseOrderId === sharedStockActionOrderId)?.remainingQuantity : sharedStockAction === "hold" ? part.available : undefined} required className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedStockActionQuantity} onChange={event => setSharedStockActionQuantity(event.target.value)} /></label>
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Location<input aria-label="Shared stock action location" required maxLength={120} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedStockActionLocation} onChange={event => setSharedStockActionLocation(event.target.value)} /></label>
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Bin<input aria-label="Shared stock action bin" maxLength={60} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedStockActionBin} onChange={event => setSharedStockActionBin(event.target.value)} /></label>
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground md:col-span-2">Reason<input aria-label="Shared stock action reason" required minLength={3} maxLength={500} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedStockActionNote} onChange={event => setSharedStockActionNote(event.target.value)} /></label>
+                          <button type="submit" disabled={sharedInventoryActionPending || (sharedStockAction === "receipt" && !sharedStockActionOrderId) || (sharedStockAction === "adjustment" && !canAdjustSharedInventory)} className="h-8 rounded bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50">{sharedInventoryActionPending ? "Saving…" : "Save TEST action"}</button>
+                        </form>
+                        <p className="mt-2 text-[10px] text-muted-foreground">Every action is recorded in the append-only fictional Shared TEST ledger. Receipts require an approved matching PO line and enter QA hold; role permissions and quantity limits are enforced by the server.</p>
                       </td></tr>}
                     </React.Fragment>)}
                   </tbody>
@@ -2882,7 +2970,7 @@ export function LiveInventoryWorkspace({
           <div className="mt-6 grid gap-5 xl:grid-cols-2">
             <section aria-label="Shared inventory allocations" className="rounded-lg border border-border">
               <div className="border-b border-border px-3 py-2"><h4 className="text-xs font-semibold">Active role allocations ({sharedInventoryAssignments?.length ?? 0})</h4><p className="text-[10px] text-muted-foreground">Project, department, and L1–L4 profile are stored by stable IDs.</p></div>
-              {(sharedInventoryAssignments?.length ?? 0) > 0 ? <div className="max-h-72 overflow-auto"><table className="w-full text-left text-[10px]"><thead className="sticky top-0 bg-secondary/70 text-muted-foreground"><tr><th className="px-3 py-2">Part</th><th className="px-3 py-2">Project</th><th className="px-3 py-2">Profile</th><th className="px-3 py-2 text-right">Remaining</th></tr></thead><tbody className="divide-y divide-border">{sharedInventoryAssignments?.map(assignment => <tr key={assignment.id}><td className="px-3 py-2">{assignment.partReference}</td><td className="px-3 py-2">{assignment.projectReference}</td><td className="px-3 py-2">L{assignment.hierarchyLevel} · {assignment.roleName} ({assignment.departmentCode})</td><td className="px-3 py-2 text-right">{assignment.quantity}</td></tr>)}</tbody></table></div> : <p className="p-3 text-[10px] text-muted-foreground">No shared allocations are recorded.</p>}
+              {(sharedInventoryAssignments?.length ?? 0) > 0 ? <div className="max-h-72 overflow-auto"><table className="w-full text-left text-[10px]"><thead className="sticky top-0 bg-secondary/70 text-muted-foreground"><tr><th className="px-3 py-2">Part</th><th className="px-3 py-2">Project</th><th className="px-3 py-2">Profile</th><th className="px-3 py-2 text-right">Remaining</th><th className="px-3 py-2 text-right">Action</th></tr></thead><tbody className="divide-y divide-border">{sharedInventoryAssignments?.map(assignment => <React.Fragment key={assignment.id}><tr><td className="px-3 py-2">{assignment.partReference}</td><td className="px-3 py-2">{assignment.projectReference}</td><td className="px-3 py-2">L{assignment.hierarchyLevel} · {assignment.roleName} ({assignment.departmentCode})</td><td className="px-3 py-2 text-right">{assignment.quantity}</td><td className="px-3 py-2 text-right"><button type="button" disabled={!onSharedInventoryEvent || sharedInventoryActionPending} onClick={() => { setSharedAssignmentActionId(sharedAssignmentActionId === assignment.id ? null : assignment.id); setSharedAssignmentActionQuantity(String(assignment.quantity)); setSharedAssignmentAction("return"); }} className="h-6 rounded border border-border px-2 text-[10px] font-semibold disabled:opacity-50">Return / use</button></td></tr>{sharedAssignmentActionId === assignment.id && <tr className="bg-secondary/30"><td colSpan={5} className="px-3 py-2"><form onSubmit={submitSharedAssignmentClose} className="grid gap-2 md:grid-cols-[130px_90px_1fr_auto] md:items-end"><label className="grid gap-1 text-muted-foreground">Outcome<select aria-label="Allocation close outcome" className="h-7 rounded border border-input bg-background px-2 text-foreground" value={sharedAssignmentAction} onChange={event => setSharedAssignmentAction(event.target.value as typeof sharedAssignmentAction)}><option value="return">Return reusable stock</option><option value="consume">Consume / scrap</option></select></label><label className="grid gap-1 text-muted-foreground">Quantity<input aria-label="Allocation close quantity" type="number" min="0.001" step="0.001" max={assignment.quantity} required className="h-7 rounded border border-input bg-background px-2 text-foreground" value={sharedAssignmentActionQuantity} onChange={event => setSharedAssignmentActionQuantity(event.target.value)} /></label><label className="grid gap-1 text-muted-foreground">Reason<input aria-label="Allocation close reason" required minLength={3} maxLength={500} className="h-7 rounded border border-input bg-background px-2 text-foreground" value={sharedAssignmentActionNote} onChange={event => setSharedAssignmentActionNote(event.target.value)} /></label><button type="submit" disabled={sharedInventoryActionPending} className="h-7 rounded bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50">{sharedInventoryActionPending ? "Saving…" : "Save"}</button></form></td></tr>}</React.Fragment>)}</tbody></table></div> : <p className="p-3 text-[10px] text-muted-foreground">No shared allocations are recorded.</p>}
             </section>
             <section aria-label="Shared inventory movement audit" className="rounded-lg border border-border">
               <div className="border-b border-border px-3 py-2"><h4 className="text-xs font-semibold">Movement audit ({sharedInventoryMovements?.length ?? 0})</h4><p className="text-[10px] text-muted-foreground">Append-only TEST ledger; fictional sample opening balances are identified.</p></div>

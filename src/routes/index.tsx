@@ -6639,6 +6639,7 @@ function Portal() {
             testMembership ? <SharedInventoryWorkspace
               key={`${testMembership.membershipId}:inventory`}
               membershipId={testMembership.membershipId}
+              canAdjustSharedInventory={testMembership.role === "admin"}
               items={portal.inventory ?? []}
               movements={portal.inventoryMovements ?? []}
               assignments={portal.inventoryAssignments ?? []}

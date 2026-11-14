@@ -9,11 +9,13 @@ type Props = Omit<LiveInventoryWorkspaceProps,
   | "sharedPartMasters" | "sharedPartCatalogState" | "sharedInventoryProjects"
   | "sharedInventoryRoles" | "sharedInventoryReceiptOptions" | "sharedInventoryAssignments"
   | "sharedInventoryMovements" | "onSharedInventoryEvent" | "sharedInventoryActionPending" | "sharedInventoryActionError"
+  | "canAdjustSharedInventory"
 > & {
   membershipId: string;
+  canAdjustSharedInventory: boolean;
 };
 
-export function SharedInventoryWorkspace({ membershipId, ...workspaceProps }: Props) {
+export function SharedInventoryWorkspace({ membershipId, canAdjustSharedInventory, ...workspaceProps }: Props) {
   const loadCatalog = useServerFn(getSharedInventoryPartCatalog);
   const writeEvent = useServerFn(recordSharedInventoryEvent);
   const [actionPending, setActionPending] = useState(false);
@@ -51,6 +53,7 @@ export function SharedInventoryWorkspace({ membershipId, ...workspaceProps }: Pr
       sharedInventoryReceiptOptions={catalog.data?.receiptOptions}
       sharedInventoryAssignments={catalog.data?.assignments}
       sharedInventoryMovements={catalog.data?.movements}
+      canAdjustSharedInventory={canAdjustSharedInventory}
       onSharedInventoryEvent={recordEvent}
       sharedInventoryActionPending={actionPending}
       sharedInventoryActionError={actionError}
