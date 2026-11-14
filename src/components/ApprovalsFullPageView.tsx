@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ExternalLink,
   Lock,
+  Info,
   Plus,
   Send,
   UserCheck,
@@ -333,7 +334,7 @@ export function ApprovalsFullPageView({
             return (
                 <div
                 key={appr.id}
-                className={`rounded-xl border bg-card p-3.5 transition-all shadow-sm ${
+                className={`rounded-xl border bg-card p-2.5 transition-all shadow-sm ${
                   isPending
                     ? "border-amber-500/40 hover:border-amber-500/70"
                     : isApproved
@@ -341,9 +342,9 @@ export function ApprovalsFullPageView({
                     : "border-border/60"
                 }`}
               >
-                <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-mono text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
                         {appr.recordId}
                       </span>
@@ -364,8 +365,11 @@ export function ApprovalsFullPageView({
                     <h3 className="text-sm font-bold text-foreground tracking-tight">{appr.title}</h3>
 
                     <details className="text-xs">
-                      <summary className="w-fit cursor-pointer text-primary">Review details</summary>
-                      <div className="mt-2 space-y-1.5 rounded-lg bg-muted/30 p-2.5">
+                      <summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1 text-muted-foreground hover:text-primary">
+                        <Info className="size-3.5" aria-hidden="true" />
+                        <span>Details</span>
+                      </summary>
+                      <div className="mt-1.5 space-y-1.5 rounded-lg bg-muted/30 p-2">
                         <p className="max-w-4xl text-muted-foreground leading-relaxed">{appr.description}</p>
                         <p className="flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
                           <Award className="size-3.5" />
@@ -389,7 +393,7 @@ export function ApprovalsFullPageView({
                     {isApproved && (
                       <div className="mt-2 flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
                         <CheckCircle2 className="size-4 shrink-0" />
-                        <span><strong>Approved</strong> · {appr.signedBy ?? "Signer not recorded"} · {appr.signedAt ?? appr.updatedAt}</span>
+                        <span><strong>Signed by</strong> {appr.signedBy ?? "Signer not recorded"} · {appr.signedAt ?? appr.updatedAt}</span>
                       </div>
                     )}
                     {isApproved && appr.comments && <details className="text-xs"><summary className="w-fit cursor-pointer text-muted-foreground">Decision note</summary><p className="mt-1 text-muted-foreground">{appr.comments}</p></details>}
@@ -410,7 +414,7 @@ export function ApprovalsFullPageView({
                   </div>
 
                   {/* Actions Column */}
-                  <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between gap-2 pt-3 lg:pt-0 border-t lg:border-t-0 border-border/40">
+                  <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between gap-1.5 pt-2 lg:pt-0 border-t lg:border-t-0 border-border/40">
                     <div className="flex items-center gap-1.5">
                       {isPending ? (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400 border border-amber-500/30">

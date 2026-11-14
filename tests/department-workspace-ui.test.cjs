@@ -112,10 +112,10 @@ test('DepartmentProjectWorkspace combines project records and linked deliverable
 
   const approvalsSource = fs.readFileSync(path.resolve(__dirname, '../src/components/ApprovalsFullPageView.tsx'), 'utf8');
   assert.match(approvalsSource, /Return for rework/, 'Approval decision action states its workflow purpose');
-  assert.match(approvalsSource, /rounded-xl border bg-card p-3\.5/, 'Approval list uses compact full-page cards');
+  assert.match(approvalsSource, /rounded-xl border bg-card p-2\.5/, 'Approval list uses compact full-page cards');
   assert.doesNotMatch(approvalsSource, /onBack/, 'Full-page approvals do not duplicate sidebar navigation with a back action');
   assert.match(approvalsSource, /className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border\/50 bg-muted\/20 px-3 py-2 text-xs"/, 'Approval counts use a single compact strip instead of tall KPI cards');
-  assert.match(approvalsSource, /<details className="text-xs">\s*<summary className="w-fit cursor-pointer text-primary">Review details<\/summary>/, 'Long approval descriptions remain collapsed until requested');
+  assert.match(approvalsSource, /<details className="text-xs">\s*<summary className="inline-flex w-fit cursor-pointer list-none items-center gap-1 text-muted-foreground hover:text-primary">\s*<Info className="size-3\.5" aria-hidden="true" \/>\s*<span>Details<\/span>/, 'Long approval descriptions remain behind a compact accessible details affordance');
   assert.match(approvalsSource, /<summary className="cursor-pointer underline decoration-dotted">Decision note<\/summary>/, 'Long rejection and return notes remain collapsed until requested');
 
   const pmssSource = fs.readFileSync(path.resolve(__dirname, '../src/components/ProjectMasterSpecSheet.tsx'), 'utf8');

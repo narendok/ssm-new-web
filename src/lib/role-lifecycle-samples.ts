@@ -90,10 +90,10 @@ export function buildRoleLifecyclePack(revision:LifecycleRevision, departments:S
 }
 
 export function linkUnchangedRoleSampleProject<T extends {fields:Record<string,string>}>(record:T, expected:RoleSampleRecord|undefined):T{
-  if(!expected||expected.type!=='Project'||!expected.fields.customerId||record.fields.fixturePack!==ROLE_LIFECYCLE_PACK||record.fields.customer!==expected.fields.customer)return record;
-  const linkedIds=[record.fields.customerId,record.fields.customer_id].map(value=>value?.trim()).filter(Boolean);
+  if(!expected||expected.type!=='Project'||!expected.fields["customerId"]||record.fields["fixturePack"]!==ROLE_LIFECYCLE_PACK||record.fields["customer"]!==expected.fields["customer"])return record;
+  const linkedIds=[record.fields["customerId"],record.fields["customer_id"]].map(value=>value?.trim()).filter(Boolean);
   if(linkedIds.length)return record;
-  return {...record,fields:{...record.fields,customerId:expected.fields.customerId,customer_id:expected.fields.customerId,customerCode:expected.fields.customerCode!,customerName:expected.fields.customerName!}};
+  return {...record,fields:{...record.fields,customerId:expected.fields["customerId"],customer_id:expected.fields["customerId"],customerCode:expected.fields["customerCode"]!,customerName:expected.fields["customerName"]!}};
 }
 
 export function linkUnchangedRoleSampleEnquiry(enquiry:EnquiryOpportunity, expected:EnquiryOpportunity|undefined):EnquiryOpportunity{
