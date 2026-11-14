@@ -24,9 +24,9 @@ test("inventory route uses the original full workspace with quantity and assignm
 });
 
 test("browser-local inventory fixtures are clearly distinguished from shared stock", () => {
-  assert.match(liveComponent, /Browser-local stock demo\./);
-  assert.match(liveComponent, /Shared Part Masters tab reads canonical Part records from Shared TEST/);
-  assert.match(liveComponent, /shared stock quantities are not connected yet/i);
+  assert.match(liveComponent, /Demo data boundary\./);
+  assert.match(liveComponent, /classic inventory tabs keep their fictional quantities and actions in this browser/i);
+  assert.match(liveComponent, /Shared TEST tabs use canonical Part IDs and a separate fictional stock ledger/i);
   assert.match(liveComponent, /Demo component inventory/);
 });
 

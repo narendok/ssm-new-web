@@ -50,7 +50,12 @@ import {
   type MouserComponentResult,
   type PriceBreak,
 } from "@/lib/mouser-service";
-import type { SharedInventoryPartMaster } from "@/lib/shared-inventory.schema";
+import type {
+  SharedInventoryAssignment,
+  SharedInventoryEventInput,
+  SharedInventoryMovement,
+  SharedInventoryPartMaster,
+} from "@/lib/shared-inventory.schema";
 
 
 // =============================================================================
@@ -1064,6 +1069,18 @@ export type LiveInventoryWorkspaceProps = {
   onBack?: () => void;
   sharedPartMasters?: SharedInventoryPartMaster[] | undefined;
   sharedPartCatalogState?: "loading" | "ready" | "error" | undefined;
+  sharedInventoryProjects?: Array<{ id: string; reference: string; title: string }> | undefined;
+  sharedInventoryRoles?: Array<{ id: string; name: string; departmentCode: string; hierarchyLevel: number }> | undefined;
+  sharedInventoryReceiptOptions?: Array<{
+    purchaseOrderId: string; purchaseOrderReference: string; supplierId: string;
+    supplierReference: string; supplierName: string; projectId: string; projectReference: string;
+    partId: string; partReference: string; orderedQuantity: number; receivedQuantity: number; remainingQuantity: number;
+  }> | undefined;
+  sharedInventoryAssignments?: SharedInventoryAssignment[] | undefined;
+  sharedInventoryMovements?: SharedInventoryMovement[] | undefined;
+  onSharedInventoryEvent?: ((input: SharedInventoryEventInput) => Promise<void>) | undefined;
+  sharedInventoryActionPending?: boolean | undefined;
+  sharedInventoryActionError?: string | undefined;
   onMove: (itemId: string, change: number, reason: InventoryMovement["reason"]) => void;
   onAssign: (
     itemId: string,
@@ -1086,6 +1103,14 @@ export function LiveInventoryWorkspace({
   onBack,
   sharedPartMasters,
   sharedPartCatalogState,
+  sharedInventoryProjects,
+  sharedInventoryRoles,
+  sharedInventoryReceiptOptions,
+  sharedInventoryAssignments,
+  sharedInventoryMovements,
+  onSharedInventoryEvent,
+  sharedInventoryActionPending = false,
+  sharedInventoryActionError,
   onMove,
   onAssign,
 }: LiveInventoryWorkspaceProps) {
@@ -1185,6 +1210,12 @@ export function LiveInventoryWorkspace({
   const [sharedPartSearch, setSharedPartSearch] = useState("");
   const [sharedPartCategory, setSharedPartCategory] = useState("All");
   const [sharedPartDepartment, setSharedPartDepartment] = useState("All");
+  const [sharedAssignPartId, setSharedAssignPartId] = useState<string | null>(null);
+  const [sharedAssignProjectId, setSharedAssignProjectId] = useState("");
+  const [sharedAssignRoleId, setSharedAssignRoleId] = useState("");
+  const [sharedAssignQuantity, setSharedAssignQuantity] = useState("1");
+  const [sharedAssignNote, setSharedAssignNote] = useState("Project material allocation");
+  const [sharedInventoryNotice, setSharedInventoryNotice] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedCrossTag, setSelectedCrossTag] = useState<string>("All");
   const [selectedProject, setSelectedProject] = useState<string>("All");
@@ -1866,6 +1897,36 @@ export function LiveInventoryWorkspace({
   // 6. RENDER INTERFACE
   // =============================================================================
 
+  const submitSharedAssignment = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const part = sharedPartMasters?.find((candidate) => candidate.id === sharedAssignPartId);
+    const quantity = Number(sharedAssignQuantity);
+    if (!part || !onSharedInventoryEvent || !sharedAssignProjectId || !sharedAssignRoleId) return;
+    if (!Number.isFinite(quantity) || quantity <= 0 || quantity > part.available) {
+      setSharedInventoryNotice(`Enter a quantity up to ${part.available} ${part.unit} available.`);
+      return;
+    }
+    setSharedInventoryNotice("");
+    try {
+      await onSharedInventoryEvent({
+        action: "assign",
+        requestId: crypto.randomUUID(),
+        partId: part.id,
+        projectId: sharedAssignProjectId,
+        roleId: sharedAssignRoleId,
+        quantity,
+        location: "Fictional TEST stockroom",
+        bin: "",
+        note: sharedAssignNote.trim() || "Project material allocation",
+      });
+      setSharedInventoryNotice(`${quantity} ${part.unit} allocated to the selected project role in Shared TEST.`);
+      setSharedAssignPartId(null);
+      setSharedAssignQuantity("1");
+    } catch (error) {
+      setSharedInventoryNotice(error instanceof Error ? error.message : "Shared inventory allocation failed.");
+    }
+  };
+
   return (
     <div className={`ops-section overflow-hidden rounded-xl border border-border bg-panel shadow-sm ${isFullPage ? "mt-2" : "mt-8"}`}>
       {/* Full Page Breadcrumb Header */}
@@ -1933,7 +1994,7 @@ export function LiveInventoryWorkspace({
       </div>
 
       <div className="border-b border-amber-500/30 bg-amber-500/10 px-5 py-3 text-xs text-amber-950 dark:text-amber-100" role="status">
-        <span className="font-semibold">Browser-local stock demo.</span> Quantities, movements, receipts and assignments here are fictional and stay in this browser. The Shared Part Masters tab reads canonical Part records from Shared TEST; shared stock quantities are not connected yet.
+        <span className="font-semibold">Demo data boundary.</span> The classic inventory tabs keep their fictional quantities and actions in this browser. The Shared TEST tabs use canonical Part IDs and a separate fictional stock ledger; nothing here represents Production stock.
       </div>
 
       {/* KPI Status Ribbon */}
@@ -2753,8 +2814,8 @@ export function LiveInventoryWorkspace({
         <section aria-label="Shared Part Master" className="p-4">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h3 className="text-sm font-bold text-foreground">Shared Part Master</h3>
-              <p className="text-xs text-muted-foreground">Canonical part IDs and department/category views from the authenticated Shared TEST directory. Stock quantity is not recorded here.</p>
+              <h3 className="text-sm font-bold text-foreground">Shared TEST Inventory</h3>
+              <p className="text-xs text-muted-foreground">Canonical Part IDs, fictional test balances, and role-based allocations from the authenticated Shared TEST ledger.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <input aria-label="Search shared parts" className="h-8 min-w-56 rounded-md border border-input bg-background px-2 text-xs" placeholder="Search part, MPN or reference…" value={sharedPartSearch} onChange={event => setSharedPartSearch(event.target.value)} />
@@ -2771,7 +2832,7 @@ export function LiveInventoryWorkspace({
           {sharedPartCatalogState === "loading" ? (
             <div className="flex items-center gap-2 rounded-lg border border-border p-5 text-xs text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading Shared TEST Part masters…</div>
           ) : sharedPartCatalogState === "error" ? (
-            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive">Shared Part masters could not be loaded. The browser-local stock demo remains separate.</p>
+            <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive">Shared TEST inventory could not be loaded. The browser-local stock demo remains separate.</p>
           ) : (() => {
             const query = sharedPartSearch.trim().toLocaleLowerCase();
             const visibleParts = (sharedPartMasters ?? []).filter(part =>
@@ -2781,22 +2842,53 @@ export function LiveInventoryWorkspace({
             );
             return visibleParts.length ? (
               <div className="overflow-x-auto rounded-lg border border-border">
-                <table className="w-full min-w-[820px] text-left text-xs">
-                  <thead className="border-b border-border bg-secondary/50 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2">Part master</th><th className="px-3 py-2">MPN</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Department views</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">Shared stock</th></tr></thead>
+                <table className="w-full min-w-[1160px] text-left text-xs">
+                  <thead className="border-b border-border bg-secondary/50 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2">Part master</th><th className="px-3 py-2">MPN</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Department views</th><th className="px-3 py-2">Status</th><th className="px-3 py-2 text-right">On hand</th><th className="px-3 py-2 text-right">Held</th><th className="px-3 py-2 text-right">Allocated</th><th className="px-3 py-2 text-right">Available</th><th className="px-3 py-2 text-right">Action</th></tr></thead>
                   <tbody className="divide-y divide-border">
-                    {visibleParts.map(part => <tr key={part.id}>
-                      <td className="px-3 py-2.5"><div className="font-semibold text-foreground">{part.title}</div><div className="font-mono text-[10px] text-muted-foreground">{part.reference} · {part.id}</div>{part.isDemo && <span className="mt-1 inline-flex rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800 dark:text-amber-200">Fictional master example</span>}</td>
-                      <td className="px-3 py-2.5 font-mono">{part.mpn || "Not recorded"}</td>
-                      <td className="px-3 py-2.5">{part.category || "Not categorized"}{part.subcategory && <div className="text-[10px] text-muted-foreground">{part.subcategory}</div>}</td>
-                      <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1">{Array.from(new Set([...(part.departmentViews ?? []), ...(part.primaryDepartment ? [part.primaryDepartment] : [])])).map(department => <span key={department} className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">{department}</span>)}</div></td>
-                      <td className="px-3 py-2.5">{part.status}</td>
-                      <td className="px-3 py-2.5 text-right text-muted-foreground">Not recorded</td>
-                    </tr>)}
+                    {visibleParts.map(part => <React.Fragment key={part.id}>
+                      <tr>
+                        <td className="px-3 py-2.5"><div className="font-semibold text-foreground">{part.title}</div><div className="font-mono text-[10px] text-muted-foreground">{part.reference}</div>{part.isDemo && <span className="mt-1 inline-flex rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-800 dark:text-amber-200">Fictional TEST balance</span>}</td>
+                        <td className="px-3 py-2.5 font-mono">{part.mpn || "Not recorded"}</td>
+                        <td className="px-3 py-2.5">{part.category || "Not categorized"}{part.subcategory && <div className="text-[10px] text-muted-foreground">{part.subcategory}</div>}</td>
+                        <td className="px-3 py-2.5"><div className="flex flex-wrap gap-1">{Array.from(new Set([...(part.departmentViews ?? []), ...(part.primaryDepartment ? [part.primaryDepartment] : [])])).map(department => <span key={department} className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px]">{department}</span>)}</div></td>
+                        <td className="px-3 py-2.5">{part.status}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">{part.onHand.toLocaleString()} <span className="text-muted-foreground">{part.unit}</span></td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">{part.held.toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">{part.allocated.toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-right font-semibold tabular-nums">{part.available.toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-right">{sharedInventoryRoles?.length ? <button type="button" disabled={!onSharedInventoryEvent || part.available <= 0 || sharedInventoryActionPending} onClick={() => { setSharedAssignPartId(sharedAssignPartId === part.id ? null : part.id); setSharedAssignQuantity("1"); setSharedInventoryNotice(""); }} className="inline-flex h-7 items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 text-[10px] font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50"><UserPlus className="size-3" />Assign role</button> : <span className="text-[10px] text-muted-foreground">Role setup needed</span>}</td>
+                      </tr>
+                      {sharedAssignPartId === part.id && <tr className="bg-secondary/30"><td colSpan={10} className="px-4 py-3">
+                        <form onSubmit={submitSharedAssignment} className="grid gap-3 md:grid-cols-[1fr_1fr_100px_1.3fr_auto] md:items-end">
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Project<select required aria-label="Shared inventory project" className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedAssignProjectId} onChange={event => setSharedAssignProjectId(event.target.value)}><option value="">Choose project…</option>{(sharedInventoryProjects ?? []).map(project => <option key={project.id} value={project.id}>{project.reference} · {project.title}</option>)}</select></label>
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Assignee profile<select required aria-label="Shared inventory assignee profile" className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedAssignRoleId} onChange={event => setSharedAssignRoleId(event.target.value)}><option value="">Choose L1–L4 profile…</option>{(sharedInventoryRoles ?? []).map(role => <option key={role.id} value={role.id}>L{role.hierarchyLevel} · {role.name} ({role.departmentCode})</option>)}</select></label>
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Quantity<input aria-label="Shared inventory assignment quantity" type="number" min="0.001" step="0.001" max={part.available} required className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedAssignQuantity} onChange={event => setSharedAssignQuantity(event.target.value)} /></label>
+                          <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">Reason<input aria-label="Shared inventory assignment note" required minLength={3} maxLength={500} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground" value={sharedAssignNote} onChange={event => setSharedAssignNote(event.target.value)} /></label>
+                          <button type="submit" disabled={sharedInventoryActionPending || !sharedAssignProjectId || !sharedAssignRoleId} className="h-8 rounded bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50">{sharedInventoryActionPending ? "Saving…" : "Save allocation"}</button>
+                        </form>
+                        <p className="mt-2 text-[10px] text-muted-foreground">Assignment is saved against the stable role profile ID, not an employee name. Existing task/project history is unchanged.</p>
+                      </td></tr>}
+                    </React.Fragment>)}
                   </tbody>
                 </table>
               </div>
             ) : <p className="rounded-lg border border-dashed border-border p-5 text-xs text-muted-foreground">No Shared TEST parts match these filters.</p>;
           })()}
+          {sharedInventoryRoles?.length === 0 && sharedPartCatalogState === "ready" && <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-900 dark:text-amber-100">No active L1–L4 inventory profiles are configured for this account. Configure the department role level and `inventory:issue` permission before shared allocation. The sample balances remain visible.</p>}
+          {sharedInventoryActionError && <p role="alert" className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">{sharedInventoryActionError}</p>}
+          {sharedInventoryNotice && <p role="status" className="mt-3 rounded-lg border border-border bg-secondary/30 p-3 text-xs">{sharedInventoryNotice}</p>}
+          <p className="mt-3 text-[10px] text-muted-foreground">{sharedPartMasters?.[0]?.stockNotice ?? "Shared TEST quantities remain separate from the browser-local stock demo."}</p>
+
+          <div className="mt-6 grid gap-5 xl:grid-cols-2">
+            <section aria-label="Shared inventory allocations" className="rounded-lg border border-border">
+              <div className="border-b border-border px-3 py-2"><h4 className="text-xs font-semibold">Active role allocations ({sharedInventoryAssignments?.length ?? 0})</h4><p className="text-[10px] text-muted-foreground">Project, department, and L1–L4 profile are stored by stable IDs.</p></div>
+              {(sharedInventoryAssignments?.length ?? 0) > 0 ? <div className="max-h-72 overflow-auto"><table className="w-full text-left text-[10px]"><thead className="sticky top-0 bg-secondary/70 text-muted-foreground"><tr><th className="px-3 py-2">Part</th><th className="px-3 py-2">Project</th><th className="px-3 py-2">Profile</th><th className="px-3 py-2 text-right">Remaining</th></tr></thead><tbody className="divide-y divide-border">{sharedInventoryAssignments?.map(assignment => <tr key={assignment.id}><td className="px-3 py-2">{assignment.partReference}</td><td className="px-3 py-2">{assignment.projectReference}</td><td className="px-3 py-2">L{assignment.hierarchyLevel} · {assignment.roleName} ({assignment.departmentCode})</td><td className="px-3 py-2 text-right">{assignment.quantity}</td></tr>)}</tbody></table></div> : <p className="p-3 text-[10px] text-muted-foreground">No shared allocations are recorded.</p>}
+            </section>
+            <section aria-label="Shared inventory movement audit" className="rounded-lg border border-border">
+              <div className="border-b border-border px-3 py-2"><h4 className="text-xs font-semibold">Movement audit ({sharedInventoryMovements?.length ?? 0})</h4><p className="text-[10px] text-muted-foreground">Append-only TEST ledger; fictional sample opening balances are identified.</p></div>
+              {(sharedInventoryMovements?.length ?? 0) > 0 ? <div className="max-h-72 overflow-auto"><table className="w-full text-left text-[10px]"><thead className="sticky top-0 bg-secondary/70 text-muted-foreground"><tr><th className="px-3 py-2">Time</th><th className="px-3 py-2">Part</th><th className="px-3 py-2">Movement</th><th className="px-3 py-2">Note</th></tr></thead><tbody className="divide-y divide-border">{sharedInventoryMovements?.map(movement => <tr key={movement.id}><td className="whitespace-nowrap px-3 py-2">{new Date(movement.createdAt).toLocaleString()}</td><td className="px-3 py-2">{movement.partReference}</td><td className="px-3 py-2">{movement.eventKind} · {movement.onHandDelta || movement.heldDelta || movement.allocatedDelta}</td><td className="max-w-[240px] px-3 py-2">{movement.note}</td></tr>)}</tbody></table></div> : <p className="p-3 text-[10px] text-muted-foreground">No shared stock movements are recorded.</p>}
+            </section>
+          </div>
         </section>
       )}
 
