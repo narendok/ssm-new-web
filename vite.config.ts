@@ -21,6 +21,12 @@ export default defineConfig({
     // during dev startup so the first browser navigation does not wait for a cold
     // client/SSR dependency waterfall.
     server: {
+      // Production builds write generated HTML/assets here. Watching that output
+      // makes the dev preview reload mid-build even though application source is
+      // unchanged; keep generated deployment files out of the HMR watch set.
+      watch: {
+        ignored: ["**/.output/**", "**/.wrangler/**"],
+      },
       warmup: {
         clientFiles: ["./src/routes/index.tsx"],
         ssrFiles: ["./src/routes/index.tsx"],
