@@ -11,7 +11,7 @@ test("shared TEST reset stays disabled when its deployed scope exceeds project-o
   const schema = read("src/lib/shared-test.schema.ts");
   const server = read("src/lib/shared-test.functions.ts");
   const migration = read("supabase/migrations/20261106001444_admin_reset_shared_test_sample_pack.sql");
-  const archiveMigration = read("supabase/migrations/20261115021939_archive_legacy_shared_test_demo_projects.sql");
+  const archiveMigration = read("supabase/migrations/20261115024154_archive_legacy_shared_test_demo_projects.sql");
 
   assert.match(ui, /admin = actor\.role === "admin"/);
   assert.match(ui, /\{admin && \(/);
