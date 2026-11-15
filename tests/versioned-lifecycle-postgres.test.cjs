@@ -1121,6 +1121,7 @@ test("Versioned lifecycle settings and reusable assets enforce TEST authorizatio
   await assert.rejects(()=>saveDepartment(admin,groupPatch(grouped.departments.find(d=>d.id===dEhw),{ticketGroups:['unknown']})),/INVALID_WORKSPACE_RESPONSIBILITIES/);
   await saveDepartment(admin,groupPatch(grouped.departments.find(d=>d.id===dEhw),{workspaceDepartmentId:null}));
   await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261111151258_multi_department_lead_access.sql'),'utf8'));
+  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261115143646_shared_workspace_snapshot_set_based.sql'),'utf8'));
   const noLeadConfig=(await configuration(admin)).departments.find(d=>d.id===dNoLead);
   const multiRoleConfig=await saveDepartment(admin,{...groupPatch(noLeadConfig),leadMemberId:mids[ehwLead]});
   assert.equal(multiRoleConfig.departments.find(d=>d.id===dNoLead).leadMemberId,mids[ehwLead]);

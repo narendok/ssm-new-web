@@ -53,6 +53,7 @@ test("Account-backed Shared TEST Upload Flow: Technical, Quote, Invoice, Receipt
     "20261111162011_role_scoped_document_registration",
     "20261111162044_shared_document_draft_snapshots",
     "20261113044537_exact_document_project_link_aliases",
+    "20261115143646_shared_workspace_snapshot_set_based",
   ];
 
   for (const name of initialMigrations) {

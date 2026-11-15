@@ -29,6 +29,7 @@ const sharedDocumentVault = fs.readFileSync(
   path.join(root, "src/components/SharedDocumentVault.tsx"),
   "utf8",
 );
+const sharedVault = fs.readFileSync(path.join(root, "src/lib/shared-vault.ts"), "utf8");
 
 function between(source, start, end) {
   const startIndex = source.indexOf(start);
@@ -169,4 +170,13 @@ test("project documents keep project and related-record links distinct", () => {
   assert.match(sharedDocumentVault, />Draft template<select/);
   assert.match(sharedDocumentVault, /Auto-draft source snapshot/);
   assert.match(sharedDocumentVault, /\.\.\.\(draftSnapshot\?\{draftSnapshot\}:\{\}\)/);
+});
+
+test("authenticated Shared Vault extracts, reviews and saves provenance into the shared Draft snapshot",()=>{
+  assert.match(sharedDocumentVault,/extractDocumentContent/);
+  assert.match(sharedDocumentVault,/resolveAllEntities/);
+  assert.match(sharedDocumentVault,/ingestionReview/);
+  assert.match(sharedDocumentVault,/matches never auto-link the document/i);
+  assert.match(sharedDocumentVault,/selected file changed after extraction/i);
+  assert.match(sharedVault,/ingestionReview/);
 });

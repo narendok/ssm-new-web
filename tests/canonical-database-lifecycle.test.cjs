@@ -58,6 +58,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261114033959_validate_project_record_links',
     '20261114082413_validate_shared_test_customer_record_links',
     '20261115024154_archive_legacy_shared_test_demo_projects',
+    '20261115143646_shared_workspace_snapshot_set_based',
   ];
 
   for (const name of migrationNames) {

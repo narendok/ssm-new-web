@@ -307,12 +307,14 @@ test("§14.12 & §14.14: Transactional PGlite behavioral verification of inline 
   const docKey=crypto.randomUUID(),gerber=await registerDoc(hwLead,docPayload,docKey);
   assert.equal((await registerDoc(hwLead,docPayload,docKey)).id,gerber.id);
   await assert.rejects(registerDoc(hwLead,{...docPayload,title:'Changed retry'},docKey),/REQUEST_ID_REUSED/);
-  const generatedSnapshot={templateType:'BOM',templateVersion:'2026-10-19.2',catalogueFamilyId:'D11',sourceRecordId:null,projectRecordId:project,releaseStatus:'Unissued',completionPercentage:0,missingFields:['lineItems','mpn'],sections:[{title:'Controlled bill of materials',rows:[['lineItems','TBD — owner confirmation required','No source provided']]}]};
+  const generatedSnapshot={templateType:'BOM',templateVersion:'2026-10-19.2',catalogueFamilyId:'D11',sourceRecordId:null,projectRecordId:project,releaseStatus:'Unissued',completionPercentage:0,missingFields:['lineItems','mpn'],sections:[{title:'Controlled bill of materials',rows:[['lineItems','TBD — owner confirmation required','No source provided']]}],ingestionReview:{status:'SUCCESS',checksum:'a'.repeat(64),fileName:'fictional-bom.csv',warnings:[],fields:[{key:'mpn',label:'MPN',value:'SYNTH-001',confidence:'HIGH',provenance:{sourceFile:'fictional-bom.csv',row:2,column:'MPN'}}],matches:{project:'EXACT_MATCH',customer:'NO_MATCH',supplier:'NOT_SPECIFIED'}}};
   const employeeDoc=await registerDoc(emp,{title:'Employee project attachment',documentType:'Technical document',scope:'internal',projectId:project,draftSnapshot:generatedSnapshot});
   assert.equal(employeeDoc.status,'Draft');
   const employeeDocRow=(await db.query('SELECT department_id,record_id,metadata FROM documents WHERE id=$1',[employeeDoc.id])).rows[0];
   assert.equal(employeeDocRow.department_id,dEhw);assert.equal(employeeDocRow.record_id,project);assert.equal(employeeDocRow.metadata.status,'Draft');
   assert.equal(employeeDocRow.metadata.draftSnapshot.templateType,'BOM');assert.equal(employeeDocRow.metadata.draftSnapshot.releaseStatus,'Unissued');
+  assert.equal(employeeDocRow.metadata.draftSnapshot.ingestionReview.fields[0].provenance.row,2);
+  assert.equal(employeeDocRow.metadata.draftSnapshot.ingestionReview.checksum,'a'.repeat(64));
   const aliasSource=(await call(hwLead,"create_record",{
     title:"TEST alias-linked schematic",reference:"HLPL-RFT-EHW-SCH-ALIAS",record_type:"Schematic",project_id:project,
     fields:{revision:"01",stage:"HW_01"},

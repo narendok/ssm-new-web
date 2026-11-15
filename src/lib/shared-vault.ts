@@ -2,7 +2,7 @@ import type { VaultDocument } from "./shared-vault.functions";
 import type { AnalysisRecord } from "./project-analysis-data";
 import type { PersistedDocumentDraftSnapshot } from "./document-draft";
 
-export type VaultDraftSnapshot=PersistedDocumentDraftSnapshot;
+export type VaultDraftSnapshot=PersistedDocumentDraftSnapshot & {ingestionReview?:{status:string;checksum:string;fileName:string;warnings:string[];fields:{key:string;label:string;value:string;confidence:string;provenance:{sourceFile:string;row?:number;column?:string;line?:number;locator?:string}}[];lineItems:{rowNumber:number;mpn:string;description:string;quantity:number;unitRate:string;total:string;provenance:{sourceFile:string;row?:number;column?:string;line?:number;locator?:string}}[];matches:{project:string;customer:string;supplier:string}}};
 export type VaultDisplayDocument={id:string;title:string;type:string;url:string;cloudDocumentId:string;departmentId?:string|undefined;projectId?:string|undefined;linkedRecordRefs:string[];part:string;revision?:string|undefined;lifecycle:"Draft";classification:string;uploadScope:"common"|"internal"|"client"|"department";autoDraftSnapshot?:VaultDraftSnapshot|undefined};
 const text=(value:unknown)=>typeof value==="string"?value:"";
 const projectAliasKeys=["projectId","project_id","linkedProjectId","projectCode","project_code","projectReference","project"] as const;
@@ -67,6 +67,7 @@ export function parseVaultDraftSnapshot(value:unknown):VaultDraftSnapshot|undefi
     completionPercentage:snapshot["completionPercentage"],
     missingFields:snapshot["missingFields"] as string[],
     sections:sections.map(section=>({title:(section as Record<string,unknown>)["title"] as string,rows:(section as Record<string,unknown>)["rows"] as string[][]})),
+    ...(snapshot["ingestionReview"]&&typeof snapshot["ingestionReview"]==="object"&&!Array.isArray(snapshot["ingestionReview"])?{ingestionReview:snapshot["ingestionReview"] as NonNullable<VaultDraftSnapshot["ingestionReview"]>}:{}),
   };
 }
 export function attachmentRevisionOptions(files:{revision:string}[]):string[]{

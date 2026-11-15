@@ -12,6 +12,8 @@ test('shared TEST transactions enforce department scope, cross-device reads, ass
  GRANT USAGE ON SCHEMA public,auth TO authenticated,anon,service_role;
  CREATE SCHEMA storage;CREATE TABLE storage.objects(id uuid DEFAULT gen_random_uuid(),bucket_id text,name text);CREATE PUBLICATION supabase_realtime;`);
  for(const name of ['20260927075123_ac4fb50c-cb14-4750-a34f-24a69522d4b0','20260927075232_f91de181-c465-45aa-948c-2fd7979633e6','20260927090641_a22d2778-36cf-4d5a-9317-87ec60e24b1e','20260927171219_adbe39cb-1238-47c9-ba7c-69ad4ac4dc2d','20260927171247_b0c6d9a3-9521-4fcb-bf96-260d6f79035d','20260927171349_e3fade41-b2b3-4f0e-8a0b-12796c1261fd','20261020010000_operational_stage_gate_contract','20261020014346_bind_stage_gate_approval_revisions','20261020025329_enforce_operational_gate_write_boundary']) await db.exec(fs.readFileSync(path.join(root,'supabase/migrations',name+'.sql'),'utf8'));
+ await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261020034857_shared_test_workspace.sql'),'utf8'));
+ await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261115143646_shared_workspace_snapshot_set_based.sql'),'utf8'));
  const admin=uuid(1),hw=uuid(2),qa=uuid(3),employee=uuid(4),fw=uuid(5),viewer=uuid(6),org=uuid(10),hd=uuid(11),qd=uuid(12),fd=uuid(13),sd=uuid(14);
  for(const [id,email]of [[admin,'admin@example.com'],[hw,'hw@example.com'],[qa,'qa@example.com'],[employee,'employee.ehw@example.com'],[fw,'fw@example.com'],[viewer,'client@example.com']])await db.query('INSERT INTO auth.users VALUES($1,$2)',[id,email]);
  await db.query("INSERT INTO organizations(id,name,main_location,created_by) VALUES($1,'TEST ONLY · SSM-new1 synthetic workspace','Synthetic',$2)",[org,admin]);
@@ -19,9 +21,14 @@ test('shared TEST transactions enforce department scope, cross-device reads, ass
  for(const [id,role]of [[hw,'department_lead'],[qa,'department_lead'],[fw,'department_lead'],[employee,'member'],[viewer,'viewer']])mids[id]=(await db.query('INSERT INTO organization_members(organization_id,user_id,role,display_name) VALUES($1,$2,$3::text::app_role,$3::text) RETURNING id',[org,id,role])).rows[0].id;
  for(const [id,code,lead]of [[hd,'EHW',hw],[qd,'QA',qa],[fd,'FW',fw],[sd,'SAL',admin]])await db.query('INSERT INTO departments(id,organization_id,name,department_type,code,lead_member_id) VALUES($1,$2,$3,$3,$3,$4)',[id,org,code,mids[lead]]);
  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261020034857_shared_test_workspace.sql'),'utf8'));
+ await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261115143646_shared_workspace_snapshot_set_based.sql'),'utf8'));
  async function as(user,callback){await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[user??'']);await db.exec('SET ROLE authenticated');try{return await callback();}finally{await db.exec('RESET ROLE');}}
  async function call(user,action,payload,key=crypto.randomUUID()){return as(user,async()=> (await db.query('SELECT mutate_shared_test_workspace($1,$2::jsonb,$3) result',[action,JSON.stringify(payload),key])).rows[0].result);}
  async function load(user){return as(user,async()=> (await db.query('SELECT get_shared_test_workspace() result')).rows[0].result);}
+ await db.exec('SET ROLE anon');
+ await assert.rejects(db.query('SELECT get_shared_test_workspace()'),/permission denied/i,
+  'the optimized SECURITY DEFINER projection must remain unavailable to anonymous callers');
+ await db.exec('RESET ROLE');
  await assert.rejects(load(null),/TEST_MEMBERSHIP_REQUIRED/);
  assert.equal((await load(employee)).membership.department_code,'EHW');
  const project=(await call(admin,'create_project',{title:'Synthetic OEM OBD tracker',reference:'HLPL-OBDTEST-01'})).id;
