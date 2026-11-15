@@ -730,19 +730,46 @@ export function LifecycleSettingsEditor({
                   </label>
                 </div>
                 <div className="space-y-1.5 rounded bg-muted/30 p-2">
-                  <p className="text-[10px] font-medium text-muted-foreground">Assignee ladder · L1 lead → L2 senior/specialist → L3 associate/technician → L4 operator/trainee</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(["L1", "L2", "L3", "L4"] as const).map((level) => {
-                      const selected = task.assigneeRoleLevels?.[level] ?? (level === "L1" ? task.assigneeRoleId ?? "" : "");
-                      return <label key={level} className="text-[10px] text-muted-foreground">{level} {({L1:"Lead",L2:"Senior / specialist",L3:"Associate / technician",L4:"Operator / trainee"})[level]}
-                        <select aria-label={`Task ${i + 1} ${level} assignee role`} className={`${field} mt-1`} value={selected} disabled={!canEditTask(task)} onChange={(e) => update({ tasks: stage.tasks.map((t,n) => n === i ? { ...t, ...(level === "L1" ? { assigneeRoleId: e.target.value || null } : {}), assigneeRoleLevels: { ...(t.assigneeRoleLevels ?? {}), [level]: e.target.value || null } } : t) })}>
-                          <option value="">No preference</option>
-                          {(assigneeRolesByDepartment?.[task.department] ?? []).filter((role) => role.hierarchyLevel === Number(level.slice(1))).map((role) => <option key={role.id} value={role.id} disabled={role.holders.length > 1}>{role.name} · {role.holders.length === 1 ? role.holders[0] : role.holders.length ? `${role.holders.length} members · choose one` : "Unassigned · fallback"}</option>)}
+                  <label className="block text-[10px] text-muted-foreground">
+                    Default assignee profile
+                    {(() => {
+                      const configured = Object.entries(task.assigneeRoleLevels ?? {}).filter(
+                        ([, roleId]) => typeof roleId === "string" && roleId.trim().length > 0,
+                      );
+                      const legacyL1 = task.assigneeRoleId && task.assigneeRoleLevels?.L1 !== task.assigneeRoleId ? task.assigneeRoleId : null;
+                      const selectedProfiles = [...configured, ...(legacyL1 ? [["L1", legacyL1] as [string, string]] : [])];
+                      const isAmbiguous = selectedProfiles.length > 1;
+                      const selectedRoleId = selectedProfiles.length === 1 ? selectedProfiles[0]?.[1] ?? "" : "";
+                      return <>
+                        <select
+                          aria-label={`Task ${i + 1} default assignee profile`}
+                          className={`${field} mt-1`}
+                          value={selectedRoleId}
+                          disabled={!canEditTask(task)}
+                          onChange={(e) => {
+                            const role = (assigneeRolesByDepartment?.[task.department] ?? []).find((item) => item.id === e.target.value);
+                            update({ tasks: stage.tasks.map((t, n) => n === i ? {
+                              ...t,
+                              assigneeRoleId: role?.hierarchyLevel === 1 ? role.id : null,
+                              assigneeRoleLevels: role?.hierarchyLevel && role.hierarchyLevel >= 1 && role.hierarchyLevel <= 4
+                                ? { [`L${role.hierarchyLevel}`]: role.id }
+                                : {},
+                            } : t) });
+                          }}
+                        >
+                          <option value="">{isAmbiguous ? "Choose one intended profile…" : "No default profile"}</option>
+                          {(assigneeRolesByDepartment?.[task.department] ?? []).filter((role) => role.hierarchyLevel && role.hierarchyLevel >= 1 && role.hierarchyLevel <= 4).map((role) => {
+                            const level = role.hierarchyLevel as 1 | 2 | 3 | 4;
+                            const label = ({1:"L1 Lead",2:"L2 Senior / specialist",3:"L3 Associate / technician",4:"L4 Operator / trainee"})[level];
+                            const holderStatus = role.holders.length === 1 ? role.holders[0] : role.holders.length > 1 ? `${role.holders.length} eligible members · lead assigns` : "no active holder · lead assigns";
+                            return <option key={role.id} value={role.id}>{label} · {role.name} · {holderStatus}</option>;
+                          })}
                         </select>
-                      </label>;
-                    })}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">At task creation, use the first configured level that has exactly one active member; otherwise fall back toward L1, then the department lead. Existing tasks stay unchanged.</p>
+                        {isAmbiguous && <p role="alert" className="mt-1 text-[10px] text-amber-700">This saved task has multiple profile levels. Choose its one intended profile before saving; task assignment will not fall back to another level.</p>}
+                      </>;
+                    })()}
+                  </label>
+                  <p className="text-[10px] text-muted-foreground">A new task is assigned only when this profile has exactly one active member. With no profile, no holder or multiple holders, it stays unassigned for department-lead resolution. Existing tasks and assignments stay unchanged.</p>
                 </div>
               </div>
             ),

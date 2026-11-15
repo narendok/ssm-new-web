@@ -16,9 +16,9 @@ export type LifecycleTaskDefault = {
   title: string;
   description: string;
   department: string;
-  /** Optional org-chart role for future generated tasks; absent means current department lead. */
+  /** Legacy L1 alias retained for compatibility with previously saved lifecycle revisions. */
   assigneeRoleId?: string | null;
-  /** Organization-chart slots are resolved L4 to L1 when new tasks are generated. */
+  /** One intended org-chart profile for newly generated tasks; never falls back across levels. */
   assigneeRoleLevels?: Partial<Record<"L1" | "L2" | "L3" | "L4", string | null>>;
   /** Reference SLA range; editable by the owning lead for new project plans. */
   estimatedHoursMin?: number;
@@ -316,6 +316,14 @@ export function validateLifecycleRevision(revision: LifecycleRevision): string[]
       if (!t.id.trim() || ids.has(t.id) || !t.title.trim() || !t.department.trim())
         errors.push(`${s.code}: invalid or duplicate task default`);
       ids.add(t.id);
+      const configuredProfiles = Object.entries(t.assigneeRoleLevels ?? {}).filter(
+        ([level, roleId]) => ["L1", "L2", "L3", "L4"].includes(level) && typeof roleId === "string" && roleId.trim().length > 0,
+      );
+      if (configuredProfiles.length > 1)
+        errors.push(`${s.code}: task ${t.id} must name only one intended assignee profile`);
+      const explicitL1 = t.assigneeRoleLevels?.L1;
+      if (t.assigneeRoleId && explicitL1 && t.assigneeRoleId !== explicitL1)
+        errors.push(`${s.code}: task ${t.id} has conflicting legacy and L1 assignee profiles`);
     }
   }
   const visiting = new Set<string>();
