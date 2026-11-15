@@ -438,3 +438,49 @@ The Projects tab now offers an Admin-only action for exactly `HLPL-GEN-EHW-P10`,
 Web SOR/RFQ-to-Opportunity import now requires an explicit selectable Customer master from the searchable canonical directory; a uniquely exact Customer code may preselect it, while absent or ambiguous matches require deliberate selection or creating the master first. The saved Opportunity carries the Customer UUID in both supported ID aliases, current master code/name, and separately retained source wording. The shared import rejects missing canonical IDs before creating records or downstream review/input rows; the browser-local Opportunity keeps the same link/provenance fields. Creating a Customer during the import no longer overwrites the extracted source wording. Internal customerless enquiry paths remain supported. Focused SOR checks passed 11/11, full `npm run test:department` passed 387/387, `npx tsc --noEmit` passed, and the production client/server build passed. No Shared TEST or Production rows/schema were changed for this source-only increment. The Codex side-browser URL is queued at localhost:8083; the HTTP 200 TEST page was verified, but rendered interactive form behavior and authenticated save/readback remain unverified.
 
 Read-only Shared TEST recheck: 4/5 active Opportunities and 1/4 active Projects have a canonical Customer ID; all populated IDs resolve to same-organization Customer masters, with zero conflicting aliases or unresolved IDs. Three active Projects still have no Customer ID or source label, so they remain unlinked pending an authoritative relationship. This audit changed no TEST or Production data and does not verify a new SOR save/readback.
+
+### 15 November 2026 — Account-Backed Shared TEST Upload Flow & Smart Document Ingestion
+
+#### 1. Truly Shared vs. Browser-Local Storage Boundaries
+- **Shared TEST (Account-Backed Storage)**:
+  - When authenticated in Shared TEST mode (`sharedStorage` active), uploads are committed directly to the PostgreSQL backend via `register_controlled_document` (`documents` table) and Supabase Storage bucket `controlled-documents` via `begin_controlled_document_upload` and `complete_controlled_document_upload` (`controlled_document_files` table).
+  - Every uploaded document receives an authoritative server UUID (`regResult.id`) and canonical human-readable reference (e.g. `HLPL-DOC-202611-0001`).
+  - Saved documents are returned in the shared workspace snapshot via `get_shared_test_workspace()`, making them immediately visible across web browsers and on Android devices logged into the same TEST organization.
+- **Browser-Local (Pure Demo / Standalone Mode)**:
+  - When operating without an active shared session (`sharedStorage = false`), files are stored exclusively in IndexedDB under `local-attachments` and component state.
+  - Documents carry clear local indicators (`storage: "indexeddb"`) and do not sync to PostgreSQL or other users/devices.
+
+#### 2. Scope & Departmental Routing
+- Supported Upload Categories connected to Shared TEST Docs Vault:
+  - **Technical Files**: Schematics (`SCH`), PCB Layouts (`PCB`), Gerbers (`GER`), Stencils (`STENCIL`), Panels (`PANEL`), Mechanical Drawings (`DRAWING`), 3D STEP/STL/DXF models (`STEP`, `STL`, `DXF`).
+  - **Procurement & Finance**: Supplier Quotations (`QUOTE`), Supplier Invoices (`INVOICE`), Goods Receipt Notes & Delivery Evidence (`RECEIPT`).
+  - **Operational & Role Documents**: Role / Audit Supporting Evidence (`ROLE`), Standard Operating Procedures & Work Instructions (`SOP`), Hardware Bring-Up & Power-On Procedures (`BRINGUP`), Compliance & Regulatory Certificates (`CERT`).
+- Documents are mapped directly to canonical Document Catalogue families (D01–D38), including Family `D01` (`DOC-SOP`, `DOC-WI`, `EHW-BRINGUP-SOP`) and Family `D13` (`EHW-BRINGUP`).
+- The Auto-Draft menu adds operational entries; this does not establish generation coverage across all 38 families. The 15 November follow-up supplies 11 structured definitions in `document-draft.ts`, with source provenance, missing owner inputs, Unissued snapshots and DOCX support: SOP, WI, bring-up SOP, bring-up report, HSI, EOL, calibration index, goods inward, dispatch, line audit and risk register. Family IDs follow the existing catalogue (D01, D09, D13, D23, D30, D31 and D32); EOL belongs to EMF and store/dispatch profiles to PUR. External calibration/statutory evidence remains an uploaded original; no generated form certifies a result.
+
+#### 3. Strict Interlocks and Safeguards
+- **Strict Draft Status**: Every uploaded record is initially registered with status `Draft` and `classification: "Internal"`.
+- **Zero Automatic Side Effects**: Enforced by server triggers and validation logic:
+  - No automatic approvals or sign-offs.
+  - No automatic release to clients or external parties.
+  - No automated PO generation or payment release.
+  - No automated inventory or stock level adjustments.
+  - No automated tollgate or lifecycle gate advancement.
+
+#### 4. Department Isolation & Security Verification
+- Department scoping is strictly enforced via `private.shared_test_scope`:
+  - Department members and leads only see documents owned by their authorized department.
+  - Executive Admins retain holistic cross-department visibility.
+  - Cross-department file downloads are rejected with `FILE_ACCESS_DENIED` via `get_controlled_file_access()`.
+  - Client accounts (`is_client = true`) are strictly forbidden from registering controlled documents (`DOCUMENT_DEPARTMENT_REQUIRED`) and receive an empty `documents` array for unreleased drafts.
+
+#### 5. Cross-Platform Parity with Android
+- Android's `SharedAccess.kt` parses documents directly from `get_shared_test_workspace()` JSON snapshot via `fun sharedDocuments(snapshot: JsonObject?, selectedProjectId: String): List<SharedDocumentItem>`.
+- Web and Android are intended to read the same authorized document records. The local PostgreSQL test checks snapshot JSON keys only; it does not execute Kotlin parsing, Android refresh, binary viewing or hosted storage. Authenticated Web upload/reload/download and an independent Android readback remain unverified. Do not claim instant streaming or full Android parity from this test.
+
+#### 6. Verification & Test Evidence
+- **Shared Upload Flow Suite (`tests/shared-document-upload-flow.test.cjs`)**: Passed 1/1 (PGlite simulated PostgreSQL migration lifecycle, RLS enforcement, department isolation, and client blocking).
+- **Smart Upload Ingestion Suite (`tests/smart-upload-ingestion.test.cjs`)**: Passed 15/15 tests covering all 5 ingestion phases.
+- **Full Web Regression Suite (`npm run test:department`)**: Independent follow-up passed 404/404 tests (0 failures), including the operational-template regression. Focused draft/upload/database tests passed 29/29; TypeScript and production client/server build passed. `git diff --check` passed. The localhost page was queued in the side browser, but no rendered result or authenticated upload was returned; live Web save/reload/download and Android readback remain open. The final common SOP/WI chooser visibility adjustment was included in the production build.
+- **TypeScript Static Verification (`npx tsc --noEmit`)**: Passed with exit code 0 (zero errors).
+- **Production Guard**: No production database, migrations, or tables were altered.

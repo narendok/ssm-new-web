@@ -22,11 +22,50 @@ import { buildDocumentDraft, DOCUMENT_FORMATS, draftType, restoreDocumentDraftSn
 import { DocumentStandardViewer, type TemplateSettingsProps } from "./DocumentStandardViewer";
 
 type LibraryProps={documents:VaultDisplayDocument[];departmentContext:string|null;onSelectDocument:(doc:VaultDisplayDocument)=>void;onUploadFile:(file:File|null)=>void;readOnlyReason:string|undefined};
-const kinds=["D01 common-document draft index","Technical document","Schematic PDF","Gerber ZIP","Panel ZIP","Stencil PCB fab","Mechanical STEP","Prototype STL/DXF","Firmware binary","Certificate","BOM","Policy / procedure"];
-export function SharedDocumentVault({membership,departmentCode,initialDocumentId,initialProjectId,templateSettings,renderLibrary}:{
-  membership:TestMembership;departmentCode?:string|undefined;initialDocumentId?:string|undefined;initialProjectId?:string|undefined;
+const kinds=[
+  "D01 common-document draft index",
+  "Technical document",
+  "Schematic PDF",
+  "PCB layout",
+  "Gerber ZIP",
+  "Panel ZIP",
+  "Stencil PCB fab",
+  "Mechanical STEP",
+  "Mechanical drawing",
+  "Prototype STL/DXF",
+  "Firmware binary",
+  "Certificate",
+  "BOM",
+  "Supplier quotation",
+  "Supplier invoice",
+  "Goods receipt / delivery evidence",
+  "Role / audit supporting document",
+  "Standard Operating Procedure (SOP / WI)",
+  "Hardware Bring-Up & Smoke Test Report",
+  "Policy / procedure"
+];
+export function SharedDocumentVault({
+  membership,
+  departmentCode,
+  initialDocumentId,
+  initialProjectId,
+  templateSettings,
+  renderLibrary,
+  onBack,
+  openUploadOnMount,
+  initialUploadType,
+  onUploadOpenConsumed,
+}:{
+  membership:TestMembership;
+  departmentCode?:string|undefined;
+  initialDocumentId?:string|undefined;
+  initialProjectId?:string|undefined;
   templateSettings:TemplateSettingsProps;
-  renderLibrary:(props:LibraryProps)=>ReactNode;onBack?:()=>void;
+  renderLibrary:(props:LibraryProps)=>ReactNode;
+  onBack?:()=>void;
+  openUploadOnMount?:boolean;
+  initialUploadType?:string;
+  onUploadOpenConsumed?:()=>void;
 }){
   const load=useServerFn(getSharedVaultDocuments),workspace=useServerFn(getSharedTestWorkspace),coordination=useServerFn(getCoordination),register=useServerFn(registerSharedDocument),loadRoleConfiguration=useServerFn(getSharedDepartmentRoleConfiguration);
   const begin=useServerFn(beginControlledDocumentUpload),finish=useServerFn(completeControlledDocumentUpload),list=useServerFn(listControlledDocumentFiles),download=useServerFn(getControlledDocumentDownload);
@@ -101,11 +140,23 @@ export function SharedDocumentVault({membership,departmentCode,initialDocumentId
       .then(result=>{if(active){const available=result.flat();setSourceFiles(available);setSourceFileId(previous=>available.some(f=>f.id===previous)?previous:"");setSourceFilesStatus("ready");}}).catch(e=>{if(active){setSourceFiles([]);setSourceFileId("");setSourceFilesStatus("error");setError(e instanceof Error?e.message:"Source packages could not be loaded.");}});
     return()=>{active=false;};
   },[create,kind,projectId,query.data,projectsQuery.data]);
-  function openRegistration(pending:File|null){
+  function openRegistration(pending:File|null, overrideKind?: string){
     if(!canManage){setError("Document registration requires the authorized department lead or Admin.");return;}
-    setPendingFile(pending);setTitle(pending?.name||"");setRecordId("");setDraftTemplate("");setSourceFileId("");setCreatedDraft(null);registrationRequest.current=null;setError("");setCreate(true);
+    setPendingFile(pending);setTitle(pending?.name?pending.name.replace(/\.[^.]+$/,""):"");setRecordId("");setDraftTemplate("");setSourceFileId("");setCreatedDraft(null);registrationRequest.current=null;setError("");
+    if(overrideKind){
+      const uploadKinds:Record<string,string>={FILE:"Technical document",SCH:"Schematic PDF",PCB:"PCB layout",GER:"Gerber ZIP",PANEL:"Panel ZIP",STENCIL:"Stencil PCB fab",STEP:"Mechanical STEP",DRAWING:"Mechanical drawing",STL:"Prototype STL/DXF",DXF:"Prototype STL/DXF",BOM:"BOM",QUOTE:"Supplier quotation",INVOICE:"Supplier invoice",RECEIPT:"Goods receipt / delivery evidence",ROLE:"Role / audit supporting document",CERT:"Certificate",SOP:"Standard Operating Procedure (SOP / WI)",BRINGUP:"Hardware Bring-Up & Smoke Test Report"};
+      const matched=uploadKinds[overrideKind]||kinds.find(k=>k===overrideKind)||"Technical document";
+      setKind(matched);
+    }
+    setCreate(true);
     if(projectFilter!=="all"&&projects.some(p=>p.id===projectFilter)){setScope("client");setProjectId(projectFilter);}else{setScope("common");setProjectId("");}
   }
+  useEffect(()=>{
+    if(openUploadOnMount&&!query.isPending&&!people.isPending&&!projectsQuery.isPending&&!roleConfiguration.isPending){
+      openRegistration(null,initialUploadType);
+      onUploadOpenConsumed?.();
+    }
+  },[openUploadOnMount,initialUploadType,query.isPending,people.isPending,projectsQuery.isPending,roleConfiguration.isPending,canManage]);
   async function uploadOriginal(documentId:string,original:File,uploadRevision:string){
     if(!original.size||original.size>25*1024*1024)throw new Error("Choose a non-empty file up to 25 MB.");
     const checksum=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await original.arrayBuffer()))).map(v=>v.toString(16).padStart(2,"0")).join("");

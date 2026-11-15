@@ -323,4 +323,23 @@ test("Phase 5: Every upload type maps to a recognized catalogue family (D01-D38)
   assert.equal(CATALOGUE_FAMILY_BY_UPLOAD_TYPE.INVOICE, "D21");
   assert.equal(CATALOGUE_FAMILY_BY_UPLOAD_TYPE.RECEIPT, "D22");
   assert.equal(CATALOGUE_FAMILY_BY_UPLOAD_TYPE.CERT, "D23");
+  assert.equal(CATALOGUE_FAMILY_BY_UPLOAD_TYPE.SOP, "D01");
+  assert.equal(CATALOGUE_FAMILY_BY_UPLOAD_TYPE.BRINGUP, "D13");
+});
+
+test("Phase 5: SOP and Hardware Bring-Up profiles are explicitly mapped in EHW and DOC_CTRL", () => {
+  const ehwProfiles = getProfilesForRole("EHW");
+  const bringupSop = ehwProfiles.find((p) => p.id === "ehw_bringup_sop");
+  assert.ok(bringupSop, "EHW must have ehw_bringup_sop profile");
+  assert.equal(bringupSop.catalogueFamilyId, "D01");
+  assert.equal(bringupSop.roleCode, "EHW");
+
+  const bringupReport = ehwProfiles.find((p) => p.id === "ehw_bringup_report");
+  assert.ok(bringupReport, "EHW must have ehw_bringup_report profile");
+  assert.equal(bringupReport.catalogueFamilyId, "D13");
+
+  const docCtrlProfiles = getProfilesForRole("DOC_CTRL");
+  const docSop = docCtrlProfiles.find((p) => p.id === "doc_ctrl_sop_wi");
+  assert.ok(docSop, "DOC_CTRL must have doc_ctrl_sop_wi profile");
+  assert.equal(docSop.catalogueFamilyId, "D01");
 });

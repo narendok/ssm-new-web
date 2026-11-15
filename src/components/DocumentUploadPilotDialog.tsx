@@ -45,7 +45,7 @@ type Props = {
   initialScope: UploadScope;
   actor: { id: string; kind: string; name: string; departmentId?: string | undefined };
   onClose: () => void;
-  onSave: (document: UploadDraft) => Promise<boolean>;
+  onSave: (document: UploadDraft, file?: File | null) => Promise<boolean>;
 };
 
 const fieldClass =
@@ -200,7 +200,7 @@ export function DocumentUploadPilotDialog({
       const draft = prepareUploadDraft({ ...args, checksum });
       await saveLocalAttachment(args.fileId, file);
       fileId = args.fileId;
-      if (!(await onSave(draft)))
+      if (!(await onSave(draft, file)))
         throw new Error(
           "The document record was not saved. The attachment has not been registered.",
         );

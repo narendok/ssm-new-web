@@ -58,6 +58,7 @@ export const CATALOGUE_FAMILIES: CatalogueFamily[] = [
     subtypes: [
       { id: "SOP", name: "Standard Operating Procedure", departmentCode: "ALL", format: "DOCX" },
       { id: "WI", name: "Work Instruction", departmentCode: "ALL", format: "DOCX" },
+      { id: "EHW-BRINGUP-SOP", name: "Hardware Bring-Up & Power-On SOP", departmentCode: "EHW", format: "DOCX" },
     ],
   },
   {
@@ -223,6 +224,7 @@ export const CATALOGUE_FAMILIES: CatalogueFamily[] = [
     status: "Core milestone deliverable",
     subtypes: [
       { id: "DVP", name: "Design Verification Plan & Report (DVP&R)", departmentCode: "QA", format: "DOCX" },
+      { id: "EHW-BRINGUP", name: "Hardware Bring-Up & Smoke Test Report", departmentCode: "EHW", format: "DOCX" },
     ],
   },
   {

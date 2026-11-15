@@ -84,6 +84,7 @@ import {
 import { recordsForProject, documentsForProject } from "@/lib/project-workspace";
 import { SharedOperationalWorkspace } from "@/components/SharedOperationalWorkspace";
 import { SharedDocumentVault } from "@/components/SharedDocumentVault";
+import { registerSharedDocument } from "@/lib/shared-vault.functions";
 import { getSharedTestWorkspace, mutateSharedTestWorkspace } from "@/lib/shared-test.functions";
 import { mutateProjectInputs } from "@/lib/project-inputs.functions";
 import { PROJECT_INPUT_PARAMETERS } from "@/lib/project-inputs";
@@ -4076,6 +4077,9 @@ function Portal() {
       mech_2d_drawing: "DRAWING",
       qa_calibration_cert: "CERT",
       qa_lab_tac_report: "CERT",
+      ehw_bringup_sop: "SOP",
+      ehw_bringup_report: "BRINGUP",
+      doc_ctrl_sop_wi: "SOP",
     };
     const targetType = uploadTypeByCode[profile.id] ?? "ROLE";
     setDocumentUploadType(targetType);
@@ -6546,6 +6550,9 @@ function Portal() {
               initialProjectId={vaultProjectId}
               templateSettings={portal.templateSettings ?? defaultTemplateSettings()}
               onBack={() => navigate(effectiveArea)}
+              openUploadOnMount={documentUploadRequested}
+              initialUploadType={documentUploadType}
+              onUploadOpenConsumed={() => setDocumentUploadRequested(false)}
               renderLibrary={(library) => (
                 <HardwareDeliverablesDrive
                   documents={library.documents}
@@ -9416,6 +9423,9 @@ const autoDraftTemplates = [
   ["Product Requirement Spec", "HLPL-SLCT-EHW-PRS-01", "EHW"],
   ["Production BOM Cost Tracker", "HLPL-SLCT-EHW-BOM-01", "EHW"],
   ["Hardware DFMEA", "HLPL-SLCT-EHW-DFMEA-01", "EHW"],
+  ["Hardware Bring-Up & Power-On SOP", "HLPL-SLCT-EHW-BRINGUP-SOP-01", "EHW"],
+  ["Hardware Bring-Up & Smoke Test Report", "HLPL-SLCT-EHW-BRINGUP-01", "EHW"],
+  ["Hardware-Software Interface Spec", "HLPL-SLCT-EHW-HSI-01", "EHW"],
 
   // Embedded Firmware (FW)
   ["Firmware Requirements Spec", "HLPL-SLCT-FW-FRS-01", "FW"],
@@ -9436,6 +9446,7 @@ const autoDraftTemplates = [
   ["Part Submission Warrant", "HLPL-SLCT-QA-PSW-01", "QA"],
   ["8D Corrective Action Report", "HLPL-SLCT-QA-8D-01", "QA"],
   ["Nonconformance Report", "HLPL-SLCT-QA-NCR-01", "QA"],
+  ["Equipment Calibration Record", "HLPL-SLCT-QA-CAL-01", "QA"],
 
   // Electronics Manufacturing & Box-Build (EMF)
   ["Electronics Mfg Process Requirements", "HLPL-SLCT-EMF-MPR-01", "EMF"],
@@ -9450,16 +9461,25 @@ const autoDraftTemplates = [
   ["Financial Feasibility & Cost Sheet", "HLPL-SLCT-FIN-CFS-01", "FIN"],
   ["Commercial Tax Invoice", "HLPL-SLCT-FIN-INV-01", "FIN"],
 
-  // System Integration & Testing (SIT)
+  // System Integration & Testing (SIT/TST)
   ["System Integration & Service Feasibility", "HLPL-SLCT-SIT-SRS-01", "SIT"],
+  ["Automated EOL Test Verification Log", "HLPL-SLCT-EMF-EOL-01", "EMF"],
+
+  // Store & Dispatch (STR/DSP)
+  ["Goods Inward / Delivery Challan Record", "HLPL-SLCT-PUR-GRN-01", "PUR"],
+  ["Dispatch Manifest & e-Way Bill Slip", "HLPL-SLCT-PUR-EWAY-01", "PUR"],
 
   // HR & Operations (HR/OPS)
   ["Capacity & Competency Feasibility Sheet", "HLPL-SLCT-HROPS-CRS-01", "HR/OPS"],
   ["Annual Skill Matrix", "HLPL/F/HR/03", "HR/OPS"],
+  ["Plant Line Audit & Run-at-Rate Sheet", "HLPL-SLCT-OPS-AUDIT-01", "OPS"],
+  ["Project Risk Matrix & Register", "HLPL-SLCT-OPS-RISK-01", "OPS"],
 
   // Change Management & Documentation (DOC)
   ["Engineering Change Request", "HLPL-SLCT-DOC-ECR-01", "DOC"],
   ["Engineering Change Order", "HLPL-SLCT-DOC-ECO-01", "DOC"],
+  ["Standard Operating Procedure (SOP)", "HLPL-SLCT-DOC-SOP-01", "DOC"],
+  ["Standard Work Instruction (WI)", "HLPL-SLCT-DOC-WI-01", "DOC"],
 ] as const;
 
 function AutoDraftHub({
@@ -9491,7 +9511,8 @@ function AutoDraftHub({
   const [saving, setSaving] = useState(false);
   const [savedDraft, setSavedDraft] = useState<string | null>(null);
   const scopedTemplates = autoDraftTemplates.filter(
-    (template) => !departmentScope || departmentCode(template[2].split("/")[0]) === departmentScope,
+    (template) => !departmentScope || departmentCode(template[2].split("/")[0]) === departmentScope ||
+      template[1] === "HLPL-SLCT-DOC-SOP-01" || template[1] === "HLPL-SLCT-DOC-WI-01",
   );
   const [selected, setSelected] = useState<(typeof autoDraftTemplates)[number] | null>(null);
   const [project, setProject] = useState(
@@ -15898,6 +15919,9 @@ function HardwareDeliverablesDrive({
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [projectFilter, setProjectFilter] = useState("all");
+  const registerSharedDoc = useServerFn(registerSharedDocument);
+  const beginUpload = useServerFn(beginControlledDocumentUpload);
+  const finishUpload = useServerFn(completeControlledDocumentUpload);
   const actorDepartment = persona?.departmentId
     ? findAreaDepartment(departments, persona.departmentId)
     : undefined;
@@ -16012,8 +16036,86 @@ function HardwareDeliverablesDrive({
     initialProjectId,
     uploadProjects,
   ]);
-  const saveUploadDraft = async (document: UploadDraft) => {
-    if (uploadDisabled || !onDocumentCreated) return false;
+  const saveUploadDraft = async (document: UploadDraft, originalFile?: File | null) => {
+    if (uploadDisabled || (!onDocumentCreated && !sharedStorage)) return false;
+    const uploadFile = originalFile ?? pendingFile;
+    if (sharedStorage) {
+      try {
+        const targetDept = uploadDepartments.find(
+          (d) => d.id === document.departmentId || d.code === document.departmentId,
+        );
+        const deptUuid = targetDept?.id;
+        if (!deptUuid) throw new Error("A valid department is required for shared upload.");
+
+        const docTypeLabel = document.type;
+        const scope = document.uploadScope;
+        const sourceDocId = document.sourcePackage?.documentId;
+        const fileChecksum = document.localFiles?.[0]?.checksum;
+
+        const requestId = crypto.randomUUID();
+        const regResult = await registerSharedDoc({
+          data: {
+            requestId,
+            payload: {
+              title: document.title,
+              documentType: docTypeLabel,
+              scope,
+              departmentId: deptUuid,
+              ...(document.projectId &&
+              (scope === "internal" || scope === "client")
+                ? { projectId: document.projectId }
+                : {}),
+              ...(sourceDocId ? { sourceFileId: sourceDocId } : {}),
+            },
+          },
+        });
+
+        if (uploadFile) {
+          const beginResult = await beginUpload({
+            data: {
+              documentId: regResult.id,
+              revision: document.revision || "01",
+              name: uploadFile.name,
+              contentType: uploadFile.type || "application/octet-stream",
+              sizeBytes: uploadFile.size,
+              checksum: fileChecksum,
+            },
+          });
+
+          if (!beginResult.duplicate && beginResult.signedUploadUrl) {
+            const putRes = await fetch(beginResult.signedUploadUrl, {
+              method: "PUT",
+              headers: { "Content-Type": uploadFile.type || "application/octet-stream" },
+              body: uploadFile,
+            });
+            if (!putRes.ok)
+              throw new Error("Private file upload to shared storage did not succeed. Keep file selected and retry.");
+          }
+
+          await finishUpload({ data: { fileId: beginResult.file.id } });
+        }
+
+        document.cloudDocumentId = regResult.id;
+        document.reference = regResult.reference;
+
+        if (onDocumentCreated) {
+          await onDocumentCreated(document);
+        }
+        setUploadNotice(
+          `${document.title} saved to Shared TEST Docs Vault as Draft (${regResult.reference}). Visible to your department and Android.`,
+        );
+        setFolder("00_Root_Audit_Repository");
+        setDriveGroup("All Deliverables");
+        setQuery("");
+        setProjectFilter(document.projectId ?? "all");
+        return true;
+      } catch (err) {
+        console.error("Shared upload failed:", err);
+        throw err;
+      }
+    }
+
+    if (!onDocumentCreated) return false;
     const saved = await onDocumentCreated(document);
     if (saved) {
       setUploadNotice(`${document.title} saved as a browser-local Draft. Not approved or shared.`);

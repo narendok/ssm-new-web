@@ -275,6 +275,32 @@ export const ROLE_USE_CASE_PROFILES: RoleUseCaseProfile[] = [
     interlocksChecked: ["ALERT_HWW_01"],
     expectedOutput: "Draft component specification in EHW Docs Vault; PartsBench candidate",
   },
+  {
+    id: "ehw_bringup_sop",
+    roleCode: "EHW",
+    roleName: "Embedded Hardware Engineering",
+    title: "Hardware Board Bring-Up & Power-On SOP",
+    description: "Standard operating procedure for initial bench power rails, current limiting, clock verification, and smoke tests.",
+    acceptedExtensions: ["docx", "pdf", "xlsx", "doc"],
+    catalogueFamilyId: "D01",
+    catalogueFamilyName: "Common Operating Pack & Work Instructions",
+    targetRecordType: "Bring-Up SOP",
+    interlocksChecked: ["ALERT_HW_02"],
+    expectedOutput: "Draft SOP record in EHW Docs Vault; verified bring-up sequence",
+  },
+  {
+    id: "ehw_bringup_report",
+    roleCode: "EHW",
+    roleName: "Embedded Hardware Engineering",
+    title: "Board Bring-Up & Smoke Test Verification Report",
+    description: "Measured voltage rail telemetry, boot logs, and initial functional smoke test results.",
+    acceptedExtensions: ["pdf", "docx", "xlsx", "csv"],
+    catalogueFamilyId: "D13",
+    catalogueFamilyName: "POC & Design Verification (DVP&R)",
+    targetRecordType: "Bring-Up Report",
+    interlocksChecked: [],
+    expectedOutput: "Draft verification report in EHW Docs Vault; links to Stage HW_21",
+  },
 
   // 11. FW
   {
@@ -467,6 +493,19 @@ export const ROLE_USE_CASE_PROFILES: RoleUseCaseProfile[] = [
     targetRecordType: "Audit Register",
     interlocksChecked: ["ALERT_OPS_02"],
     expectedOutput: "Draft audit document in Central Document Control Vault",
+  },
+  {
+    id: "doc_ctrl_sop_wi",
+    roleCode: "DOC_CTRL",
+    roleName: "Central Document Control & MR",
+    title: "Departmental SOP / Standard Work Instruction",
+    description: "Controlled department operating procedure, engineering standard, or work instruction.",
+    acceptedExtensions: ["docx", "pdf", "xlsx", "doc"],
+    catalogueFamilyId: "D01",
+    catalogueFamilyName: "Common Operating Pack: SOPs and Work Instructions",
+    targetRecordType: "Controlled SOP",
+    interlocksChecked: [],
+    expectedOutput: "Controlled draft SOP in Central Document Control Vault",
   },
 
   // 23. ADMIN

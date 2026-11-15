@@ -5,7 +5,7 @@ export type DraftSource = {
   attachments?: AttachmentMeta[] | undefined;
 };
 
-const wordDraftTypes = new Set(["SOR", "REVIEW", "QUO", "PRS", "EHW-PRS"]);
+const wordDraftTypes = new Set(["SOR", "REVIEW", "QUO", "PRS", "EHW-PRS", "SOP", "WI", "BRINGUP-SOP", "BRINGUP", "HSI", "EOL", "CAL", "GRN", "EWAY", "AUDIT", "RISK"]);
 
 export function supportsDraftDocx(type: string | undefined) {
   return !!type && wordDraftTypes.has(type);
@@ -47,9 +47,55 @@ export const CATALOGUE_FAMILY_MAP: Record<string, string> = {
   BOM: "D11", DFMEA: "D12", DVP: "D13", ECR: "D14", ECO: "D14",
   PPAP: "D19", PSW: "D19", PFMEA: "D22", CP: "D22",
   PDI: "D23", "8D": "D25", NCR: "D25", INV: "D26", SKILL: "D27",
+  SOP: "D01", WI: "D01", "BRINGUP-SOP": "D01", BRINGUP: "D13", HSI: "D09",
+  EOL: "D23", CAL: "D31", GRN: "D01", EWAY: "D01", AUDIT: "D32", RISK: "D30",
 };
 
 export const DOCUMENT_FORMATS: Record<string, Section[]> = {
+  SOP: [
+    { title: "Procedure scope and responsibility", fields: ["purpose", "scope", "owner", "responsibilities", "applicableReferences"] },
+    { title: "Controlled procedure", fields: ["prerequisites", "safetyControls", "procedureSteps", "acceptanceCriteria", "requiredRecords", "reviewEvidence"] },
+  ],
+  WI: [
+    { title: "Workstation and preparation", fields: ["scope", "workstation", "configuration", "tools", "safetyControls"] },
+    { title: "Work sequence and checks", fields: ["procedureSteps", "inspectionPoints", "acceptanceCriteria", "reactionPlan", "requiredRecords"] },
+  ],
+  "BRINGUP-SOP": [
+    { title: "Board readiness and controlled sources", fields: ["boardRevision", "schematicReference", "bomRevision", "operatorRole", "safetyControls", "equipmentCalibration"] },
+    { title: "Initial power-on procedure", fields: ["prePowerChecks", "supplySettings", "currentLimit", "powerSequence", "railAcceptanceCriteria", "clockChecks", "stopConditions", "evidenceRequired"] },
+  ],
+  BRINGUP: [
+    { title: "Bring-up configuration", fields: ["boardRevision", "serialNumber", "procedureReference", "operator", "testDate", "equipmentCalibration"] },
+    { title: "Recorded observations and disposition", fields: ["prePowerObservations", "supplySettings", "measuredRails", "measuredCurrent", "clockObservations", "anomalies", "testEvidence", "disposition", "reviewEvidence"] },
+  ],
+  HSI: [
+    { title: "Interface baseline", fields: ["hardwareRevision", "firmwareRevision", "interfaceOwners", "pinMap", "signalLevels", "powerDomains"] },
+    { title: "Protocol and verification", fields: ["protocolDefinitions", "timingConstraints", "startupSequence", "faultHandling", "acceptanceCriteria", "verificationLinks", "changeImpact"] },
+  ],
+  EOL: [
+    { title: "Production test configuration", fields: ["batch", "serialRange", "hardwareRevision", "firmwareRevision", "testRig", "procedureReference", "calibrationEvidence"] },
+    { title: "Recorded EOL verification", fields: ["testDate", "operator", "testLimits", "measuredResult", "failures", "rework", "testEvidence", "reviewEvidence"] },
+  ],
+  CAL: [
+    { title: "Instrument and calibration source", fields: ["assetId", "instrumentModel", "serialNumber", "calibrationProvider", "accreditationEvidence", "certificateReference"] },
+    { title: "Calibration record", fields: ["calibrationDate", "dueDate", "measurementRange", "uncertainty", "traceability", "recordedResults", "certificateEvidence", "reviewEvidence"] },
+  ],
+  GRN: [
+    { title: "Goods inward references", fields: ["supplier", "purchaseOrderReference", "deliveryChallanReference", "receiptDate", "lineItems", "receivedQuantity", "lotSerialReferences"] },
+    { title: "Receipt evidence and inspection", fields: ["conditionOnReceipt", "inspectionReference", "quarantineLocation", "discrepancies", "receiptEvidence", "reviewEvidence"] },
+  ],
+  EWAY: [
+    { title: "Dispatch and source references", fields: ["customer", "orderReference", "invoiceReference", "dispatchReference", "lineItems", "quantity", "serialRange"] },
+    { title: "Transport and statutory source evidence", fields: ["carrier", "vehicleReference", "destination", "dispatchDate", "ewayBillReference", "ewayBillEvidence", "releaseEvidence"] },
+  ],
+  AUDIT: [
+    { title: "Line audit scope", fields: ["line", "configuration", "auditDate", "auditor", "checklistReference", "plannedRate", "runDuration"] },
+    { title: "Measured run and findings", fields: ["actualOutput", "scrapQuantity", "downtime", "qualityEvidence", "findings", "correctiveActions", "actionOwners", "reviewEvidence"] },
+  ],
+  RISK: [
+    { title: "Risk identification", fields: ["riskId", "scope", "category", "riskDescription", "cause", "impact", "owner"] },
+    { title: "Assessment and mitigation", fields: ["scoringMethod", "likelihood", "severity", "riskScore", "mitigation", "dueDate", "residualRisk", "sourceEvidence", "reviewEvidence"] },
+  ],
   // Commercial & Customer Intake
   ENQ: [
     { title: "Customer & enquiry intake", fields: ["customer", "opportunity", "scope", "targetQuantity", "targetSOP"] },
@@ -188,7 +234,7 @@ export const DOCUMENT_FORMATS: Record<string, Section[]> = {
 export const CLIENT_DELIVERABLE_TYPES = new Set(["QUO", "NDA", "PDI", "PSW", "INV"]);
 
 /** Explicit aliases are compatibility inputs; arbitrary substrings never select a template. */
-export const DOCUMENT_TEMPLATE_VERSION = "2026-10-19.2";
+export const DOCUMENT_TEMPLATE_VERSION = "2026-11-15.1";
 
 export const DOCUMENT_TEMPLATE_REGISTRY = Object.fromEntries(
   Object.keys(DOCUMENT_FORMATS).map((type) => [
@@ -250,6 +296,11 @@ export function draftType(title: string, id: string, explicitType?: string): str
   if (/REQUIREMENT SPEC/.test(value) && matches.length === 0) matches.push("PRS");
 
   let filtered = matches;
+  // A bring-up procedure and its measured report are different controlled types.
+  if (tokens.includes("BRINGUP") && tokens.includes("SOP")) {
+    filtered = filtered.filter((m) => m !== "BRINGUP" && m !== "SOP");
+    filtered.push("BRINGUP-SOP");
+  }
   if (filtered.includes("EHW-PRS")) {
     filtered = filtered.filter((m) => m !== "PRS");
   }

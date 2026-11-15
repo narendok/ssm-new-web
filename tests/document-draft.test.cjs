@@ -9,6 +9,38 @@ const draftModule = { exports: {} };
 new Function('module', 'exports', compiled)(draftModule, draftModule.exports);
 const { buildDocumentDraft, restoreDocumentDraftSnapshot } = draftModule.exports;
 
+test('operational templates resolve from real hub IDs and retain sourced unissued snapshots', () => {
+  const cases = [
+    ['Hardware Bring-Up & Power-On SOP', 'HLPL-SLCT-EHW-BRINGUP-SOP-01', 'BRINGUP-SOP', 'D01'],
+    ['Hardware Bring-Up & Smoke Test Report', 'HLPL-SLCT-EHW-BRINGUP-01', 'BRINGUP', 'D13'],
+    ['Standard Operating Procedure (SOP)', 'HLPL-SLCT-DOC-SOP-01', 'SOP', 'D01'],
+    ['Standard Work Instruction (WI)', 'HLPL-SLCT-DOC-WI-01', 'WI', 'D01'],
+    ['Hardware-Software Interface Spec', 'HLPL-SLCT-EHW-HSI-01', 'HSI', 'D09'],
+    ['Automated EOL Test Verification Log', 'HLPL-SLCT-EMF-EOL-01', 'EOL', 'D23'],
+    ['Equipment Calibration Record', 'HLPL-SLCT-QA-CAL-01', 'CAL', 'D31'],
+    ['Goods Inward / Delivery Challan Record', 'HLPL-SLCT-PUR-GRN-01', 'GRN', 'D01'],
+    ['Dispatch Manifest & e-Way Bill Slip', 'HLPL-SLCT-PUR-EWAY-01', 'EWAY', 'D01'],
+    ['Plant Line Audit & Run-at-Rate Sheet', 'HLPL-SLCT-OPS-AUDIT-01', 'AUDIT', 'D32'],
+    ['Project Risk Matrix & Register', 'HLPL-SLCT-OPS-RISK-01', 'RISK', 'D30'],
+  ];
+  for (const [title,id,type,family] of cases) {
+    const draft=buildDocumentDraft(title,id);
+    assert.equal(draft.supported,true,title);
+    assert.equal(draft.type,type,title);
+    assert.equal(draft.catalogueFamilyId,family,title);
+    assert.equal(draft.snapshot.releaseStatus,'Unissued');
+    assert.equal(draft.completionPercentage,0);
+    assert.ok(draft.missingFields.length>0);
+    assert.ok(draft.sections.flatMap(s=>s.rows).every(r=>r[1].startsWith('TBD')&&r[2]==='No source provided'));
+    assert.equal(draftModule.exports.supportsDraftDocx(type),true);
+  }
+  const source={reference:'BENCH-TEST',fields:{measuredRails:'3.27 V'}};
+  const report=buildDocumentDraft(cases[1][0],cases[1][1],source);
+  assert.deepEqual(report.sections.flatMap(s=>s.rows).find(r=>r[0]==='measuredRails'),['measuredRails','3.27 V','BENCH-TEST']);
+  source.fields.measuredRails='changed';
+  assert.equal(report.snapshot.source.fields.measuredRails,'3.27 V');
+});
+
 test('Word rendition preserves draft status and escaped source data in an A4 document', () => {
   const { unzipSync, strFromU8 } = require('fflate');
   const exporterSource = fs.readFileSync(path.resolve(__dirname, '../src/lib/document-draft-docx.ts'), 'utf8');

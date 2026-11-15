@@ -34,6 +34,11 @@ export const UPLOAD_TYPES = [
     extensions: ["docx", "pdf", "xlsx", "doc", "txt"],
   },
   {
+    id: "BRINGUP",
+    label: "Hardware Bring-Up & Smoke Test Report",
+    extensions: ["docx", "pdf", "xlsx", "doc", "txt"],
+  },
+  {
     id: "FILE",
     label: "Other original document",
     extensions: [
@@ -73,6 +78,7 @@ export const CATALOGUE_FAMILY_BY_UPLOAD_TYPE: Record<UploadType, string> = {
   CERT: "D23",
   ROLE: "D01",
   SOP: "D01",
+  BRINGUP: "D13",
   FILE: "D01",
 };
 export type UploadScope = "common" | "internal" | "client" | "department";
@@ -259,6 +265,8 @@ export function prepareUploadDraft(input: {
     uploadType: type.id,
     uploadScope: m.scope,
     catalogueFamilyId: CATALOGUE_FAMILY_BY_UPLOAD_TYPE[type.id] ?? "D01",
+    cloudDocumentId: undefined as string | undefined,
+    reference: undefined as string | undefined,
     // Interlock guarantees: upload remains Draft and never triggers automated side effects
     approved: false,
     customerReleased: false,
