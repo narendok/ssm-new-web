@@ -13,7 +13,6 @@ import { useServerFn } from "@tanstack/react-start";
 import {
   getSharedTestWorkspace,
   mutateSharedTestWorkspace,
-  resetSharedTestSamplePack,
 } from "@/lib/shared-test.functions";
 import { registerSharedDocument } from "@/lib/shared-vault.functions";
 import { getSharedDepartmentRoleConfiguration } from "@/lib/department-roles.functions";
@@ -55,8 +54,7 @@ export function SharedTestWorkspace({
   standaloneDocuments?: boolean;
 }) {
   const load = useServerFn(getSharedTestWorkspace),
-    write = useServerFn(mutateSharedTestWorkspace),
-    resetSamplePack = useServerFn(resetSharedTestSamplePack);
+    write = useServerFn(mutateSharedTestWorkspace);
   const beginUpload = useServerFn(beginControlledDocumentUpload),
     completeUpload = useServerFn(completeControlledDocumentUpload),
     download = useServerFn(getControlledDocumentDownload),
@@ -120,34 +118,6 @@ export function SharedTestWorkspace({
       setForm(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed.");
-      await query.refetch();
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function resetCanonicalSamplePack() {
-    if (
-      !window.confirm(
-        "Reset the shared TEST sample pack for every web and app tester? This restores the fictional canonical projects and clears only their sample tasks, reviews, and linked draft records. Other TEST projects, accounts, and uploaded binary files are kept.",
-      )
-    )
-      return;
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      await resetSamplePack({
-        data: { runId: "LC2-2026-10-28", requestId: crypto.randomUUID() },
-      });
-      await query.refetch();
-      setNotice("Shared TEST sample pack restored for web and app testers.");
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "TEST sample reset failed.";
-      setError(
-        /reset_shared_test_sample_pack|schema cache/i.test(message)
-          ? "Shared TEST reset is not installed on this backend yet. No sample data was reset."
-          : message,
-      );
       await query.refetch();
     } finally {
       setBusy(false);
@@ -672,10 +642,11 @@ export function SharedTestWorkspace({
                         </button>
                         <button
                           className={button}
-                          disabled={busy}
-                          onClick={() => void resetCanonicalSamplePack()}
+                          type="button"
+                          disabled
+                          title="Paused because this backend reset also deletes linked fixture records outside the approved project-only scope."
                         >
-                          Reset shared TEST sample data
+                          Reset shared TEST sample data (paused)
                         </button>
                       </>
                     )}
@@ -686,6 +657,14 @@ export function SharedTestWorkspace({
                     )}
                   </div>
                 </div>
+                {admin && (
+                  <p className="text-xs text-muted-foreground" role="status">
+                    Reset is paused: the installed reset also removes manifest-owned tasks,
+                    approvals, stage reviews and linked draft records, and it does not target the
+                    current unmanifested fictional Projects. Sync can add or repair the canonical
+                    pack; no existing TEST project or linked record is changed here.
+                  </p>
+                )}
                 {profileSetupMissing && (
                   <p className="text-xs text-muted-foreground" role="status">
                     Some task assignments are unavailable until an Admin maps an active L1–L4 role to a department member in Settings. Existing assignments are preserved.
