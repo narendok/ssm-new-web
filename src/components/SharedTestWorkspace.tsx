@@ -11,6 +11,7 @@ import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
+  archiveLegacySharedTestDemoProjects,
   getSharedTestWorkspace,
   mutateSharedTestWorkspace,
 } from "@/lib/shared-test.functions";
@@ -32,6 +33,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 type Tab = "Projects" | "Records" | "Tasks" | "Approvals" | "Documents" | "Activity";
 const tabs: Tab[] = ["Projects", "Records", "Tasks", "Approvals", "Documents", "Activity"];
 const taskStatuses = ["Open", "In Progress", "In review", "Complete"];
+const legacyDemoProjectReferences = [
+  "HLPL-GEN-EHW-P10",
+  "HLPL-TEST-ORION-PHASES-20261107",
+  "HLPL-TEST-RACI-20261106",
+];
 const input = "rounded-md border border-input bg-background px-3 py-2 text-sm";
 const button =
   "rounded-md border border-border px-3 py-2 text-sm font-medium disabled:opacity-40 hover:bg-accent";
@@ -54,7 +60,8 @@ export function SharedTestWorkspace({
   standaloneDocuments?: boolean;
 }) {
   const load = useServerFn(getSharedTestWorkspace),
-    write = useServerFn(mutateSharedTestWorkspace);
+    write = useServerFn(mutateSharedTestWorkspace),
+    archiveLegacyDemoProjects = useServerFn(archiveLegacySharedTestDemoProjects);
   const beginUpload = useServerFn(beginControlledDocumentUpload),
     completeUpload = useServerFn(completeControlledDocumentUpload),
     download = useServerFn(getControlledDocumentDownload),
@@ -633,6 +640,37 @@ export function SharedTestWorkspace({
                       <>
                         <button
                           className={button}
+                          type="button"
+                          disabled={busy || legacyDemoProjectReferences.some(reference => !data.records.some(record => record.reference === reference && record.record_type === "Project"))}
+                          onClick={async () => {
+                            const confirmed = window.confirm(
+                              "Archive only these 3 fictional Shared TEST projects?\n\n" +
+                                legacyDemoProjectReferences.join("\n") +
+                                "\n\nTasks, approvals, documents, record links and stage history will be preserved. No Production data or inventory history will be changed.",
+                            );
+                            if (!confirmed) return;
+                            setBusy(true);
+                            setError("");
+                            setNotice("");
+                            try {
+                              const result = await archiveLegacyDemoProjects({ data: { requestId: crypto.randomUUID() } });
+                              await query.refetch();
+                              const archivedCount = typeof result === "object" && result !== null && "archivedCount" in result
+                                ? Number(result["archivedCount"])
+                                : 0;
+                              setNotice(`Archived ${archivedCount} fictional Shared TEST projects. Their linked history was preserved.`);
+                            } catch (e) {
+                              setError(e instanceof Error ? e.message : "Could not archive the legacy TEST projects.");
+                              await query.refetch();
+                            } finally {
+                              setBusy(false);
+                            }
+                          }}
+                        >
+                          Archive 3 legacy demo projects
+                        </button>
+                        <button
+                          className={button}
                           disabled={busy}
                           onClick={async () => {
                             await run("sync_canonical_sample_pack", { p_run_id: "LC2-2026-10-28" });
@@ -661,8 +699,10 @@ export function SharedTestWorkspace({
                   <p className="text-xs text-muted-foreground" role="status">
                     Reset is paused: the installed reset also removes manifest-owned tasks,
                     approvals, stage reviews and linked draft records, and it does not target the
-                    current unmanifested fictional Projects. Sync can add or repair the canonical
-                    pack; no existing TEST project or linked record is changed here.
+                    current unmanifested fictional Projects. The separate archive action targets
+                    only the three named fictional Projects and preserves all linked history; it
+                    refuses the action if their IDs, demo flags, manifest ownership or inventory
+                    history differ from the reviewed TEST snapshot.
                   </p>
                 )}
                 {profileSetupMissing && (

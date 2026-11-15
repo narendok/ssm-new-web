@@ -11,10 +11,23 @@ test("shared TEST reset stays disabled when its deployed scope exceeds project-o
   const schema = read("src/lib/shared-test.schema.ts");
   const server = read("src/lib/shared-test.functions.ts");
   const migration = read("supabase/migrations/20261106001444_admin_reset_shared_test_sample_pack.sql");
+  const archiveMigration = read("supabase/migrations/20261115021939_archive_legacy_shared_test_demo_projects.sql");
 
   assert.match(ui, /admin = actor\.role === "admin"/);
   assert.match(ui, /\{admin && \(/);
   assert.match(ui, /Reset shared TEST sample data \(paused\)/);
+  assert.match(ui, /Archive 3 legacy demo projects/);
+  assert.match(ui, /HLPL-GEN-EHW-P10/);
+  assert.match(ui, /HLPL-TEST-ORION-PHASES-20261107/);
+  assert.match(ui, /HLPL-TEST-RACI-20261106/);
+  assert.match(ui, /Tasks, approvals, documents, record links and stage history will be preserved/);
+  assert.match(server, /archive_legacy_shared_test_demo_projects/);
+  assert.match(archiveMigration, /record\.is_demo/);
+  assert.match(archiveMigration, /scenario_fixture_manifests/);
+  assert.match(archiveMigration, /PROJECT_HAS_INVENTORY_HISTORY/);
+  assert.doesNotMatch(archiveMigration, /DELETE FROM public\.(tasks|approvals|documents|record_links|canonical_stage_reviews)/);
+  assert.match(archiveMigration, /GRANT EXECUTE ON FUNCTION public\.archive_legacy_shared_test_demo_projects\(uuid\) TO authenticated/);
+  assert.match(archiveMigration, /REVOKE ALL ON FUNCTION public\.archive_legacy_shared_test_demo_projects\(uuid\) FROM PUBLIC, anon/);
   assert.match(ui, /disabled\s+title="Paused because this backend reset also deletes linked fixture records outside the approved project-only scope\."/);
   assert.match(ui, /installed reset also removes manifest-owned tasks,\s+approvals, stage reviews and linked draft records/);
   assert.match(ui, /current unmanifested fictional Projects/);

@@ -57,6 +57,7 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
     '20261112221934_require_canonical_customer_for_project_start',
     '20261114033959_validate_project_record_links',
     '20261114082413_validate_shared_test_customer_record_links',
+    '20261115021939_archive_legacy_shared_test_demo_projects',
   ];
 
   for (const name of migrationNames) {
@@ -1259,4 +1260,60 @@ test('Transactional PostgreSQL verification of canonical lifecycle, custom tasks
   )).rows[0].count, sampleCount, 'Repeated reset must not duplicate fixture rows');
   const replay = await resetPack(admin, 'LC2-2026-10-28', uuid(911));
   assert.deepEqual(replay, firstReset, 'Request replay must return its idempotent result');
+
+  // Archive the exact three approved unmanifested fictional Projects without deleting children.
+  const legacyDemoRefs = [
+    'HLPL-GEN-EHW-P10',
+    'HLPL-TEST-ORION-PHASES-20261107',
+    'HLPL-TEST-RACI-20261106',
+  ];
+  const legacyDemoIds = [uuid(940), uuid(941), uuid(942)];
+  for (let index = 0; index < legacyDemoRefs.length; index++) {
+    await db.query(
+      `INSERT INTO operational_records(id,organization_id,department_id,area,record_type,reference,title,status,stage,fields,is_demo,created_by,updated_by)
+       VALUES($1,$2,$3,'ehw','Project',$4,$4,'open','TG-0','{"revision":"01"}'::jsonb,true,$5,$5)`,
+      [legacyDemoIds[index], org, dEhw, legacyDemoRefs[index], admin],
+    );
+  }
+  const archiveTaskId = uuid(943);
+  const archiveApprovalId = uuid(944);
+  const archiveDocumentId = uuid(945);
+  await db.query(
+    `INSERT INTO tasks(id,organization_id,department_id,record_id,title,status,priority,created_by)
+     VALUES($1,$2,$3,$4,'Preserved legacy demo task','Open','Normal',$5)`,
+    [archiveTaskId, org, dEhw, legacyDemoIds[0], admin],
+  );
+  await db.query(
+    `INSERT INTO approvals(id,organization_id,department_id,record_id,title,created_by)
+     VALUES($1,$2,$3,$4,'Preserved legacy demo approval',$5)`,
+    [archiveApprovalId, org, dEhw, legacyDemoIds[0], admin],
+  );
+  await db.query(
+    `INSERT INTO documents(id,organization_id,record_id,title,document_type,reference_url,visibility,created_by)
+     VALUES($1,$2,$3,'Preserved legacy demo document','Drawing','private','internal',$4)`,
+    [archiveDocumentId, org, legacyDemoIds[0], admin],
+  );
+  await db.query(
+    `INSERT INTO record_links(organization_id,source_record_id,target_record_id,relationship,created_by)
+     VALUES($1,$2,$3,'related',$4)`,
+    [org, legacyDemoIds[0], unrelated.id, admin],
+  );
+  const archiveLegacy = async (user, requestId) => asUser(user, async () =>
+    (await db.query('SELECT archive_legacy_shared_test_demo_projects($1) AS result', [requestId])).rows[0].result);
+  await assert.rejects(archiveLegacy(ehwLead, uuid(946)), /LEGACY_PROJECT_ARCHIVE_ADMIN_REQUIRED/);
+  const archiveRequestId = uuid(947);
+  const archiveResult = await archiveLegacy(admin, archiveRequestId);
+  assert.equal(archiveResult.status, 'legacy_demo_projects_archived');
+  assert.equal(archiveResult.archivedCount, 3);
+  assert.equal(archiveResult.childrenDeleted, false);
+  assert.deepEqual(archiveResult.projects.map(project => project.reference), [...legacyDemoRefs].sort());
+  assert.ok(archiveResult.projects[0].preservedChildren);
+  assert.equal((await db.query('SELECT count(*)::int count FROM operational_records WHERE id=ANY($1::uuid[]) AND status=\'archived\' AND archived_at IS NOT NULL', [legacyDemoIds])).rows[0].count, 3);
+  assert.equal((await db.query('SELECT count(*)::int count FROM tasks WHERE id=$1', [archiveTaskId])).rows[0].count, 1);
+  assert.equal((await db.query('SELECT count(*)::int count FROM approvals WHERE id=$1', [archiveApprovalId])).rows[0].count, 1);
+  assert.equal((await db.query('SELECT count(*)::int count FROM documents WHERE id=$1', [archiveDocumentId])).rows[0].count, 1);
+  assert.equal((await db.query('SELECT count(*)::int count FROM record_links WHERE source_record_id=$1 AND target_record_id=$2', [legacyDemoIds[0], unrelated.id])).rows[0].count, 1);
+  assert.equal((await db.query('SELECT archived_at FROM operational_records WHERE id=$1', [unrelated.id])).rows[0].archived_at, null,
+    'a different fictional TEST project stays active');
+  assert.deepEqual(await archiveLegacy(admin, archiveRequestId), archiveResult, 'Archive request replay is idempotent');
 });

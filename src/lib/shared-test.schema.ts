@@ -38,6 +38,7 @@ export const sharedTestResetSchema = z.object({
   runId: z.literal("LC2-2026-10-28"),
   requestId: z.string().uuid(),
 });
+export const sharedTestArchiveSchema = z.object({ requestId: z.string().uuid() });
 export const sharedTestTimerSchema = z.object({ taskId: z.string().uuid(), action: z.enum(["start", "stop"]) });
 const id = z.string().uuid();
 const nullableId = id.nullable();

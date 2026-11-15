@@ -1469,6 +1469,10 @@ export type Database = {
         Args: { p_action: string; p_payload: Json; p_request_id: string }
         Returns: Json
       }
+      archive_legacy_shared_test_demo_projects: {
+        Args: { p_request_id: string }
+        Returns: Json
+      }
       register_controlled_document: {
         Args: { p_payload: Json; p_request_id: string }
         Returns: Json
