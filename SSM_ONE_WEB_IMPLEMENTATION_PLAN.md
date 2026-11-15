@@ -3,6 +3,14 @@
 **Updated:** 15 November 2026
 **Status:** Active web subplan. The cross-platform master plan is the authority for shared product, lifecycle and governance decisions. This document contains only the web delivery approach and acceptance checks.
 
+### 15 November Shared Upload acceptance checkpoint
+
+- The screenshot-confirmed `DocumentUploadPilotDialog` is the browser-local pilot: its saved drafts and original files remain in this browser's IndexedDB and do not appear in Shared TEST or Android. Its dialog now states this boundary directly. The authenticated `SharedDocumentVault` is the separate cross-device path and saves metadata to the shared `documents` table and originals to the private `controlled-documents` bucket.
+- This clarification passed the focused upload/ingestion suites (26/26), the full Web regression suite (404/404), `npx tsc --noEmit`, `npm run build`, and `git diff --check`. The local server returned HTTP 200 and the localhost tab was queued in the Codex side browser; a rendered screenshot was not captured, so visual verification is still unconfirmed.
+- A read-only audit of `ssm-one-staging` found existing fictional Shared TEST records (21 document rows and 7 controlled-file rows). This confirms sample data exists; it does not prove this browser session or Android can currently read it.
+- On 15 November, authenticated PostgREST calls to `get_shared_test_workspace()` repeatedly failed with SQLSTATE `57014` (statement timeout), with the logged call stack inside `shared_test_member_has_department` → `shared_test_scope` → `shared_test_record_visible`. Project coordination and department-role configuration RPCs returned successfully. The reason for the timeout is not yet established; do not claim the workspace snapshot is repaired based on local tests.
+- Shared upload acceptance remains open until an authorized TEST session can create one fictional mechanical drawing as a Draft using the existing shared upload contract, refresh/reopen it, verify the original-file SHA-256 and exact MECH/D10 linkage, and confirm the same canonical document ID is visible in Android under the intended access scope. No approval/release or production data is part of this check. No shared rows were changed during this checkpoint.
+
 ## Read these sources
 
 - [Cross-platform master plan](https://github.com/narendok/SSM-new/blob/main/SSM_ONE_MASTER_PLAN.md) — shared scope, phase names, departments, RACI, lifecycle and acceptance authority.

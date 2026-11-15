@@ -239,8 +239,10 @@ export function DocumentUploadPilotDialog({
             </Badge>
           </div>
           <DialogDescription>
-            Controlled Document Intake · Retains original binary &amp; SHA-256 · Saved as Draft.
-            Shared upload, approval and client release remain separate review gates.
+            Browser-local pilot only · Original binary and SHA-256 stay in this browser · Saved as
+            a local Draft. This upload does not sync to Shared TEST or Android. Sign in to the
+            authenticated Shared TEST workspace to create a shared draft; approval and release
+            remain separate review gates.
           </DialogDescription>
         </DialogHeader>
 

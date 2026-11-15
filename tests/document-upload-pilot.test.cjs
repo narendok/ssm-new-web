@@ -16,6 +16,8 @@ const { prepareUploadDraft: prepare, sourceGerberPackages, assertUploadContextCu
 
 test("document upload dialog uses searchable canonical selectors for linked masters", () => {
   const component = fs.readFileSync(path.resolve(__dirname, "../src/components/DocumentUploadPilotDialog.tsx"), "utf8");
+  assert.match(component, /Browser-local pilot only[\s\S]*does not sync to Shared TEST or Android/i,
+    "The browser-local pilot must not be mistaken for an Android-visible shared upload");
   assert.match(component, /import \{ SharedMasterSelect \} from "@\/components\/SharedMasterSelect"/);
   assert.match(component, /label="Document project"[\s\S]*?value: p\.id[\s\S]*?onChange=\{\(projectId\)/);
   assert.match(component, /label="Owning department"[\s\S]*?eligibleUploadDepartments\(departments, actor\)\.map[\s\S]*?value: d\.id/);
