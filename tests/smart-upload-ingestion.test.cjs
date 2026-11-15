@@ -47,6 +47,7 @@ const {
   CATALOGUE_FAMILY_BY_UPLOAD_TYPE,
   UPLOAD_TYPES,
 } = loadSource("document-upload-pilot");
+const { roleProfileAvailableToDepartment, smartUploadChoiceAvailable, smartUploadChoiceDepartment, uploadProfileDepartment } = loadSource("smart-upload-access");
 
 // ============================================================================
 // PHASE 1: One intake entry, 25 role profiles, and correct destinations
@@ -72,13 +73,32 @@ test("Phase 1: 25 Portal Roles are covered with valid use-case profiles and cata
   }
 });
 
+test("Smart Upload role profiles and standard routes stay inside the signed-in department",()=>{
+  assert.equal(roleProfileAvailableToDepartment({roleCode:"PUR"},"EHW",false),false);
+  assert.equal(roleProfileAvailableToDepartment({roleCode:"PUR"},"PUR",false),true);
+  assert.equal(roleProfileAvailableToDepartment({roleCode:"MECH_DES"},"MECH",false),true);
+  assert.equal(roleProfileAvailableToDepartment({roleCode:"MECH_MFG"},"MECH",false),false);
+  assert.equal(roleProfileAvailableToDepartment({roleCode:"FAC"},"HR",false),false,"unmapped role scopes fail closed for employees");
+  assert.equal(roleProfileAvailableToDepartment({roleCode:"FAC"},null,true),true,"Admin may inspect profiles and explicitly choose an owner");
+  assert.equal(smartUploadChoiceAvailable("quotation","EHW",false),false);
+  assert.equal(smartUploadChoiceAvailable("quotation","PUR",false),true);
+  assert.equal(smartUploadChoiceAvailable("invoice","PUR",false),false);
+  assert.equal(smartUploadChoiceAvailable("invoice","FIN",false),true);
+  assert.equal(smartUploadChoiceAvailable("sor","PUR",false),false);
+  assert.equal(smartUploadChoiceAvailable("sor","SAL",false),true);
+  assert.equal(smartUploadChoiceAvailable("invoice","EHW",true),true);
+  assert.equal(smartUploadChoiceDepartment("quotation","PUR"),"PUR");
+  assert.equal(uploadProfileDepartment("TST"),"EMF");
+});
+
 test("Phase 1: SmartUploadHub dialog contains both standard workflows and role-specific intake", () => {
   const component = fs.readFileSync(
     path.resolve(__dirname, "../src/components/SmartUploadHub.tsx"),
     "utf8",
   );
   assert.match(component, /Standard Workflows/);
-  assert.match(component, /Role Profiles \(25 Roles\)/);
+  assert.match(component, /Role Profiles \(\{departmentProfiles\.length\}\)/);
+  assert.doesNotMatch(component, /Role Profiles \(25 Roles\)/);
   assert.match(component, /Customer SOR \/ requirements/);
   assert.match(component, /Project BOM \/ parts list/);
   assert.match(component, /Supplier quotation/);

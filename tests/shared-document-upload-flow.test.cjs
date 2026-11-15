@@ -54,6 +54,7 @@ test("Account-backed Shared TEST Upload Flow: Technical, Quote, Invoice, Receipt
     "20261111162044_shared_document_draft_snapshots",
     "20261113044537_exact_document_project_link_aliases",
     "20261115143646_shared_workspace_snapshot_set_based",
+    "20261115161500_department_scoped_smart_upload_profiles",
   ];
 
   for (const name of initialMigrations) {
@@ -175,8 +176,12 @@ test("Account-backed Shared TEST Upload Flow: Technical, Quote, Invoice, Receipt
     scope: "internal",
     projectId: project,
     departmentId: dPur,
+    uploadProfileId: "pur_vendor_quote",
   }, quoteKey);
   assert.equal(quoteDoc.status, "Draft", "Supplier quote must register as Draft");
+  assert.equal((await db.query("SELECT metadata->>'uploadProfileId' profile FROM documents WHERE id=$1",[quoteDoc.id])).rows[0].profile,"pur_vendor_quote");
+  await assert.rejects(registerDoc(hwLead,{title:"Cross-department profile attempt",documentType:"Supplier quotation",scope:"internal",projectId:project,departmentId:dEhw,uploadProfileId:"pur_vendor_quote"}),/SMART_UPLOAD_PROFILE_DEPARTMENT_MISMATCH/);
+  await assert.rejects(registerDoc(hwLead,{title:"Unmapped profile attempt",documentType:"Statutory License",scope:"department",departmentId:dEhw,uploadProfileId:"fac_statutory_license"}),/SMART_UPLOAD_PROFILE_UNMAPPED/);
 
   // 3. Finance: Supplier Invoice (FIN)
   const invKey = crypto.randomUUID();

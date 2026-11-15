@@ -30,6 +30,7 @@ const sharedDocumentVault = fs.readFileSync(
   "utf8",
 );
 const sharedVault = fs.readFileSync(path.join(root, "src/lib/shared-vault.ts"), "utf8");
+const smartUploadHub = fs.readFileSync(path.join(root, "src/components/SmartUploadHub.tsx"), "utf8");
 
 function between(source, start, end) {
   const startIndex = source.indexOf(start);
@@ -179,4 +180,13 @@ test("authenticated Shared Vault extracts, reviews and saves provenance into the
   assert.match(sharedDocumentVault,/matches never auto-link the document/i);
   assert.match(sharedDocumentVault,/selected file changed after extraction/i);
   assert.match(sharedVault,/ingestionReview/);
+});
+
+test("Smart Upload filters departments in the chooser and forwards the selected profile to the guarded save",()=>{
+  assert.match(smartUploadHub,/roleProfileAvailableToDepartment\(profile,activeDepartmentCode,isAdmin\)/);
+  assert.match(smartUploadHub,/smartUploadChoiceAvailable\(choice\.id,activeDepartmentCode,isAdmin\)/);
+  assert.match(smartUploadHub,/Role Profiles \(\{departmentProfiles\.length\}\)/);
+  assert.doesNotMatch(smartUploadHub,/Role Profiles \(25 Roles\)/);
+  assert.match(route,/initialUploadProfileId=\{documentUploadProfileId\}/);
+  assert.match(sharedDocumentVault,/uploadProfileId\?\{uploadProfileId\}:\{\}/);
 });

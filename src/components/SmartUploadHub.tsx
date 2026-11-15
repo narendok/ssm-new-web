@@ -21,8 +21,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   ROLE_USE_CASE_PROFILES,
+  type RoleCode,
   type RoleUseCaseProfile,
 } from "@/lib/document-ingestion-profiles";
+import { normalizeUploadDepartment, roleProfileAvailableToDepartment, smartUploadChoiceAvailable } from "@/lib/smart-upload-access";
 
 const choices = [
   {
@@ -100,25 +102,27 @@ export function SmartUploadHub({
   onClose,
   onChoose,
   onChooseRoleProfile,
-  activeRoleCode,
+  activeDepartmentCode,
+  isAdmin = false,
 }: {
   open: boolean;
   onClose: () => void;
   onChoose: (choice: SmartUploadChoice) => void;
   onChooseRoleProfile?: ((profile: RoleUseCaseProfile) => void) | undefined;
-  activeRoleCode?: string | undefined;
+  activeDepartmentCode?: string | undefined;
+  isAdmin?: boolean | undefined;
 }) {
   const [activeTab, setActiveTab] = useState<"standard" | "roles">("standard");
-  const [roleFilter, setRoleFilter] = useState<string>(activeRoleCode ?? "ALL");
-
-  const filteredProfiles =
-    roleFilter === "ALL"
-      ? ROLE_USE_CASE_PROFILES
-      : ROLE_USE_CASE_PROFILES.filter((p) => p.roleCode === roleFilter);
+  const departmentProfiles=ROLE_USE_CASE_PROFILES.filter(profile=>roleProfileAvailableToDepartment(profile,activeDepartmentCode,isAdmin));
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("ALL");
 
   const availableRoles = Array.from(
-    new Set(ROLE_USE_CASE_PROFILES.map((p) => p.roleCode)),
+    new Set(departmentProfiles.map((p) => p.roleCode)),
   ).sort();
+  const roleFilter:RoleCode|"ALL"=availableRoles.includes(selectedRoleFilter as RoleCode)?selectedRoleFilter as RoleCode:"ALL";
+  const filteredProfiles = roleFilter === "ALL"
+    ? departmentProfiles
+    : departmentProfiles.filter((p) => p.roleCode === roleFilter);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -150,7 +154,7 @@ export function SmartUploadHub({
                 }`}
                 onClick={() => setActiveTab("roles")}
               >
-                Role Profiles (25 Roles)
+                Role Profiles ({departmentProfiles.length})
               </button>
             </div>
           </div>
@@ -162,7 +166,7 @@ export function SmartUploadHub({
 
         {activeTab === "standard" && (
           <div className="grid gap-2.5 sm:grid-cols-2">
-            {choices.map(({ id, title, destination, description, icon: Icon, badge }) => (
+            {choices.filter(choice=>smartUploadChoiceAvailable(choice.id,activeDepartmentCode,isAdmin)).map(({ id, title, destination, description, icon: Icon, badge }) => (
               <Button
                 key={id}
                 type="button"
@@ -209,9 +213,9 @@ export function SmartUploadHub({
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground"
                 }`}
-                onClick={() => setRoleFilter("ALL")}
+                onClick={() => setSelectedRoleFilter("ALL")}
               >
-                All Roles (25)
+                {isAdmin?"All Roles (25)":`${normalizeUploadDepartment(activeDepartmentCode)} Roles`}
               </button>
               {availableRoles.map((code) => (
                 <button
@@ -222,7 +226,7 @@ export function SmartUploadHub({
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground hover:text-foreground"
                   }`}
-                  onClick={() => setRoleFilter(code)}
+                  onClick={() => setSelectedRoleFilter(code)}
                 >
                   {code}
                 </button>
@@ -279,6 +283,7 @@ export function SmartUploadHub({
                   </Button>
                 </div>
               ))}
+              {!filteredProfiles.length&&<p role="note" className="rounded border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-muted-foreground">No Smart Upload role profiles are mapped to this department. Ask Admin to configure an authoritative department mapping; another department’s profiles are hidden.</p>}
             </div>
           </div>
         )}
@@ -292,7 +297,7 @@ export function SmartUploadHub({
             </span>
           </span>
           <span className="text-[11px] font-medium text-primary">
-            Browser-Local Pilot &amp; TEST Verified
+            Department-scoped choices · Draft-only
           </span>
         </div>
       </DialogContent>

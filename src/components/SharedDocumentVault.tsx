@@ -57,6 +57,8 @@ export function SharedDocumentVault({
   onBack,
   openUploadOnMount,
   initialUploadType,
+  initialUploadProfileId,
+  initialUploadDepartmentCode,
   onUploadOpenConsumed,
 }:{
   membership:TestMembership;
@@ -68,6 +70,8 @@ export function SharedDocumentVault({
   onBack?:()=>void;
   openUploadOnMount?:boolean;
   initialUploadType?:string;
+  initialUploadProfileId?:string|undefined;
+  initialUploadDepartmentCode?:string|undefined;
   onUploadOpenConsumed?:()=>void;
 }){
   const load=useServerFn(getSharedVaultDocuments),workspace=useServerFn(getSharedTestWorkspace),coordination=useServerFn(getCoordination),register=useServerFn(registerSharedDocument),loadRoleConfiguration=useServerFn(getSharedDepartmentRoleConfiguration);
@@ -78,7 +82,7 @@ export function SharedDocumentVault({
   const roleConfiguration=useQuery({queryKey:["shared-department-roles",membership.organizationId,membership.membershipId],queryFn:()=>loadRoleConfiguration(),refetchInterval:30000});
   const [projectFilter,setProjectFilter]=useState(initialProjectId||"all"),[selected,setSelected]=useState(initialDocumentId||"");
   const [selectedDepartmentCode,setSelectedDepartmentCode]=useState(departmentCode||membership.departmentCode||"");
-  const [create,setCreate]=useState(false),[title,setTitle]=useState(""),[kind,setKind]=useState("Technical document"),[scope,setScope]=useState<"common"|"internal"|"client"|"department">("common"),[draftPreviewOpen,setDraftPreviewOpen]=useState(false);
+  const [create,setCreate]=useState(false),[title,setTitle]=useState(""),[kind,setKind]=useState("Technical document"),[scope,setScope]=useState<"common"|"internal"|"client"|"department">("common"),[draftPreviewOpen,setDraftPreviewOpen]=useState(false),[uploadProfileId,setUploadProfileId]=useState<string|undefined>(undefined);
   const [projectId,setProjectId]=useState(""),[recordId,setRecordId]=useState(""),[draftTemplate,setDraftTemplate]=useState(""),[sourceFileId,setSourceFileId]=useState(""),[sourceFiles,setSourceFiles]=useState<{id:string;label:string}[]>([]),[sourceFilesStatus,setSourceFilesStatus]=useState<"idle"|"loading"|"ready"|"error">("idle");
   const [pendingFile,setPendingFile]=useState<File|null>(null),[file,setFile]=useState<File|null>(null),[revision,setRevision]=useState("01"),[createdDraft,setCreatedDraft]=useState<{id:string;reference:string}|null>(null);
   const [ingestionResult,setIngestionResult]=useState<IngestionExtractionResult|null>(null),[matchSummary,setMatchSummary]=useState<CanonicalMatchSummary|null>(null),[ingestionBusy,setIngestionBusy]=useState(false);
@@ -169,8 +173,10 @@ export function SharedDocumentVault({
       .then(result=>{if(active){const available=result.flat();setSourceFiles(available);setSourceFileId(previous=>available.some(f=>f.id===previous)?previous:"");setSourceFilesStatus("ready");}}).catch(e=>{if(active){setSourceFiles([]);setSourceFileId("");setSourceFilesStatus("error");setError(e instanceof Error?e.message:"Source packages could not be loaded.");}});
     return()=>{active=false;};
   },[create,kind,projectId,query.data,projectsQuery.data]);
-  function openRegistration(pending:File|null, overrideKind?: string){
+  function openRegistration(pending:File|null, overrideKind?: string, overrideProfileId?:string, overrideDepartmentCode?:string){
     if(!canManage){setError("Document registration requires the authorized department lead or Admin.");return;}
+    setUploadProfileId(overrideProfileId);
+    if(overrideDepartmentCode&&availableDepartments.some(d=>d.code===overrideDepartmentCode))setSelectedDepartmentCode(overrideDepartmentCode);
     setPendingFile(pending);setTitle(pending?.name?pending.name.replace(/\.[^.]+$/,""):"");setRecordId("");setDraftTemplate("");setSourceFileId("");setCreatedDraft(null);registrationRequest.current=null;setError("");
     if(overrideKind){
       const uploadKinds:Record<string,string>={FILE:"Technical document",SCH:"Schematic PDF",PCB:"PCB layout",GER:"Gerber ZIP",PANEL:"Panel ZIP",STENCIL:"Stencil PCB fab",STEP:"Mechanical STEP",DRAWING:"Mechanical drawing",STL:"Prototype STL/DXF",DXF:"Prototype STL/DXF",BOM:"BOM",QUOTE:"Supplier quotation",INVOICE:"Supplier invoice",RECEIPT:"Goods receipt / delivery evidence",ROLE:"Role / audit supporting document",CERT:"Certificate",SOP:"Standard Operating Procedure (SOP / WI)",BRINGUP:"Hardware Bring-Up & Smoke Test Report"};
@@ -182,10 +188,10 @@ export function SharedDocumentVault({
   }
   useEffect(()=>{
     if(openUploadOnMount&&!query.isPending&&!people.isPending&&!projectsQuery.isPending&&!roleConfiguration.isPending){
-      openRegistration(null,initialUploadType);
+      openRegistration(null,initialUploadType,initialUploadProfileId,initialUploadDepartmentCode);
       onUploadOpenConsumed?.();
     }
-  },[openUploadOnMount,initialUploadType,query.isPending,people.isPending,projectsQuery.isPending,roleConfiguration.isPending,canManage]);
+  },[openUploadOnMount,initialUploadType,initialUploadProfileId,initialUploadDepartmentCode,query.isPending,people.isPending,projectsQuery.isPending,roleConfiguration.isPending,canManage]);
   async function uploadOriginal(documentId:string,original:File,uploadRevision:string){
     if(!original.size||original.size>25*1024*1024)throw new Error("Choose a non-empty file up to 25 MB.");
     const checksum=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await original.arrayBuffer()))).map(v=>v.toString(16).padStart(2,"0")).join("");
@@ -230,7 +236,7 @@ export function SharedDocumentVault({
         if(pendingFile&&ingestionResult?.checksum){const selectedChecksum=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await pendingFile.arrayBuffer()))).map(v=>v.toString(16).padStart(2,"0")).join("");if(selectedChecksum!==ingestionResult.checksum)throw new Error("The selected file changed after extraction. Re-select it and review the extracted values again.");}
         if(!createdDraft && nativeSourceRequired && (!sourceFileId || !sourceFiles.some(file=>file.id===sourceFileId))) throw new Error("Choose a current source Gerber revision for this project before saving.");
         let draft=createdDraft;
-        if(!draft){registrationRequest.current ||= crypto.randomUUID();const result=await register({data:{requestId:registrationRequest.current,payload:{title,documentType:kind,scope,departmentId:department.id,...(projectId?{projectId}:{}),...(recordId?{recordId}:{}),...(sourceFileId?{sourceFileId}:{}),...(draftSnapshot?{draftSnapshot}:{})}}});draft={id:result.id,reference:result.reference};setCreatedDraft(draft);registrationRequest.current=null;}
+        if(!draft){registrationRequest.current ||= crypto.randomUUID();const result=await register({data:{requestId:registrationRequest.current,payload:{title,documentType:kind,scope,departmentId:department.id,...(uploadProfileId?{uploadProfileId}:{}),...(projectId?{projectId}:{}),...(recordId?{recordId}:{}),...(sourceFileId?{sourceFileId}:{}),...(draftSnapshot?{draftSnapshot}:{})}}});draft={id:result.id,reference:result.reference};setCreatedDraft(draft);registrationRequest.current=null;}
         if(!pendingFile){await query.refetch();setSelected(draft.id);setCreate(false);setCreatedDraft(null);setNotice(`${draft.reference} saved as a Draft index. No original file, approval or release is recorded.`);return;}
         await uploadOriginal(draft.id,pendingFile,"01");
         await query.refetch();setSelected(draft.id);setCreate(false);setPendingFile(null);setCreatedDraft(null);setNotice(`${draft.reference} saved with its original file as a Draft. It has not been approved or released.`);

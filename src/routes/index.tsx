@@ -313,6 +313,7 @@ import { DocumentStandardViewer } from "@/components/DocumentStandardViewer";
 import { SmartSorImporterModal } from "@/components/SmartSorImporterModal";
 import { SmartUploadHub } from "@/components/SmartUploadHub";
 import type { RoleUseCaseProfile } from "@/lib/document-ingestion-profiles";
+import { normalizeUploadDepartment, roleProfileAvailableToDepartment, smartUploadChoiceAvailable, smartUploadChoiceDepartment, uploadProfileDepartment } from "@/lib/smart-upload-access";
 import { ProjectInputsWorkspace } from "@/components/ProjectInputsWorkspace";
 
 type AreaId =
@@ -3848,6 +3849,8 @@ function Portal() {
   const [draftHubOpen, setDraftHubOpen] = useState(false);
   const [documentUploadRequested, setDocumentUploadRequested] = useState(false);
   const [documentUploadType, setDocumentUploadType] = useState<UploadType>("FILE");
+  const [documentUploadProfileId,setDocumentUploadProfileId]=useState<string|undefined>(undefined);
+  const [documentUploadDepartmentCode,setDocumentUploadDepartmentCode]=useState<string|undefined>(undefined);
   const [documentUploadProjectId, setDocumentUploadProjectId] = useState<string | undefined>(
     undefined,
   );
@@ -4038,6 +4041,12 @@ function Portal() {
   const handleSmartUploadChoice = (
     choice: "sor" | "bom" | "technical" | "quotation" | "invoice" | "receipt" | "role" | "other",
   ) => {
+    const activeDepartment=testMembership?.departmentCode??persona?.departmentId;
+    const adminAccess=testMembership?.role==="admin"||(!testMembership&&persona.kind==="admin");
+    if(!smartUploadChoiceAvailable(choice,activeDepartment,adminAccess)){
+      announce(`This workflow belongs to another department. Your ${normalizeUploadDepartment(activeDepartment)||"current"} department can only open its authorized Smart Upload routes.`);
+      return;
+    }
     setSmartUploadOpen(false);
     if (choice === "sor") {
       void openGlobalSor();
@@ -4055,12 +4064,21 @@ function Portal() {
       role: "ROLE",
       other: "FILE",
     };
+    const profileByChoice:Partial<Record<typeof choice,string>>={quotation:"pur_vendor_quote",invoice:"fin_vendor_invoice",receipt:"str_delivery_challan"};
     setDocumentUploadType(uploadTypeByChoice[choice]);
+    setDocumentUploadProfileId(profileByChoice[choice]);
+    setDocumentUploadDepartmentCode(smartUploadChoiceDepartment(choice,activeDepartment));
     setDocumentUploadRequested(true);
     setDocumentUploadProjectId(undefined);
     openDocuments();
   };
   const handleSmartUploadRoleProfile = (profile: RoleUseCaseProfile) => {
+    const activeDepartment=testMembership?.departmentCode??persona?.departmentId;
+    const adminAccess=testMembership?.role==="admin"||(!testMembership&&persona.kind==="admin");
+    if(!roleProfileAvailableToDepartment(profile,activeDepartment,adminAccess)){
+      announce("This Smart Upload profile is not assigned to your signed-in department.");
+      return;
+    }
     setSmartUploadOpen(false);
     if (profile.roleCode === "SAL" && profile.id === "sal_customer_sor") {
       void openGlobalSor();
@@ -4083,6 +4101,8 @@ function Portal() {
     };
     const targetType = uploadTypeByCode[profile.id] ?? "ROLE";
     setDocumentUploadType(targetType);
+    setDocumentUploadProfileId(profile.id);
+    setDocumentUploadDepartmentCode(uploadProfileDepartment(profile.roleCode));
     setDocumentUploadRequested(true);
     setDocumentUploadProjectId(undefined);
     openDocuments();
@@ -6552,6 +6572,8 @@ function Portal() {
               onBack={() => navigate(effectiveArea)}
               openUploadOnMount={documentUploadRequested}
               initialUploadType={documentUploadType}
+              initialUploadProfileId={documentUploadProfileId}
+              initialUploadDepartmentCode={documentUploadDepartmentCode}
               onUploadOpenConsumed={() => setDocumentUploadRequested(false)}
               renderLibrary={(library) => (
                 <HardwareDeliverablesDrive
@@ -7650,7 +7672,8 @@ function Portal() {
         onClose={() => setSmartUploadOpen(false)}
         onChoose={handleSmartUploadChoice}
         onChooseRoleProfile={handleSmartUploadRoleProfile}
-        activeRoleCode={persona?.departmentId?.toUpperCase() ?? "EHW"}
+        activeDepartmentCode={testMembership?.departmentCode??persona?.departmentId?.toUpperCase()??"EHW"}
+        isAdmin={testMembership?.role==="admin"||(!testMembership&&persona.kind==="admin")}
       />
       {globalSorOpen && (
         <SmartSorImporterModal
