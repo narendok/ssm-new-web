@@ -7,11 +7,11 @@ const { PGlite } = require("@electric-sql/pglite");
 const root = path.resolve(__dirname, "..");
 const strictLevelMigration = path.join(
   root,
-  "supabase/migrations/20261114094441_require_explicit_task_assignee_role_level.sql",
+  "supabase/migrations/20261115005534_20261114094441_require_explicit_task_assignee_role_level.sql",
 );
 const strictResolutionMigration = path.join(
   root,
-  "supabase/migrations/20261115003152_strict_lifecycle_task_assignee_resolution.sql",
+  "supabase/migrations/20261115005613_20261115003152_strict_lifecycle_task_assignee_resolution.sql",
 );
 const uuid = (n) => `31000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
