@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,7 @@ import {
   eligibleUploadDepartments,
   sourceGerberPackages,
   UPLOAD_TYPES,
+  CATALOGUE_FAMILY_BY_UPLOAD_TYPE,
   type UploadDepartment,
   type UploadDocument,
   type UploadMetadata,
@@ -21,11 +22,23 @@ import {
   type UploadScope,
   type UploadType,
 } from "@/lib/document-upload-pilot";
+import {
+  extractDocumentContent,
+  type IngestionExtractionResult,
+  type ExtractedField,
+} from "@/lib/document-ingestion-extractor";
+import {
+  resolveAllEntities,
+  type CanonicalMatchSummary,
+} from "@/lib/document-canonical-matching";
+import { Badge } from "@/components/ui/badge";
+import { ShieldCheck, AlertCircle, FileSearch, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 
 export type UploadDraft = ReturnType<typeof prepareUploadDraft>;
 type Props = {
   initialFile: File | null;
   initialProjectId?: string | undefined;
+  initialType?: UploadType | undefined;
   projects: UploadProject[];
   departments: UploadDepartment[];
   documents: UploadDocument[];
@@ -34,11 +47,14 @@ type Props = {
   onClose: () => void;
   onSave: (document: UploadDraft) => Promise<boolean>;
 };
+
 const fieldClass =
   "mt-1 h-9 w-full rounded-lg border border-input bg-background px-2 text-sm text-foreground";
+
 export function DocumentUploadPilotDialog({
   initialFile,
   initialProjectId,
+  initialType = "FILE",
   projects,
   departments,
   documents,
@@ -47,10 +63,10 @@ export function DocumentUploadPilotDialog({
   onClose,
   onSave,
 }: Props) {
-  const [file, setFile] = useState(initialFile);
+  const [file, setFile] = useState<File | null>(initialFile);
   const [metadata, setMetadata] = useState<UploadMetadata>({
     title: initialFile?.name.replace(/\.[^.]+$/, "") ?? "",
-    type: "FILE",
+    type: initialType,
     scope: initialScope,
     projectId: initialProjectId ?? "",
     departmentId: actor.departmentId ?? "",
@@ -59,15 +75,97 @@ export function DocumentUploadPilotDialog({
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [extractionResult, setExtractionResult] = useState<IngestionExtractionResult | null>(null);
+  const [matchSummary, setMatchSummary] = useState<CanonicalMatchSummary | null>(null);
+  const [showExtractedFields, setShowExtractedFields] = useState(true);
   const saving = useRef(false);
+
   const project = projects.find((p) => p.id === metadata.projectId);
   const lifecycleContext = project ? projectLifecycleContext(project.fields ?? {}) : undefined;
   const packages = sourceGerberPackages(documents, project);
   const needsSource = metadata.type === "PANEL" || metadata.type === "STENCIL";
   const needsProject = metadata.scope === "internal" || metadata.scope === "client";
   const type = UPLOAD_TYPES.find((t) => t.id === metadata.type)!;
+  const catalogueFamily = CATALOGUE_FAMILY_BY_UPLOAD_TYPE[metadata.type] ?? "D01";
+
   const set = <K extends keyof UploadMetadata>(key: K, value: UploadMetadata[K]) =>
     setMetadata((m) => ({ ...m, [key]: value }));
+
+  // Run extraction when file or type changes
+  useEffect(() => {
+    if (!file) {
+      setExtractionResult(null);
+      setMatchSummary(null);
+      return;
+    }
+
+    let isSubscribed = true;
+    const processFile = async () => {
+      try {
+        const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+        const isTextual = ["csv", "tsv", "json", "txt"].includes(ext);
+        let textBuffer: string | undefined;
+        let binaryBuffer: ArrayBuffer | undefined;
+
+        if (isTextual) {
+          textBuffer = await file.text();
+        } else {
+          binaryBuffer = await file.arrayBuffer();
+        }
+
+        const result = await extractDocumentContent({
+          fileName: file.name,
+          fileSize: file.size,
+          fileType: file.type || "application/octet-stream",
+          textBuffer,
+          binaryBuffer,
+          uploadType: metadata.type,
+        });
+
+        if (!isSubscribed) return;
+        setExtractionResult(result);
+
+        // Resolve entities against canonical masters
+        const matches = resolveAllEntities({
+          detectedEntities: result.detectedEntities,
+          projects,
+        });
+        setMatchSummary(matches);
+
+        // If exact project matched and no project currently chosen, auto-select
+        if (
+          matches.projectResolution.status === "EXACT_MATCH" &&
+          matches.projectResolution.matchedId &&
+          !metadata.projectId &&
+          needsProject
+        ) {
+          setMetadata((m) => ({ ...m, projectId: matches.projectResolution.matchedId! }));
+        }
+      } catch (err) {
+        if (!isSubscribed) return;
+        console.warn("File extraction notice:", err);
+      }
+    };
+
+    void processFile();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [file, metadata.type, projects, needsProject]);
+
+  const handleFieldChange = (fieldId: string, newValue: string) => {
+    if (!extractionResult) return;
+    setExtractionResult((prev) => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        extractedFields: prev.extractedFields.map((f) =>
+          f.id === fieldId ? { ...f, value: newValue } : f,
+        ),
+      };
+    });
+  };
+
   async function save() {
     if (saving.current) return;
     saving.current = true;
@@ -86,14 +184,19 @@ export function DocumentUploadPilotDialog({
         actor,
         documentId: crypto.randomUUID(),
         fileId: crypto.randomUUID(),
-        checksum: "0".repeat(64),
+        checksum: extractionResult?.checksum || "0".repeat(64),
         timestamp: new Date().toISOString(),
       };
       prepareUploadDraft(args);
-      const checksum = Array.from(
-        new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())),
-        (b) => b.toString(16).padStart(2, "0"),
-      ).join("");
+
+      const checksum =
+        extractionResult?.checksum && /^[a-f0-9]{64}$/i.test(extractionResult.checksum)
+          ? extractionResult.checksum
+          : Array.from(
+              new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())),
+              (b) => b.toString(16).padStart(2, "0"),
+            ).join("");
+
       const draft = prepareUploadDraft({ ...args, checksum });
       await saveLocalAttachment(args.fileId, file);
       fileId = args.fileId;
@@ -111,6 +214,7 @@ export function DocumentUploadPilotDialog({
       setBusy(false);
     }
   }
+
   return (
     <Dialog
       open
@@ -119,7 +223,7 @@ export function DocumentUploadPilotDialog({
       }}
     >
       <DialogContent
-        className="max-h-[88vh] overflow-y-auto sm:max-w-xl"
+        className="max-h-[92vh] overflow-y-auto sm:max-w-2xl"
         onEscapeKeyDown={(event) => {
           if (busy) event.preventDefault();
         }}
@@ -128,13 +232,19 @@ export function DocumentUploadPilotDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>Upload original document</DialogTitle>
+          <div className="flex items-center justify-between gap-2">
+            <DialogTitle>Smart Upload &amp; Document Ingestion</DialogTitle>
+            <Badge variant="outline" className="font-mono text-[11px]">
+              Family {catalogueFamily}
+            </Badge>
+          </div>
           <DialogDescription>
-            Browser-local pilot · Saved as Draft. Shared upload, approval and client release are
-            separate steps.
+            Controlled Document Intake · Retains original binary &amp; SHA-256 · Saved as Draft.
+            Shared upload, approval and client release remain separate review gates.
           </DialogDescription>
         </DialogHeader>
-        <fieldset disabled={busy} className="space-y-3 disabled:opacity-70">
+
+        <fieldset disabled={busy} className="space-y-3.5 disabled:opacity-70">
           <label className="block text-xs font-medium">
             Original file
             <input
@@ -149,11 +259,128 @@ export function DocumentUploadPilotDialog({
               }}
             />
           </label>
+
           {file && (
-            <p className="text-xs text-muted-foreground">
-              {file.name} · {(file.size / 1024).toFixed(1)} KB · original retained
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/30 p-2 text-xs">
+              <span className="font-medium text-foreground">{file.name}</span>
+              <span className="text-muted-foreground">
+                {(file.size / 1024).toFixed(1)} KB · Original binary registered
+              </span>
+              {extractionResult?.checksum && (
+                <span className="w-full font-mono text-[10px] text-muted-foreground truncate">
+                  SHA-256: {extractionResult.checksum}
+                </span>
+              )}
+            </div>
           )}
+
+          {/* Intelligent Extraction Preview & Field Review */}
+          {extractionResult && (
+            <div className="rounded-lg border border-border/80 bg-background/50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileSearch className="size-4 text-primary" />
+                  <span className="text-xs font-semibold text-foreground">
+                    Intelligent Extraction &amp; Provenance
+                  </span>
+                  <Badge
+                    variant={extractionResult.status === "SUCCESS" ? "default" : "secondary"}
+                    className="text-[10px]"
+                  >
+                    {extractionResult.status === "SUCCESS"
+                      ? "Structured Data"
+                      : "Manual Review Mode"}
+                  </Badge>
+                </div>
+                <button
+                  type="button"
+                  className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowExtractedFields((v) => !v)}
+                >
+                  {showExtractedFields ? (
+                    <>
+                      Hide <ChevronUp className="size-3" />
+                    </>
+                  ) : (
+                    <>
+                      Show ({extractionResult.extractedFields.length}){" "}
+                      <ChevronDown className="size-3" />
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground">
+                {extractionResult.summaryMessage}
+              </p>
+
+              {/* Canonical Entity Matching Badges */}
+              {matchSummary && (
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/50 text-[11px]">
+                  <span className="font-medium text-foreground">Entity Resolution:</span>
+                  {matchSummary.projectResolution.status !== "NOT_SPECIFIED" && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${
+                        matchSummary.projectResolution.status === "EXACT_MATCH"
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                          : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                      }`}
+                    >
+                      {matchSummary.projectResolution.status === "EXACT_MATCH" ? (
+                        <CheckCircle2 className="size-3" />
+                      ) : (
+                        <AlertCircle className="size-3" />
+                      )}
+                      Project: {matchSummary.projectResolution.matchedReference ?? "Ambiguous"} (
+                      {matchSummary.projectResolution.reason})
+                    </span>
+                  )}
+                  {matchSummary.supplierResolution.status !== "NOT_SPECIFIED" && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${
+                        matchSummary.supplierResolution.status === "EXACT_MATCH"
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                          : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                      }`}
+                    >
+                      Supplier: {matchSummary.supplierResolution.matchedLabel ?? "Unresolved"} (
+                      {matchSummary.supplierResolution.reason})
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Editable Extracted Fields List */}
+              {showExtractedFields && extractionResult.extractedFields.length > 0 && (
+                <div className="max-h-40 space-y-1.5 overflow-y-auto pt-1">
+                  {extractionResult.extractedFields.map((field) => (
+                    <div
+                      key={field.id}
+                      className="flex items-center gap-2 rounded bg-muted/40 px-2 py-1 text-xs"
+                    >
+                      <span className="w-1/3 truncate font-medium text-foreground" title={field.label}>
+                        {field.label}
+                      </span>
+                      <input
+                        type="text"
+                        value={field.value}
+                        aria-label={`Extracted ${field.label}`}
+                        onChange={(e) => handleFieldChange(field.id, e.target.value)}
+                        className="flex-1 rounded border border-input bg-background px-1.5 py-0.5 text-xs font-mono"
+                      />
+                      <span
+                        className="text-[10px] text-muted-foreground shrink-0 font-mono"
+                        title={JSON.stringify(field.provenance)}
+                      >
+                        {field.provenance.row ? `Row ${field.provenance.row}` : field.provenance.locator ?? "Header"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <label className="block text-xs font-medium">
             Title
             <input
@@ -164,6 +391,7 @@ export function DocumentUploadPilotDialog({
               className={fieldClass}
             />
           </label>
+
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs font-medium">
               Document type
@@ -208,23 +436,33 @@ export function DocumentUploadPilotDialog({
               </select>
             </label>
           </div>
+
           {needsProject && (
             <div className="space-y-1">
               <SharedMasterSelect
                 label="Document project"
                 value={metadata.projectId}
                 required
-                options={projects.filter((p) => !p.archived).map((p) => ({
-                  value: p.id,
-                  label: `${p.reference} · ${p.title}`,
-                }))}
+                options={projects
+                  .filter((p) => !p.archived)
+                  .map((p) => ({
+                    value: p.id,
+                    label: `${p.reference} · ${p.title}`,
+                  }))}
                 onChange={(projectId) =>
                   setMetadata((m) => ({ ...m, projectId, sourceDocumentId: "" }))
                 }
               />
-            {metadata.projectId && <p className="text-[11px] text-muted-foreground">Project context: {lifecycleContext?.phase ?? "Phase not mapped"} · {lifecycleContext?.stage ?? "Stage not recorded"}. Upload remains Draft; this does not complete a stage or approve the file.</p>}
+              {metadata.projectId && (
+                <p className="text-[11px] text-muted-foreground">
+                  Project context: {lifecycleContext?.phase ?? "Phase not mapped"} ·{" "}
+                  {lifecycleContext?.stage ?? "Stage not recorded"}. Upload remains Draft; this does
+                  not complete a stage or approve the file.
+                </p>
+              )}
             </div>
           )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1 text-xs font-medium">
               <SharedMasterSelect
@@ -249,6 +487,7 @@ export function DocumentUploadPilotDialog({
               />
             </label>
           </div>
+
           {needsSource && (
             <div className="space-y-1 text-xs font-medium">
               <SharedMasterSelect
@@ -267,13 +506,27 @@ export function DocumentUploadPilotDialog({
               </span>
             </div>
           )}
+
+          {/* Interlock Safety Card */}
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5 text-xs text-muted-foreground space-y-1">
+            <div className="flex items-center gap-1.5 font-semibold text-emerald-800 dark:text-emerald-400">
+              <ShieldCheck className="size-4 shrink-0" />
+              Guarded Save Interlocks Active
+            </div>
+            <p className="text-[11px] leading-relaxed">
+              Saved as <strong>Draft</strong> in Document Vault. Ingestion will <strong>not</strong>{" "}
+              approve documents, release to client, create purchase orders, or adjust stock balances.
+            </p>
+          </div>
         </fieldset>
+
         {error && (
           <p role="alert" className="text-xs text-destructive">
             {error}
           </p>
         )}
-        <div className="flex justify-end gap-2">
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-border">
           <button
             type="button"
             disabled={busy}

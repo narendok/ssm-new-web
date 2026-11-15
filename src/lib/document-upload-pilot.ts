@@ -4,6 +4,18 @@ export const UPLOAD_TYPES = [
   { id: "SCH", label: "Schematic", extensions: ["pdf", "zip", "schdoc", "kicad_sch"] },
   { id: "PCB", label: "PCB layout", extensions: ["pdf", "zip", "pcbdoc", "kicad_pcb"] },
   { id: "BOM", label: "BOM / parts list", extensions: ["csv", "xlsx", "xls", "pdf"] },
+  { id: "QUOTE", label: "Supplier quotation", extensions: ["pdf", "xlsx", "xls", "docx", "csv"] },
+  { id: "INVOICE", label: "Supplier invoice", extensions: ["pdf", "xlsx", "xls", "docx", "csv"] },
+  {
+    id: "RECEIPT",
+    label: "Goods receipt / delivery evidence",
+    extensions: ["pdf", "xlsx", "xls", "docx", "csv", "jpg", "jpeg", "png"],
+  },
+  {
+    id: "ROLE",
+    label: "Role / audit supporting document",
+    extensions: ["pdf", "docx", "xlsx", "xls", "pptx", "jpg", "jpeg", "png", "zip"],
+  },
   { id: "GER", label: "Gerber ZIP", extensions: ["zip"] },
   { id: "PANEL", label: "Panel Gerber ZIP", extensions: ["zip"] },
   {
@@ -16,6 +28,11 @@ export const UPLOAD_TYPES = [
   { id: "STL", label: "Prototype STL", extensions: ["stl", "zip"] },
   { id: "DXF", label: "Prototype DXF", extensions: ["dxf", "zip"] },
   { id: "CERT", label: "External certificate / report", extensions: ["pdf", "zip"] },
+  {
+    id: "SOP",
+    label: "Standard Operating Procedure (SOP / WI)",
+    extensions: ["docx", "pdf", "xlsx", "doc", "txt"],
+  },
   {
     id: "FILE",
     label: "Other original document",
@@ -38,6 +55,26 @@ export const UPLOAD_TYPES = [
   },
 ] as const;
 export type UploadType = (typeof UPLOAD_TYPES)[number]["id"];
+
+export const CATALOGUE_FAMILY_BY_UPLOAD_TYPE: Record<UploadType, string> = {
+  SCH: "D10",
+  PCB: "D10",
+  GER: "D10",
+  PANEL: "D10",
+  STENCIL: "D10",
+  DRAWING: "D10",
+  STEP: "D10",
+  STL: "D10",
+  DXF: "D10",
+  BOM: "D08",
+  QUOTE: "D18",
+  INVOICE: "D21",
+  RECEIPT: "D22",
+  CERT: "D23",
+  ROLE: "D01",
+  SOP: "D01",
+  FILE: "D01",
+};
 export type UploadScope = "common" | "internal" | "client" | "department";
 export type UploadProject = {
   id: string;
@@ -78,8 +115,7 @@ export function eligibleUploadDepartments(
 ): UploadDepartment[] {
   return departments.filter(
     (department) =>
-      department.active &&
-      (actor.kind === "admin" || department.id === actor.departmentId),
+      department.active && (actor.kind === "admin" || department.id === actor.departmentId),
   );
 }
 export function assertUploadContextCurrent(
@@ -222,6 +258,13 @@ export function prepareUploadDraft(input: {
     ...(lifecycleContext.stage ? { lifecycleStage: lifecycleContext.stage } : {}),
     uploadType: type.id,
     uploadScope: m.scope,
+    catalogueFamilyId: CATALOGUE_FAMILY_BY_UPLOAD_TYPE[type.id] ?? "D01",
+    // Interlock guarantees: upload remains Draft and never triggers automated side effects
+    approved: false,
+    customerReleased: false,
+    inventoryAdjusted: false,
+    poCreated: false,
+    gateAdvanced: false,
     sourcePackage: source ? { ...source } : undefined,
     localFiles: [
       {

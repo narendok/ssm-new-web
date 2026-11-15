@@ -310,6 +310,8 @@ import {
 } from "@/lib/department-chronicles";
 import { DocumentStandardViewer } from "@/components/DocumentStandardViewer";
 import { SmartSorImporterModal } from "@/components/SmartSorImporterModal";
+import { SmartUploadHub } from "@/components/SmartUploadHub";
+import type { RoleUseCaseProfile } from "@/lib/document-ingestion-profiles";
 import { ProjectInputsWorkspace } from "@/components/ProjectInputsWorkspace";
 
 type AreaId =
@@ -3803,6 +3805,7 @@ function Portal() {
   );
   const [mobileMenu, setMobileMenu] = useState(false);
   const [globalSorOpen, setGlobalSorOpen] = useState(false);
+  const [smartUploadOpen, setSmartUploadOpen] = useState(false);
   const openGlobalSor = async () => {
     try {
       if (testMembership) {
@@ -3843,6 +3846,7 @@ function Portal() {
   const [syncHubOpen, setSyncHubOpen] = useState(false);
   const [draftHubOpen, setDraftHubOpen] = useState(false);
   const [documentUploadRequested, setDocumentUploadRequested] = useState(false);
+  const [documentUploadType, setDocumentUploadType] = useState<UploadType>("FILE");
   const [documentUploadProjectId, setDocumentUploadProjectId] = useState<string | undefined>(
     undefined,
   );
@@ -4029,6 +4033,55 @@ function Portal() {
     setSelectedAssignee(null);
     setQueueStage(null);
     setMobileMenu(false);
+  };
+  const handleSmartUploadChoice = (
+    choice: "sor" | "bom" | "technical" | "quotation" | "invoice" | "receipt" | "role" | "other",
+  ) => {
+    setSmartUploadOpen(false);
+    if (choice === "sor") {
+      void openGlobalSor();
+      return;
+    }
+    if (choice === "bom") {
+      navigate("pur", "smart_bom");
+      return;
+    }
+    const uploadTypeByChoice: Record<Exclude<typeof choice, "sor" | "bom">, UploadType> = {
+      technical: "FILE",
+      quotation: "QUOTE",
+      invoice: "INVOICE",
+      receipt: "RECEIPT",
+      role: "ROLE",
+      other: "FILE",
+    };
+    setDocumentUploadType(uploadTypeByChoice[choice]);
+    setDocumentUploadRequested(true);
+    setDocumentUploadProjectId(undefined);
+    openDocuments();
+  };
+  const handleSmartUploadRoleProfile = (profile: RoleUseCaseProfile) => {
+    setSmartUploadOpen(false);
+    if (profile.roleCode === "SAL" && profile.id === "sal_customer_sor") {
+      void openGlobalSor();
+      return;
+    }
+    const uploadTypeByCode: Record<string, UploadType> = {
+      pur_vendor_quote: "QUOTE",
+      pur_distributor_cart: "QUOTE",
+      fin_vendor_invoice: "INVOICE",
+      str_delivery_challan: "RECEIPT",
+      ehw_schematic_gerber: "SCH",
+      ehw_component_datasheet: "FILE",
+      mech_cad_assembly: "STEP",
+      mech_2d_drawing: "DRAWING",
+      qa_calibration_cert: "CERT",
+      qa_lab_tac_report: "CERT",
+    };
+    const targetType = uploadTypeByCode[profile.id] ?? "ROLE";
+    setDocumentUploadType(targetType);
+    setDocumentUploadRequested(true);
+    setDocumentUploadProjectId(undefined);
+    openDocuments();
   };
   const handleLogout = async () => {
     if (testMembership) await supabase.auth.signOut();
@@ -5822,7 +5875,7 @@ function Portal() {
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
-          onOpenSmartSor={() => void openGlobalSor()}
+          onOpenSmartSor={() => setSmartUploadOpen(true)}
           sidebarExpanded={sidebarExpanded}
           onToggleExpanded={() => setSidebarExpanded((value) => !value)}
           purchasingSubView={purchasingSubView}
@@ -7263,7 +7316,7 @@ function Portal() {
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
-          onOpenSmartSor={() => void openGlobalSor()}
+          onOpenSmartSor={() => setSmartUploadOpen(true)}
           onClose={() => setMobileMenu(false)}
           onNavigate={(area, targetView) => {
             navigate(area as AreaId, (targetView as any) ?? "queue");
@@ -7417,6 +7470,7 @@ function Portal() {
           }}
           onOpenDraftHub={() => setDraftHubOpen(true)}
           openUploadOnMount={documentUploadRequested}
+          initialUploadType={documentUploadType}
           initialProjectId={documentUploadProjectId}
           onUploadOpenConsumed={() => setDocumentUploadRequested(false)}
           templateBodies={portal.templateBodies ?? defaultTemplateBodies()}
@@ -7584,6 +7638,13 @@ function Portal() {
           onDispatch={handleDispatchFeasibility}
         />
       )}{" "}
+      <SmartUploadHub
+        open={smartUploadOpen}
+        onClose={() => setSmartUploadOpen(false)}
+        onChoose={handleSmartUploadChoice}
+        onChooseRoleProfile={handleSmartUploadRoleProfile}
+        activeRoleCode={persona?.departmentId?.toUpperCase() ?? "EHW"}
+      />
       {globalSorOpen && (
         <SmartSorImporterModal
           isOpen={globalSorOpen}
@@ -15542,6 +15603,7 @@ function DocumentsPanel({
   onUploadDocument,
   onOpenDraftHub,
   openUploadOnMount = false,
+  initialUploadType = "FILE",
   initialProjectId,
   onUploadOpenConsumed,
   templateBodies,
@@ -15561,6 +15623,7 @@ function DocumentsPanel({
   onUploadDocument: (document: ControlledDocument) => void;
   onOpenDraftHub: () => void;
   openUploadOnMount?: boolean;
+  initialUploadType?: UploadType;
   initialProjectId?: string | undefined;
   onUploadOpenConsumed?: (() => void) | undefined;
   templateBodies: Record<string, string>;
@@ -15630,6 +15693,7 @@ function DocumentsPanel({
         uploadReadOnlyReason={uploadReadOnlyReason}
         onDocumentUpdated={onDocumentUpdated}
         openUploadOnMount={openUploadOnMount}
+        initialUploadType={initialUploadType}
         initialProjectId={initialProjectId}
         onUploadOpenConsumed={onUploadOpenConsumed}
       />
@@ -15801,6 +15865,7 @@ function HardwareDeliverablesDrive({
   uploadReadOnlyReason,
   onDocumentUpdated,
   openUploadOnMount = false,
+  initialUploadType = "FILE",
   initialProjectId,
   onUploadOpenConsumed,
   onExternalUpload,
@@ -15818,6 +15883,7 @@ function HardwareDeliverablesDrive({
   uploadReadOnlyReason?: string | undefined;
   onDocumentUpdated?: ((document: ControlledDocument, event: string) => void) | undefined;
   openUploadOnMount?: boolean;
+  initialUploadType?: UploadType;
   initialProjectId?: string | undefined;
   onUploadOpenConsumed?: (() => void) | undefined;
   onExternalUpload?: ((file: File | null) => void) | undefined;
@@ -16280,6 +16346,7 @@ function HardwareDeliverablesDrive({
       {uploadDialogOpen && persona && (
         <DocumentUploadPilotDialog
           initialFile={pendingFile}
+          initialType={initialUploadType}
           initialProjectId={projectFilter === "all" ? undefined : projectFilter}
           projects={uploadProjects}
           departments={uploadDepartments}
