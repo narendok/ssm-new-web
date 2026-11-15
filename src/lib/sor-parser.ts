@@ -5,6 +5,10 @@
  */
 
 export interface ParsedSorResult {
+  /** Set by the importer after selecting an authorized canonical Customer. */
+  customerId?: string | undefined;
+  /** Preserve the value extracted from the source when the display is normalized to a master. */
+  sourceCustomerName?: string | undefined;
   customerCode: string;
   customerName: string;
   spocName: string;

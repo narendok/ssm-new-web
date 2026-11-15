@@ -1267,6 +1267,7 @@ export function UnifiedSalesIntakeModal({
     customerCode: string;
     customerId?: string | undefined;
     customerName: string;
+    sourceCustomerName?: string | undefined;
     spocName: string;
     spocEmail: string;
     scopeSummary: string;
@@ -1752,6 +1753,7 @@ export function SalesEnquiriesAndOpportunities({
     customerCode: string;
     customerId?: string | undefined;
     customerName: string;
+    sourceCustomerName?: string | undefined;
     spocName: string;
     spocEmail: string;
     scopeSummary: string;
@@ -2252,6 +2254,8 @@ export function SalesEnquiriesAndOpportunities({
       {sorImporterOpen && (
         <SmartSorImporterModal
           isOpen={sorImporterOpen}
+          customers={customers}
+          onCreateCustomer={onCreateCustomer}
           initialCustomerName={sorEnquiryTarget?.customerName}
           initialEnquiryTitle={sorEnquiryTarget?.title}
           onClose={() => {
@@ -2269,8 +2273,10 @@ export function SalesEnquiriesAndOpportunities({
               await onSubmitIntake({
                 mode: "opportunity",
                 title: parsedSor.projectTitle || "New Opportunity from SOR",
+                customerId: parsedSor.customerId,
                 customerName: parsedSor.customerName,
                 customerCode: parsedSor.customerCode,
+                sourceCustomerName: parsedSor.sourceCustomerName,
                 spocName: parsedSor.spocName,
                 spocEmail: parsedSor.spocEmail,
                 scopeSummary: [

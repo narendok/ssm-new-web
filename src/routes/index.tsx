@@ -3600,6 +3600,7 @@ function Portal() {
   const writeSorRecord = useServerFn(mutateSharedTestWorkspace);
   const writeSorInputs = useServerFn(mutateProjectInputs);
   const sorRun = useRef<SorImportRun | null>(null);
+  const [globalSorCustomers, setGlobalSorCustomers] = useState<Array<{id:string;code:string;name:string;status?:string}>>([]);
   const [testMembership, setTestMembership] = useState<TestMembership | null>(null);
   const organizationConfiguration = useOrganizationConfiguration(
     testMembership && !testMembership.isClient ? testMembership.membershipId : undefined,
@@ -3802,6 +3803,19 @@ function Portal() {
   );
   const [mobileMenu, setMobileMenu] = useState(false);
   const [globalSorOpen, setGlobalSorOpen] = useState(false);
+  const openGlobalSor = async () => {
+    try {
+      if (testMembership) {
+        const workspace = await loadSorWorkspace();
+        setGlobalSorCustomers(workspace.customerOptions.map(option => ({id:option.id,code:option.reference,name:option.title,status:option.status})));
+      } else {
+        setGlobalSorCustomers((portal?.customersRegistry ?? defaultCustomers).map(customer => ({id:customer.id,code:customer.code,name:customer.name,status:customer.status})));
+      }
+      setGlobalSorOpen(true);
+    } catch (error) {
+      setTestAuthError(error instanceof Error ? error.message : "Customer masters could not be loaded; SOR import is unavailable.");
+    }
+  };
   const [analysisSourceId, setAnalysisSourceId] = useState<string | undefined>();
   const [vaultDocumentId, setVaultDocumentId] = useState<string | undefined>();
   const [vaultProjectId, setVaultProjectId] = useState<string | undefined>();
@@ -5030,6 +5044,7 @@ function Portal() {
         customer: data.customerName,
         customerCode: data.customerCode,
         ...(data.customerId ? { customerId: data.customerId, customer_id: data.customerId } : {}),
+        ...(data.sourceCustomerName ? { sourceCustomerName: data.sourceCustomerName } : {}),
         contactPerson: data.spocName,
         email: data.spocEmail,
         targetVolume: data.targetVolume,
@@ -5807,7 +5822,7 @@ function Portal() {
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
-          onOpenSmartSor={() => setGlobalSorOpen(true)}
+          onOpenSmartSor={() => void openGlobalSor()}
           sidebarExpanded={sidebarExpanded}
           onToggleExpanded={() => setSidebarExpanded((value) => !value)}
           purchasingSubView={purchasingSubView}
@@ -7248,7 +7263,7 @@ function Portal() {
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
-          onOpenSmartSor={() => setGlobalSorOpen(true)}
+          onOpenSmartSor={() => void openGlobalSor()}
           onClose={() => setMobileMenu(false)}
           onNavigate={(area, targetView) => {
             navigate(area as AreaId, (targetView as any) ?? "queue");
@@ -7572,6 +7587,15 @@ function Portal() {
       {globalSorOpen && (
         <SmartSorImporterModal
           isOpen={globalSorOpen}
+          customers={globalSorCustomers}
+          onCreateCustomer={testMembership ? async values => {
+            const reference = `HLPL-CUS-${values.operationId.replace(/-/g, "").toUpperCase()}`;
+            const result = await writeSorRecord({data:{action:"create_record",requestId:values.operationId,payload:{record_type:"Customer",reference,title:values.name,fields:{revision:"01",name:values.name,spocName:values.contact,spocEmail:values.email}}}}) as {id?:string};
+            if (!result?.id) throw new Error("Customer save did not return a canonical ID.");
+            const customer = {id:result.id,code:reference,name:values.name,status:"Prospect"};
+            setGlobalSorCustomers(current => [...current.filter(item => item.id !== customer.id), customer]);
+            return customer;
+          } : undefined}
           onClose={() => {
             setGlobalSorOpen(false);
             sorRun.current = null;
@@ -7646,6 +7670,8 @@ function Portal() {
               fields: {
                 customer: parsedSor.customerName,
                 annualVolume: parsedSor.targetVolume,
+                customerId: parsedSor.customerId || "",
+                customerCode: parsedSor.customerCode,
                 smartParameters: JSON.stringify(parsedSor.parameterValues),
                 requiredDepartments: (parsedSor.feasibilityDepartments || []).join(","),
               },

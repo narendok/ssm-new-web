@@ -20,6 +20,11 @@ import {
   Check,
   X,
 } from "lucide-react";
+import { InlineCustomerModal } from "@/components/InlineCustomerModal";
+import { SharedMasterSelect } from "@/components/SharedMasterSelect";
+import { isSelectableMasterStatus } from "@/lib/shared-master-options";
+
+type SorCustomerOption = { id: string; code: string; name: string; status?: string };
 
 interface SmartSorImporterModalProps {
   isOpen: boolean;
@@ -28,6 +33,9 @@ interface SmartSorImporterModalProps {
   initialEnquiryTitle?: string | undefined;
   initialCustomerName?: string | undefined;
   purpose?: "opportunity" | "inputs";
+  /** When supplied, opportunity imports must link to one of these canonical masters. */
+  customers?: SorCustomerOption[] | undefined;
+  onCreateCustomer?: ((values: { name: string; contact: string; email: string; operationId: string }) => Promise<SorCustomerOption>) | undefined;
 }
 
 export function SmartSorImporterModal({
@@ -37,6 +45,8 @@ export function SmartSorImporterModal({
   initialEnquiryTitle,
   initialCustomerName,
   purpose = "opportunity",
+  customers,
+  onCreateCustomer,
 }: SmartSorImporterModalProps) {
   const [activeTab, setActiveTab] = useState<"templates" | "paste" | "upload">("paste");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
@@ -47,12 +57,25 @@ export function SmartSorImporterModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [needsParsing, setNeedsParsing] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [createdCustomer, setCreatedCustomer] = useState<SorCustomerOption | null>(null);
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const customerOptions = [...(customers || []), ...(createdCustomer ? [createdCustomer] : [])];
+  const selectableCustomers = customerOptions.filter(customer => isSelectableMasterStatus(customer.status || ""));
+  const customerSelectOptions = selectableCustomers.map(customer => ({ value: customer.id, label: `${customer.code} · ${customer.name}` }));
+  const canonicalCustomerRequired = purpose === "opportunity" && customers !== undefined;
+
+  const exactCustomerId = (code: string) => {
+    const matches = selectableCustomers.filter(customer => customer.code.trim().toLocaleLowerCase() === code.trim().toLocaleLowerCase());
+    return matches.length === 1 ? matches[0]!.id : "";
+  };
 
   if (!isOpen) return null;
 
   const handleSelectTemplate = (template: SorTemplate) => {
     setSelectedTemplateId(template.id);
     setParsed({ ...template.parsed });
+    setSelectedCustomerId(exactCustomerId(template.parsed.customerCode));
     setRawText(template.content);
     setNeedsParsing(false);
     setError("");
@@ -62,6 +85,7 @@ export function SmartSorImporterModal({
     if (!rawText.trim()) return;
     const result = parseSorText(rawText);
     setParsed(result);
+    setSelectedCustomerId(exactCustomerId(result.customerCode));
     setSelectedTemplateId("");
     setNeedsParsing(false);
     setError("");
@@ -82,6 +106,7 @@ export function SmartSorImporterModal({
         setRawText(content);
         const result = parseSorText(content);
         setParsed(result);
+        setSelectedCustomerId(exactCustomerId(result.customerCode));
         setNeedsParsing(false);
         setSelectedTemplateId("");
         setError("");
@@ -120,10 +145,23 @@ export function SmartSorImporterModal({
       setError("Select at least one department for feasibility review before creating the opportunity.");
       return;
     }
+    const selectedCustomer = canonicalCustomerRequired
+      ? selectableCustomers.find(customer => customer.id === selectedCustomerId)
+      : undefined;
+    if (canonicalCustomerRequired && !selectedCustomer) {
+      setError("Choose a Customer from the shared master before creating this Opportunity.");
+      return;
+    }
     setIsSubmitting(true);
     setError("");
     try {
-      await onImportSor(parsed);
+      await onImportSor(selectedCustomer ? {
+        ...parsed,
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.name,
+        customerCode: selectedCustomer.code,
+        sourceCustomerName: parsed.customerName,
+      } : parsed);
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Import failed. Your input is preserved; retry when available.");
@@ -311,15 +349,27 @@ export function SmartSorImporterModal({
                 />
               </div>
 
-              <div>
-                <label className="text-[11px] font-bold text-muted-foreground">Customer / OEM</label>
-                <input
-                  type="text"
-                  value={parsed.customerName}
-                  onChange={(e) => setParsed({ ...parsed, customerName: e.target.value })}
-                  className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-semibold text-foreground focus:ring-1 focus:ring-primary"
-                />
-              </div>
+              {canonicalCustomerRequired ? (
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-bold text-muted-foreground">Customer / OEM from SOR</label>
+                  <input aria-label="Customer from SOR" type="text" value={parsed.customerName} readOnly className="w-full rounded-md border border-input bg-muted/40 p-2 text-xs font-semibold text-foreground" />
+                  <SharedMasterSelect label="Link canonical Customer" options={customerSelectOptions} value={selectedCustomerId} required onChange={setSelectedCustomerId} />
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                    <span>Opportunity and later Project will use this saved Customer ID.</span>
+                    {onCreateCustomer && <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setAddingCustomer(true)}>Add Customer</button>}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="text-[11px] font-bold text-muted-foreground">Customer / OEM</label>
+                  <input
+                    type="text"
+                    value={parsed.customerName}
+                    onChange={(e) => setParsed({ ...parsed, customerName: e.target.value })}
+                    className="mt-1 w-full rounded-md border border-input bg-background p-2 text-xs font-semibold text-foreground focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="text-[11px] font-bold text-muted-foreground">SPOC &amp; Contact Email</label>
@@ -485,6 +535,12 @@ export function SmartSorImporterModal({
         </div>
         {error && <p role="alert" className="px-6 pb-3 text-xs text-destructive">{error}</p>}
       </div>
+      {addingCustomer && onCreateCustomer && <InlineCustomerModal onClose={() => setAddingCustomer(false)} onSave={async values => {
+        const saved = await onCreateCustomer(values);
+        setCreatedCustomer(saved);
+        setSelectedCustomerId(saved.id);
+        setAddingCustomer(false);
+      }} />}
     </div>
   );
 }

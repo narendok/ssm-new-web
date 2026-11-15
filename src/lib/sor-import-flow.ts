@@ -25,6 +25,7 @@ export async function importSharedSor(
   ports: Ports,
 ): Promise<string> {
   if (!data.projectTitle.trim()) throw new Error("Enter an opportunity title.");
+  if (!data.customerId) throw new Error("Choose a canonical Customer before importing this Opportunity.");
   if (!salesDepartmentId) throw new Error("Sales department is unavailable.");
   if (!data.feasibilityDepartments.length || data.feasibilityDepartments.some(code => !departmentIds[code])) throw new Error("Select valid review departments.");
   if (JSON.stringify(data) !== run.signature) throw new Error("This import has already started with different values. Restore those values to resume, or close and start a separate import.");
@@ -33,7 +34,9 @@ export async function importSharedSor(
     const created = await ports.createRecord({
       department_id: salesDepartmentId, project_id: null, record_type: "Opportunity", reference,
       title: data.projectTitle, notes: data.scopeSummary,
-      fields: { revision: "01", customer: data.customerName, customerCode: data.customerCode,
+      fields: { revision: "01", customerId: data.customerId, customer_id: data.customerId,
+        customer: data.customerName, customerName: data.customerName, customerCode: data.customerCode,
+        sourceCustomerName: data.sourceCustomerName || data.customerName,
         contactPerson: data.spocName, email: data.spocEmail, quantity: data.targetVolume,
         targetDate: data.targetClosureDate, projectTrack: data.projectTrack,
         requiredDepartments: data.feasibilityDepartments.join(","), sourceText: data.rawSnippet || "" },

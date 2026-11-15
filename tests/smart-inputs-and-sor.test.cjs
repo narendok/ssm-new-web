@@ -144,9 +144,19 @@ test('JSON and two-column CSV source exports preserve supplied values without im
 test('SalesWorkspaceAndCustomerRegister and ProjectInputsWorkspace include Smart SOR and SmartParameterField', () => {
   const salesFile = fs.readFileSync(path.resolve(__dirname, '../src/components/SalesWorkspaceAndCustomerRegister.tsx'), 'utf8');
   assert.ok(salesFile.includes('SmartSorImporterModal'), 'SmartSorImporterModal must be integrated in Sales');
+  assert.match(salesFile, /customers=\{customers\}[\s\S]*?onCreateCustomer=\{onCreateCustomer\}/, 'Shared Sales SOR import must use the same canonical customer directory and create action');
   assert.ok(salesFile.includes('Smart SOR Importer'), 'Smart SOR Importer button must exist in action bar');
   assert.ok(salesFile.includes('Smart SOR'), 'Smart SOR mini icon must be present on records');
 
   const inputsFile = fs.readFileSync(path.resolve(__dirname, '../src/components/ProjectInputsWorkspace.tsx'), 'utf8');
   assert.ok(inputsFile.includes('SmartParameterField'), 'SmartParameterField must be used in ProjectInputsWorkspace');
+
+  const importerFile = fs.readFileSync(path.resolve(__dirname, '../src/components/SmartSorImporterModal.tsx'), 'utf8');
+  assert.ok(importerFile.includes('Link canonical Customer'), 'Opportunity SOR imports must select a canonical Customer');
+  assert.ok(importerFile.includes('Choose a Customer from the shared master'), 'Missing customer selection must block opportunity import');
+  assert.ok(importerFile.includes('sourceCustomerName: parsed.customerName'), 'The original SOR customer wording must be preserved separately from the normalized master label');
+  assert.ok(!importerFile.includes('setParsed(previous => ({ ...previous, customerName: saved.name'), 'Creating a Customer master must not overwrite the original SOR customer wording');
+  assert.ok(salesFile.includes('sourceCustomerName: parsedSor.sourceCustomerName'), 'Sales intake must carry the extracted Customer wording into the saved Opportunity');
+  const portalFile = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
+  assert.ok(portalFile.includes('...(data.sourceCustomerName ? { sourceCustomerName: data.sourceCustomerName } : {})'), 'Browser-local Opportunity records must retain the original customer wording');
 });
