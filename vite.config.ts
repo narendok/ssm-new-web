@@ -10,7 +10,10 @@ import path from "node:path";
 // Keep Vite's disposable optimizer cache inside the workspace. The Windows
 // LocalAppData location can reject atomic rename/removal during dependency
 // optimization, leaving stale optimized-dependency URLs on the next startup.
-const viteCacheDir = path.join(process.cwd(), ".vite-cache");
+// Keep the current optimizer cache isolated from older dev-server instances.
+// On Windows, another Vite process can hold `.vite-cache/deps` open; `--force`
+// then fails to remove that directory and leaves the server without fresh deps.
+const viteCacheDir = path.join(process.cwd(), ".vite-cache-dev");
 
 export default defineConfig({
   vite: {

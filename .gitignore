@@ -44,4 +44,4 @@ scratch/
 temp/
 
 # Disposable Vite optimizer cache
-.vite-cache/
+.vite-cache*/
