@@ -14,6 +14,53 @@ type SharedMasterSnapshot = Pick<
   "customerOptions" | "supplierOptions" | "partOptions" | "productOptions" | "projectOptions" | "records"
 >;
 
+export type SharedMasterKind = "customers" | "suppliers" | "parts" | "products";
+
+const masterRecordTypes: Record<SharedMasterKind, string> = {
+  customers: "customer",
+  suppliers: "supplier",
+  parts: "part",
+  products: "product",
+};
+
+/**
+ * Build one ID-keyed picker/read directory from the authenticated snapshot.
+ * Minimal cross-department options are authoritative when present; visible
+ * full records fill missing IDs for older snapshot versions and enrich Part MPN.
+ */
+export function sharedMasterDirectory(
+  snapshot: SharedMasterSnapshot,
+  kind: SharedMasterKind,
+): MasterOption[] {
+  const optionsByKind: Record<SharedMasterKind, MasterOption[]> = {
+    customers: snapshot.customerOptions,
+    suppliers: snapshot.supplierOptions,
+    parts: snapshot.partOptions,
+    products: snapshot.productOptions,
+  };
+  const recordType = masterRecordTypes[kind];
+  const byId = new Map<string, MasterOption>();
+
+  for (const record of snapshot.records) {
+    if (record.record_type.toLowerCase() !== recordType) continue;
+    byId.set(record.id, {
+      id: record.id,
+      reference: record.reference,
+      title: record.title,
+      status: record.status,
+      ...(typeof record.fields["mpn"] === "string" ? { mpn: record.fields["mpn"] } : {}),
+    });
+  }
+
+  // The directory RPC is a projection of the same canonical master rows. It
+  // wins on display fields, while a visible record may supply the Part MPN.
+  for (const option of optionsByKind[kind] ?? []) {
+    const visible = byId.get(option.id);
+    byId.set(option.id, { ...visible, ...option, mpn: option.mpn ?? visible?.mpn });
+  }
+  return [...byId.values()];
+}
+
 function text(value: SharedJson | undefined): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -58,7 +105,7 @@ export function resolveSharedMasterFields<T extends Record<string, SharedJson>>(
   }
   const projects = [...projectsById.values()];
   const customer = optionByAliases(
-    snapshot.customerOptions,
+    sharedMasterDirectory(snapshot, "customers"),
     [text(fields["customerId"]), text(fields["customer_id"])],
     [text(fields["customerCode"]), text(fields["customer_code"]), text(fields["customer"])],
   );
@@ -73,7 +120,7 @@ export function resolveSharedMasterFields<T extends Record<string, SharedJson>>(
   }
 
   const supplier = optionByAliases(
-    snapshot.supplierOptions,
+    sharedMasterDirectory(snapshot, "suppliers"),
     [text(fields["supplierId"]), text(fields["supplier_id"])],
     [text(fields["supplierCode"]), text(fields["supplier_code"]), text(fields["supplier"])],
   );
@@ -88,7 +135,7 @@ export function resolveSharedMasterFields<T extends Record<string, SharedJson>>(
   }
 
   const part = optionByAliases(
-    snapshot.partOptions,
+    sharedMasterDirectory(snapshot, "parts"),
     [text(fields["partId"]), text(fields["part_id"])],
     [text(fields["partCode"]), text(fields["part_code"]), text(fields["part"])],
   );
@@ -101,7 +148,7 @@ export function resolveSharedMasterFields<T extends Record<string, SharedJson>>(
   }
 
   const product = optionByAliases(
-    snapshot.productOptions,
+    sharedMasterDirectory(snapshot, "products"),
     [text(fields["productId"]), text(fields["product_id"])],
     [text(fields["productCode"]), text(fields["product_code"]), text(fields["product"])],
   );

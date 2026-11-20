@@ -92,9 +92,10 @@ test("Sales intake can select organization customers even when their full record
   assert.equal(enquiries[0].customerCode, "CUS-02");
 });
 
-test("shared TEST record creation uses the cross-department supplier directory before visible records", () => {
+test("shared TEST record creation uses the unified canonical supplier directory", () => {
   const workspace = read("src/components/SharedTestWorkspace.tsx");
-  assert.match(workspace, /const supplierOptions = sharedSupplierOptions\([\s\S]*data\.supplierOptions\.length[\s\S]*data\.supplierOptions\.map\(option => \(\{ \.\.\.option, record_type: "Supplier" \}\)\)[\s\S]*data\.records/);
+  assert.match(workspace, /const supplierMasters = sharedMasterDirectory\(data, "suppliers"\)/);
+  assert.match(workspace, /const supplierOptions = sharedSupplierOptions\([\s\S]*supplierMasters\.map\(\(option\) => \(\{ \.\.\.option, record_type: "Supplier" \}\)\)[\s\S]*\)/);
   assert.match(workspace, /case "suppliers": return supplierOptions/);
   assert.match(workspace, /SharedMasterSelect label=\{item\.label\} options=\{recordMasterOptions\(item\.master\)\}/);
 });

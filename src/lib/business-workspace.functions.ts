@@ -80,9 +80,13 @@ const snapshot = z.object({
 });
 export type BusinessAction =
   | "allocate"
+  | "approve_allocation"
+  | "reject_allocation"
   | "request_expense"
   | "approve_expense"
   | "reject_expense"
+  | "approve_travel_exception"
+  | "reject_travel_exception"
   | "post_expense"
   | "ticket_create"
   | "ticket_reply"
@@ -100,9 +104,13 @@ export type BusinessAction =
 const mutation = z.object({
   action: z.enum([
     "allocate",
+    "approve_allocation",
+    "reject_allocation",
     "request_expense",
     "approve_expense",
     "reject_expense",
+    "approve_travel_exception",
+    "reject_travel_exception",
     "post_expense",
     "ticket_create",
     "ticket_reply",

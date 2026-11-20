@@ -8,6 +8,10 @@ const migration = fs.readFileSync(
   path.resolve(__dirname, "../supabase/migrations/20261114175021_shared_inventory_ledger.sql"),
   "utf8",
 );
+const kitIssueMigration = fs.readFileSync(
+  path.resolve(__dirname, "../supabase/migrations/20261117153000_shared_inventory_bom_kit_issue.sql"),
+  "utf8",
+);
 const orgId = "10000000-0000-4000-8000-000000000001";
 const adminUser = "10000000-0000-4000-8000-000000000002";
 const adminMember = "10000000-0000-4000-8000-000000000003";
@@ -21,6 +25,7 @@ const supplierId = "10000000-0000-4000-8000-000000000010";
 const orderId = "10000000-0000-4000-8000-000000000011";
 const roleId = "10000000-0000-4000-8000-000000000012";
 const qaRoleId = "10000000-0000-4000-8000-000000000013";
+const bomId = "10000000-0000-4000-8000-000000000017";
 
 test("Shared TEST inventory ledger seeds fictional stock and enforces audited role-based movements", async (t) => {
   const db = new PGlite();
@@ -44,10 +49,10 @@ test("Shared TEST inventory ledger seeds fictional stock and enforces audited ro
     INSERT INTO public.departments VALUES
       ('${departmentId}','${orgId}','EHW',true),('${qaDepartmentId}','${orgId}','QA',true);
     CREATE TABLE public.organization_members(
-      id uuid PRIMARY KEY,organization_id uuid NOT NULL,user_id uuid NOT NULL,active boolean NOT NULL DEFAULT true
+      id uuid PRIMARY KEY,organization_id uuid NOT NULL,user_id uuid NOT NULL,role text NOT NULL DEFAULT 'member',active boolean NOT NULL DEFAULT true
     );
     INSERT INTO public.organization_members VALUES
-      ('${adminMember}','${orgId}','${adminUser}',true),('${leadMember}','${orgId}','${leadUser}',true);
+      ('${adminMember}','${orgId}','${adminUser}','admin',true),('${leadMember}','${orgId}','${leadUser}','member',true);
     CREATE TABLE public.department_roles(
       id uuid PRIMARY KEY,organization_id uuid NOT NULL,department_id uuid,name text NOT NULL,
       role_key text NOT NULL,active boolean NOT NULL DEFAULT true,hierarchy_level integer
@@ -62,9 +67,10 @@ test("Shared TEST inventory ledger seeds fictional stock and enforces audited ro
     );
     INSERT INTO public.department_role_assignments VALUES ('${roleId}','${leadMember}',true);
     CREATE TABLE public.operational_records(
-      id uuid PRIMARY KEY,organization_id uuid NOT NULL,record_type text NOT NULL,
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),organization_id uuid NOT NULL,record_type text NOT NULL,
       archived_at timestamptz,status text,reference text,title text,fields jsonb NOT NULL DEFAULT '{}'::jsonb,
-      is_demo boolean NOT NULL DEFAULT false
+      is_demo boolean NOT NULL DEFAULT false,department_id uuid,area text,priority text,notes text,
+      created_by uuid,updated_by uuid,UNIQUE(organization_id,reference)
     );
     INSERT INTO public.operational_records VALUES
       ('${partId}','${orgId}','Part',NULL,'draft','HLPL-DEMO-INV-ELE-01','Controller sample',
@@ -73,6 +79,8 @@ test("Shared TEST inventory ledger seeds fictional stock and enforces audited ro
       ('${supplierId}','${orgId}','Supplier',NULL,'approved','DEMO-SUP-01','Fictional supplier','{}',true),
       ('${orderId}','${orgId}','Purchase order',NULL,'approved','DEMO-PO-01','Fictional approved order',
         '{"supplierId":"${supplierId}","projectId":"${projectId}","items":[{"partId":"${partId}","quantity":4}]}',true),
+      ('${bomId}','${orgId}','BOM',NULL,'released','DEMO-BOM-01','Fictional released kit BOM',
+        '{"projectId":"${projectId}","revision":"R1","inventoryLines":[{"partId":"${partId}","quantityPerUnit":1,"unit":"pcs"}]}',true),
       ('10000000-0000-4000-8000-000000000014','${orgId}','Purchase order',NULL,'draft','DEMO-PO-02','Draft order',
         '{"supplierId":"${supplierId}","projectId":"${projectId}","items":[{"partId":"${partId}","quantity":4}]}',true),
       ('10000000-0000-4000-8000-000000000015','${orgId}','Part',NULL,'draft','HLPL-REAL-PART','Not a demo part','{}',false);
@@ -103,6 +111,7 @@ test("Shared TEST inventory ledger seeds fictional stock and enforces audited ro
     RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$ SELECT private.read_shared_inventory_part_catalog() $$;
   `);
   await db.exec(migration);
+  await db.exec(kitIssueMigration);
 
   const seeded = await db.query(`
     SELECT e.on_hand_delta AS on_hand,e.held_delta AS held,e.is_demo,e.fixture_key
@@ -128,6 +137,9 @@ test("Shared TEST inventory ledger seeds fictional stock and enforces audited ro
   assert.equal(initial.rows[0].catalog.roles.length, 2);
   assert.equal(initial.rows[0].catalog.receiptOptions.length, 1);
   assert.equal(initial.rows[0].catalog.receiptOptions[0].remainingQuantity, 4);
+  assert.ok(initial.rows[0].catalog.kitBoms.some((bom) => bom.id === bomId));
+  assert.ok(initial.rows[0].catalog.kitBoms.some((bom) => bom.reference === "HLPL-DEMO-KIT-BOM-01"));
+  assert.equal(initial.rows[0].catalog.kitBoms.find((bom) => bom.id === bomId).lines[0].partId, partId);
 
   const assignmentPayload = {
     requestId: "20000000-0000-4000-8000-000000000001",
@@ -228,6 +240,39 @@ test("Shared TEST inventory ledger seeds fictional stock and enforces audited ro
   assert.equal(afterConsume.rows[0].catalog.items[0].onHand, 99);
   assert.equal(afterConsume.rows[0].catalog.items[0].allocated, 7);
   assert.equal(afterConsume.rows[0].catalog.items[0].available, 92);
+
+  const kitIssue = {
+    requestId: "20000000-0000-4000-8000-000000000018",
+    bomId, projectId, buildQuantity: 2,
+    allocations: [{ partId, assignmentId }],
+  };
+  const issued = await db.query(
+    "SELECT public.issue_shared_inventory_bom_kit($1::jsonb) AS result",
+    [JSON.stringify(kitIssue)],
+  );
+  assert.equal(issued.rows[0].result.idempotent, false);
+  assert.equal(issued.rows[0].result.lineCount, 1);
+  const issueRetry = await db.query(
+    "SELECT public.issue_shared_inventory_bom_kit($1::jsonb) AS result",
+    [JSON.stringify(kitIssue)],
+  );
+  assert.equal(issueRetry.rows[0].result.kitIssueId, issued.rows[0].result.kitIssueId);
+  assert.equal(issueRetry.rows[0].result.idempotent, true);
+  const afterKitIssue = await db.query("SELECT public.get_shared_inventory_part_catalog() AS catalog");
+  assert.equal(afterKitIssue.rows[0].catalog.items[0].onHand, 97);
+  assert.equal(afterKitIssue.rows[0].catalog.items[0].allocated, 5);
+  assert.equal(afterKitIssue.rows[0].catalog.items[0].available, 92);
+  const kitMovement = afterKitIssue.rows[0].catalog.movements.find((row) => row.eventKind === "kit_issue");
+  assert.equal(kitMovement.sourceRecordId, bomId);
+  assert.equal(kitMovement.kitIssueId, issued.rows[0].result.kitIssueId);
+  assert.equal(kitMovement.onHandDelta, -2);
+
+  await assert.rejects(
+    db.query("SELECT public.issue_shared_inventory_bom_kit($1::jsonb)", [JSON.stringify({
+      ...kitIssue, requestId: "20000000-0000-4000-8000-000000000019", buildQuantity: 8,
+    })]),
+    /INVENTORY_KIT_EXCEEDS_ALLOCATION/,
+  );
 
   await assert.rejects(
     db.query("SELECT public.record_shared_inventory_event('receipt',$1::jsonb)", [JSON.stringify({

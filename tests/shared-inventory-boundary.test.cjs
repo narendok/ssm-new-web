@@ -49,3 +49,21 @@ test("authenticated inventory keeps the full demo workspace and adds a canonical
   assert.match(liveComponent, /Not recorded/);
   assert.match(liveComponent, /part\.id/);
 });
+
+test("authenticated inventory never presents browser-local serialized assets as shared company assets", () => {
+  assert.match(sharedInventory, /assetRegistryMode="unavailable"/);
+  assert.match(liveComponent, /assetRegistryMode === "unavailable" \? \[\] : initialSerializedAssets/);
+  assert.match(liveComponent, /Shared asset register is not connected/);
+  assert.match(liveComponent, /Local sample equipment is hidden in this authenticated workspace/);
+  assert.match(liveComponent, /assetRegistryMode !== "unavailable"/);
+});
+
+test("authenticated inventory follows the selected department instead of defaulting to Purchasing", () => {
+  const inventoryRoute = route.slice(route.indexOf(': view === "inventory" ?'), route.indexOf(') : view === "orders"'));
+  const sharedBranch = inventoryRoute.slice(0, inventoryRoute.indexOf(": <LiveInventoryWorkspace"));
+  assert.match(sharedBranch, /activeDepartment=\{\([\s\S]*portal\.departments\.find\(\(item\) => item\.id === departmentContext\)\?\.code[\s\S]*testMembership\.departmentCode[\s\S]*"ALL"[\s\S]*\)\.toUpperCase\(\)\}/);
+  assert.doesNotMatch(sharedBranch, /activeDepartment="PUR"/);
+  assert.match(liveComponent, /useState\(\(\) =>\s*activeDepartment && activeDepartment !== "ALL" \? activeDepartment : "All"/);
+  assert.match(liveComponent, /<SharedMasterSelect\s+label="Filter shared parts by department"[\s\S]*?disabled=\{Boolean\(activeDepartment && activeDepartment !== "ALL"\)\}/);
+  assert.match(liveComponent, /label="Filter shared parts by category"[\s\S]*options=\{\[\{ value: "All", label: "All categories" \}, \.\.\.sharedInventoryCategoryOptions/);
+});

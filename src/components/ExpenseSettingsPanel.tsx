@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   getExpenseCatalogue,
   saveExpenseCatalogue,
+  manageExpenseLocation,
+  reviewExpenseLocation,
   type ExpenseCatalogue,
 } from "@/lib/expense-settings.functions";
 import { Button } from "./ui/button";
 import { SharedMasterSelect } from "./SharedMasterSelect";
 import { parseExpenseServices } from "@/lib/expense-service-editor";
+import { TravelPolicySettings } from "./TravelPolicySettings";
 
 type ServiceOption = ExpenseCatalogue["services"][number];
 const line = (service: ServiceOption) =>
@@ -17,9 +20,11 @@ const line = (service: ServiceOption) =>
 export function ExpenseSettingsPanel({
   departments,
   accountKey,
+  canViewTravelPolicy,
 }: {
   accountKey: string;
   departments: { id: string; code: string; name: string }[];
+  canViewTravelPolicy: boolean;
 }) {
   const [scope, setScope] = useState("");
   const [open, setOpen] = useState(false);
@@ -30,6 +35,7 @@ export function ExpenseSettingsPanel({
     enabled: open,
   });
   return (
+    <Fragment>
     <section className="rounded-xl border border-border bg-card p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div>
@@ -44,23 +50,20 @@ export function ExpenseSettingsPanel({
       </div>
       {open && (
         <>
-          <label className="grid gap-1 text-sm">
-            Settings scope
-            <select
-              className="rounded border bg-background p-2"
+          <div className="grid gap-1 text-sm">
+            <span>Settings scope</span>
+            <SharedMasterSelect
+              label="expense settings scope"
               value={scope}
-              onChange={(e) => setScope(e.target.value)}
-            >
-              <option value="">Company defaults</option>
-              {departments
-                .filter((d) => d.code !== "CLIENT")
-                .map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-            </select>
-          </label>
+              onChange={setScope}
+              options={[
+                { value: "", label: "Company defaults" },
+                ...departments
+                  .filter((department) => department.code !== "CLIENT")
+                  .map((department) => ({ value: department.id, label: department.name })),
+              ]}
+            />
+          </div>
           {query.error ? (
             <p role="alert">{query.error.message}</p>
           ) : query.data ? (
@@ -71,11 +74,13 @@ export function ExpenseSettingsPanel({
         </>
       )}
     </section>
+    {canViewTravelPolicy && <TravelPolicySettings accountKey={accountKey} departments={departments} />}
+    </Fragment>
   );
 }
 
 function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
-  const [tab, setTab] = useState<"categories" | "services">("categories");
+  const [tab, setTab] = useState<"categories" | "services" | "locations">("categories");
   const [categories, setCategories] = useState(data.categories.join("\n"));
   const [services, setServices] = useState(data.services.map(line).join("\n"));
   const [supplierByService, setSupplierByService] = useState<Record<string, string>>(
@@ -145,6 +150,7 @@ function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
         >
           Services
         </Button>
+        {(data.canManageLocations||data.canReviewLocations)&&<Button type="button" variant={tab==="locations"?"default":"outline"} onClick={()=>setTab("locations")}>Locations</Button>}
       </div>
       {tab === "categories" ? (
         <>
@@ -178,7 +184,7 @@ function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
             </p>
           )}
         </>
-      ) : (
+      ) : tab==="services" ? (
         <>
           <p className="text-xs text-muted-foreground">
             One service per line: name | finance category | provider | billing cycle | responsible
@@ -218,6 +224,8 @@ function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
             </p>
           )}
         </>
+      ) : (
+        <ExpenseLocationSettings data={data} onChanged={()=>void cache.invalidateQueries({queryKey:["expense-settings"]})}/>
       )}
       {message && (
         <p role="status" className="text-sm">
@@ -226,4 +234,36 @@ function Editor({ scope, data }: { scope: string; data: ExpenseCatalogue }) {
       )}
     </div>
   );
+}
+
+function ExpenseLocationSettings({data,onChanged}:{data:ExpenseCatalogue;onChanged:()=>void}) {
+  const manage=useServerFn(manageExpenseLocation),review=useServerFn(reviewExpenseLocation);
+  const [name,setName]=useState(""),[city,setCity]=useState(""),[tier,setTier]=useState<"metro"|"other">("other"),[reason,setReason]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);
+  async function addLocation(){setBusy(true);setMessage("");try{await manage({data:{id:null,name:name.trim(),city:city.trim(),cityTier:tier,active:true}});setMessage("Approved location saved to the shared catalogue.");setName("");setCity("");onChanged();}catch(error){setMessage(error instanceof Error?error.message:"Could not save location.");}finally{setBusy(false);}}
+  async function decide(id:string,outcome:"approve"|"reject",locationTier?:"metro"|"other") {setBusy(true);setMessage("");try{await review({data:{id,outcome,...(outcome==="approve"?{cityTier:locationTier}:{reason:reason.trim()})}});setMessage(outcome==="approve"?"Location approved and added to the shared catalogue.":"Location request rejected.");setReason("");onChanged();}catch(error){setMessage(error instanceof Error?error.message:"Could not review location request.");}finally{setBusy(false);}}
+  return <div className="space-y-4">
+    <p className="text-xs text-muted-foreground">These organization-scoped locations feed travel requests in Web and Android. New locations stay unavailable until approved; city tier is assigned by Admin/Finance during approval.</p>
+    {data.canManageLocations&&<div className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_1fr_auto_auto]">
+      <input className="rounded border bg-background px-2 py-1.5 text-sm" aria-label="Location name" placeholder="Location / facility" value={name} onChange={event=>setName(event.target.value)}/>
+      <input className="rounded border bg-background px-2 py-1.5 text-sm" aria-label="Location city" placeholder="City" value={city} onChange={event=>setCity(event.target.value)}/>
+      <div className="flex items-center gap-1" role="group" aria-label="City tier">
+        {([{ value: "metro", label: "Metro" }, { value: "other", label: "Other city" }] as const).map(option => (
+          <Button
+            key={option.value}
+            type="button"
+            size="sm"
+            variant={tier === option.value ? "default" : "outline"}
+            aria-pressed={tier === option.value}
+            onClick={() => setTier(option.value)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+      <Button type="button" disabled={busy||name.trim().length<2||city.trim().length<2} onClick={()=>void addLocation()}>{busy?"Saving…":"Add location"}</Button>
+    </div>}
+    <div className="space-y-2">{data.locations.length?data.locations.map(location=><div key={location.id} className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm"><span><strong>{location.reference} · {location.name}</strong><span className="text-muted-foreground"> · {location.city} · {location.cityTier==="metro"?"Metro":"Other city"}</span></span></div>):<p className="text-sm">No approved locations are configured.</p>}</div>
+    {data.canReviewLocations&&<div className="space-y-2"><h3 className="text-sm font-medium">Location requests awaiting review</h3>{data.locationRequests.length?data.locationRequests.map(request=><div key={request.id} className="space-y-2 rounded-lg border p-3 text-sm"><p><strong>{request.name} · {request.city}</strong><span className="text-muted-foreground"> · requested by {request.requesterName||"workspace member"}</span></p><p>{request.reason}</p><div className="flex flex-wrap gap-2"><Button type="button" size="sm" disabled={busy} variant="outline" onClick={()=>void decide(request.id,"approve","metro")}>Approve · Metro</Button><Button type="button" size="sm" disabled={busy} variant="outline" onClick={()=>void decide(request.id,"approve","other")}>Approve · Other city</Button><Button type="button" size="sm" disabled={busy||reason.trim().length<3} variant="destructive" onClick={()=>void decide(request.id,"reject")}>Reject</Button></div></div>):<p className="text-sm text-muted-foreground">No pending requests.</p>}<input className="w-full rounded border bg-background px-2 py-1.5 text-sm" aria-label="Location rejection reason" placeholder="Reason required when rejecting" value={reason} onChange={event=>setReason(event.target.value)}/></div>}
+    {message&&<p role="status" className="text-sm">{message}</p>}
+  </div>;
 }

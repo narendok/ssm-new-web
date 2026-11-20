@@ -19,6 +19,7 @@ import { registerSharedDocument } from "@/lib/shared-vault.functions";
 import { getSharedDepartmentRoleConfiguration } from "@/lib/department-roles.functions";
 import { sharedTaskAssigneeOptions } from "@/lib/shared-task-assignees";
 import { resolveEditableMasterLink, replaceEditableMasterLink } from "@/lib/shared-record-master-edit";
+import { sharedMasterDirectory } from "@/lib/shared-master-snapshot";
 import { setSharedProjectCustomerLink } from "@/lib/project-customer-link.functions";
 import {
   beginControlledDocumentUpload,
@@ -170,14 +171,20 @@ export function SharedTestWorkspace({
   const ownDepartment = admin ? (resolvedAdminDept?.id || data.departments.find(d => d.code === "EHW")?.id || data.departments[0]?.id) : data.departments.find((d) => d.code === actor.department_code)?.id;
   const configuredRoles = roleConfigurationQuery.data?.roles ?? [];
   const selectedDepartment = values["department_id"] || ownDepartment || "";
-  // Prefer the server-provided minimal supplier directory: purchasing records
-  // are intentionally not exposed as full records to every department.
-  // Keep a visible-record fallback for older TEST snapshots until the shared
-  // directory migration is deployed everywhere.
+  const createTaskAssigneeOptions = sharedTaskAssigneeOptions(
+    selectedDepartment,
+    null,
+    data.members,
+    configuredRoles,
+  ).filter(option => option.configuredProfile);
+  // All linked-master pickers and read normalization use the same canonical
+  // ID-keyed directory from this authenticated snapshot.
+  const customerMasters = sharedMasterDirectory(data, "customers");
+  const supplierMasters = sharedMasterDirectory(data, "suppliers");
+  const partMasters = sharedMasterDirectory(data, "parts");
+  const productMasters = sharedMasterDirectory(data, "products");
   const supplierOptions = sharedSupplierOptions(
-    data.supplierOptions.length
-      ? data.supplierOptions.map(option => ({ ...option, record_type: "Supplier" }))
-      : data.records,
+    supplierMasters.map((option) => ({ ...option, record_type: "Supplier" })),
   );
   const originalRecord = data.records.find(record => record.id === values["record_id"]);
   const generatedReferenceBase = automaticRecordReference(data.records.find(r => r.id === values["project_id"] && r.record_type === "Project")?.reference || "", data.departments.find(d => d.id === selectedDepartment)?.code || "", values["record_type"] || "");
@@ -188,7 +195,7 @@ export function SharedTestWorkspace({
   const customerLinkAliases = { ids: ["customerId", "customer_id"], references: ["customerCode", "customer_code"], names: ["customer", "customerName", "customer_name"] };
   const projectLinkAliases = { ids: ["projectId", "project_id", "linkedProjectId"], references: ["projectCode", "project_code", "projectReference", "project"], names: ["projectName", "project_name"] };
   const supplierLinkAliases = { ids: ["supplierId", "supplier_id"], references: ["supplierCode", "supplier_code"], names: ["supplier", "supplierName", "supplier_name"] };
-  const customerLinkMasters = data.customerOptions.length ? data.customerOptions : data.records.filter(record => record.record_type === "Customer").map(record => ({ id: record.id, reference: record.reference, title: record.title, status: record.status }));
+  const customerLinkMasters = customerMasters;
   const customerLinkSelectOptions = customerLinkMasters.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
   const projectLinkMasters = [...new Map([
     ...data.projectOptions.map(option => [option.id, option] as const),
@@ -196,7 +203,15 @@ export function SharedTestWorkspace({
   ]).values()];
   const selectableProjectLinks = projectLinkMasters.filter(option => isSelectableMasterStatus(option.status));
   const projectLinkSelectOptions = selectableProjectLinks.map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
-  const supplierLinkMasters = data.supplierOptions.length ? data.supplierOptions : data.records.filter(record => record.record_type === "Supplier").map(record => ({ id: record.id, reference: record.reference, title: record.title, status: record.status }));
+  const projectSelectOptions = [
+    { value: "all", label: "All projects" },
+    ...projects.map(project => ({ value: project.id, label: `${project.reference} · ${project.title}` })),
+  ];
+  const departmentSelectOptions = data.departments.map(department => ({
+    value: department.id,
+    label: `${department.code} · ${department.name}`,
+  }));
+  const supplierLinkMasters = supplierMasters;
   const supplierLinkSelectOptions = supplierLinkMasters.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
   const canEditProjectCustomer = admin || (lead && actor.department_code === "SAL");
   const openProjectCustomerEditor = (project: SharedTestSnapshot["records"][number]) => {
@@ -232,10 +247,10 @@ export function SharedTestWorkspace({
       .filter(record => types.includes(record.record_type.toLowerCase()) && isSelectableMasterStatus(record.status))
       .map(record => ({ value: record.id, label: `${record.reference} · ${record.title}` }));
     switch (master) {
-      case "customers": return data.customerOptions.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
+      case "customers": return customerMasters.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
       case "suppliers": return supplierOptions;
-      case "parts": return data.partOptions.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}${option.mpn ? ` · ${option.mpn}` : ""}` }));
-      case "products": return data.productOptions.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
+      case "parts": return partMasters.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}${option.mpn ? ` · ${option.mpn}` : ""}` }));
+      case "products": return productMasters.filter(option => isSelectableMasterStatus(option.status)).map(option => ({ value: option.id, label: `${option.reference} · ${option.title}` }));
       case "projects": return projects.map(project => ({ value: project.id, label: `${project.reference} · ${project.title}` }));
       case "people": return data.members.map(member => ({ value: member.id, label: `${member.display_name || "Unnamed member"} · ${data.departments.find(department => department.id === member.department_id)?.code || "Unassigned"}` }));
       case "locations": return fromRecords(["location", "facility"]);
@@ -255,16 +270,16 @@ export function SharedTestWorkspace({
     setValues(previous => {
       const next = { ...previous, [field.key]: id };
       if (field.master === "customers") {
-        const selected = data.customerOptions.find(option => option.id === id);
+        const selected = customerMasters.find(option => option.id === id);
         Object.assign(next, { customerId: id, customer_id: id, customerName: selected?.title || "", customerCode: selected?.reference || "" });
       } else if (field.master === "suppliers") {
-        const selected = data.supplierOptions.find(option => option.id === id);
+        const selected = supplierMasters.find(option => option.id === id);
         Object.assign(next, { supplierId: id, supplier_id: id, supplierName: selected?.title || "", supplierCode: selected?.reference || "" });
       } else if (field.master === "parts") {
-        const selected = data.partOptions.find(option => option.id === id);
+        const selected = partMasters.find(option => option.id === id);
         Object.assign(next, { partId: id, part_id: id, partCode: selected?.reference || "", mpn: selected?.mpn || "" });
       } else if (field.master === "products") {
-        const selected = data.productOptions.find(option => option.id === id);
+        const selected = productMasters.find(option => option.id === id);
         Object.assign(next, { productId: id, product_id: id, productCode: selected?.reference || "" });
       }
       return next;
@@ -753,17 +768,13 @@ export function SharedTestWorkspace({
                           <td>
                             {(admin || (lead && p.department_id === ownDepartment)) && (
                               <div className="flex gap-2">
-                                <select
-                                  aria-label={`Target stage ${p.reference}`}
-                                  className={input}
+                                <SharedMasterSelect
+                                  label={`Target stage ${p.reference}`}
                                   value={stageTarget[p.id] || ""}
-                                  onChange={(e) =>
-                                    setStageTarget((v) => ({ ...v, [p.id]: e.target.value }))
-                                  }
-                                >
-                                  <option value="">Choose an eligible stage…</option>
-                                  {projectStageOptions(p).map(stage=><option key={stage.stageCode} value={stage.stageCode}>{stage.stageCode} · {stage.name}</option>)}
-                                </select>
+                                  onChange={value => setStageTarget(current => ({ ...current, [p.id]: value }))}
+                                  options={projectStageOptions(p).map(stage => ({ value: stage.stageCode, label: `${stage.stageCode} · ${stage.name}` }))}
+                                  disabled={busy || !projectStageOptions(p).length}
+                                />
                                 <button
                                   className={button}
                                   disabled={busy || !stageTarget[p.id] || !projectStageOptions(p).length}
@@ -799,21 +810,9 @@ export function SharedTestWorkspace({
                     New record
                   </button>
                 </div>
-                <label className="flex items-center gap-2 text-xs">
-                  Review department
-                  <select
-                    className={input}
-                    value={reviewer}
-                    onChange={(e) => setReviewer(e.target.value)}
-                  >
-                    <option value="">Choose reviewer</option>
-                    {data.departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.code} · {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="max-w-sm">
+                  <SharedMasterSelect label="Review department" value={reviewer} onChange={setReviewer} options={departmentSelectOptions} />
+                </div>
                 <div className="overflow-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
@@ -905,19 +904,7 @@ export function SharedTestWorkspace({
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <select
-                      aria-label="Task project"
-                      className={input}
-                      value={activeProjectId}
-                      onChange={(e) => setProjectId(e.target.value)}
-                    >
-                      <option value="all">All projects</option>
-                      {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.reference}
-                        </option>
-                      ))}
-                    </select>
+                    <SharedMasterSelect label="Task project" value={activeProjectId} onChange={setProjectId} options={projectSelectOptions} />
                     <button
                       className={button}
                       disabled={!projects.length}
@@ -975,27 +962,20 @@ export function SharedTestWorkspace({
                             <td className="font-mono text-xs">{projectName(task.record_id)}</td>
                             <td>
                               {admin || lead ? (
-                                <select
-                                  aria-label={`Assignee ${task.title}`}
-                                  className={input}
+                                <SharedMasterSelect
+                                  label={`Assignee ${task.title}`}
                                   disabled={busy || !canEdit || roleConfigurationQuery.isPending || roleConfigurationQuery.isError || !hasConfiguredAssignee}
                                   value={task.assignee_id || ""}
-                                  onChange={(e) =>
+                                  onChange={(assigneeId) =>
                                     void run("update_task", {
                                       id: task.id,
                                       status: task.status,
                                       expected_updated_at: task.updated_at,
-                                      assignee_id: e.target.value,
+                                      assignee_id: assigneeId,
                                     })
                                   }
-                                >
-                                  <option value="">Unassigned</option>
-                                  {assigneeOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
+                                  options={[{ value: "", label: "Unassigned" }, ...assigneeOptions.map(option => ({ value: option.value, label: option.label }))]}
+                                />
                               ) : (
                                 memberName(task.assignee_id)
                               )}
@@ -1230,11 +1210,7 @@ export function SharedTestWorkspace({
               {(form === "create_project" || form === "create_record") &&
                 field("reference", "Controlled reference (HLPL-…)")}
                 {form === "create_record" && <>
-                <label className="grid gap-1 text-xs sm:col-span-1">Record type
-                  <select className={input} required disabled={Boolean(persistedRecord)} value={values["record_type"] || ""} onChange={e => {setRecordFile(null);setValues(v => ({...v, record_type:e.target.value,procurementTrack:procurementTrack(e.target.value) || ""}));}}>
-                    <option value="">Choose record type…</option>{(spec?.types || []).map(type => <option key={type} value={type}>{type}</option>)}
-                  </select>
-                </label>
+                <SharedMasterSelect label="Record type" required disabled={Boolean(persistedRecord)} value={values["record_type"] || ""} onChange={type => {setRecordFile(null);setValues(current => ({...current, record_type:type,procurementTrack:procurementTrack(type) || ""}));}} options={(spec?.types || []).map(type => ({ value: type, label: type }))} />
                 {spec && recordFields(spec,values["record_type"] || "").filter(item => (item.key !== "procurementTrack" || !procurementTrack(values["record_type"] || "")) && item.key !== "projectId").map(item => <label key={item.key} className="grid gap-1 text-xs">{item.label}
                   {item.readOnly ? <input className={input} value={item.automaticLabel || item.automaticValue || ""} readOnly aria-readonly="true" /> : item.master ? <SharedMasterSelect label={item.label} options={recordMasterOptions(item.master)} value={recordMasterValue(item)} required={Boolean(item.required)} onChange={value => setRecordMasterValue(item, value)} /> : item.options ? <select className={input} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))}><option value="">Choose…</option>{item.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input className={input} type={item.kind === "date" ? "date" : "text"} required={item.required} value={values[item.key] || ""} onChange={e => setValues(v => ({...v,[item.key]:e.target.value}))} />}
                 </label>)}
@@ -1254,67 +1230,41 @@ export function SharedTestWorkspace({
               {form==="create_record"&&recordProject&&<section aria-label="Automatic project phase and stage" className="rounded-md border bg-muted/20 p-2 text-xs sm:col-span-2"><p className="font-medium">Project phase and record stage · automatic</p><p>{recordProjectPhase?`${recordProjectPhase[0]} · ${recordProjectPhase[1]}`:recordProjectStage?.phaseTitle||"Canonical phase not recorded"}</p><p>{recordProjectStage?`${recordProjectStage.stageCode} · ${recordProjectStage.name}`:recordProjectStoredStageLabel?`Legacy stage label: ${recordProjectStoredStageLabel} · canonical stage code not recorded`:"No current lifecycle stage is recorded for this project."}</p>{!recordProjectStage&&recordProjectStoredStageLabel&&<p className="text-muted-foreground">Stage-bound upload stays locked until this legacy label is reconciled to a canonical stage; no phase is guessed.</p>}{mappedRecordAttachment&&recordProjectStage&&<p className="text-muted-foreground">This record’s original maps to {mappedRecordAttachment.stageCode}; upload is available at that stage or the immediately previous stage.</p>}</section>}
               {form==="create_record"&&recordAttachmentSpec&&<div className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3 text-xs sm:col-span-2"><label className="grid gap-1">{recordAttachmentSpec.label} · optional, attached to this record<input className={input} aria-label={recordAttachmentSpec.label} type="file" accept={recordAttachmentSpec.accept} disabled={busy||Boolean(persistedRecord)||!values["project_id"]||!recordAttachmentAllowed} onChange={event=>setRecordFile(event.target.files?.[0]||null)}/>{recordFile&&<span className="text-muted-foreground">Selected: {recordFile.name} · {(recordFile.size/1024).toFixed(1)} KB</span>}<span className="text-muted-foreground">{recordAttachmentAllowed?`One Save creates the Draft record and privately links its original. Upload does not advance the project or count as approval or release.`:!recordProjectStageCode?"Upload is locked because this project has no canonical current-stage code. The Draft record can still be saved now.":`Upload is locked until ${recordAttachmentSpec.stageCode} or its immediately preceding stage. Current project stage: ${recordProjectStageCode}.`}</span></label></div>}
               {admin && (form === "create_record" || form === "create_task") && (
-                <label className="grid gap-1 text-xs">
-                  Department
-                  <select
-                    className={input}
-                    value={selectedDepartment}
-                    onChange={(e) =>
-                      setValues((v) => ({ ...v, department_id: e.target.value, assignee_id: "" }))
-                    }
-                  >
-                    {data.departments.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.code} · {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <SharedMasterSelect
+                  label="Department"
+                  required
+                  value={selectedDepartment}
+                  onChange={departmentId => setValues(current => ({ ...current, department_id: departmentId, assignee_id: "" }))}
+                  options={departmentSelectOptions}
+                />
               )}
               {form === "create_task" && (
                 <>
                   {field("due_at", "Due date", "date")}
                   {actor.role !== "member" && (
-                    <label className="grid gap-1 text-xs">
-                      Assign to
-                      <select
-                        className={input}
+                    <div className="grid gap-1">
+                      <SharedMasterSelect
+                        label="Task assignee"
                         value={values["assignee_id"] || ""}
-                        onChange={(e) => setValues((v) => ({ ...v, assignee_id: e.target.value }))}
-                      >
-                        <option value="">Unassigned</option>
-                        {data.members
-                          .filter(
-                            (m) => m.department_id === selectedDepartment && m.role !== "viewer",
-                          )
-                          .map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.display_name}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
+                        onChange={assigneeId => setValues(current => ({ ...current, assignee_id: assigneeId }))}
+                        disabled={busy || roleConfigurationQuery.isPending || roleConfigurationQuery.isError || !createTaskAssigneeOptions.length}
+                        options={[{ value: "", label: "Unassigned" }, ...createTaskAssigneeOptions]}
+                      />
+                      {roleConfigurationQuery.isPending && <p role="status" className="text-xs text-muted-foreground">Loading configured department role profiles…</p>}
+                      {roleConfigurationQuery.isError && <p role="alert" className="text-xs text-destructive">Role profiles could not be loaded. Task assignment is unavailable until they can be verified.</p>}
+                      {!roleConfigurationQuery.isPending && !roleConfigurationQuery.isError && !createTaskAssigneeOptions.length && <p className="text-xs text-muted-foreground">No active role profile currently has an assignable member in this department.</p>}
+                    </div>
                   )}
                 </>
               )}
               {form === "create_document" && (
                 <>
-                  <label className="grid gap-1 text-xs">
-                    Source record
-                    <select
-                      className={input}
-                      value={values["record_id"] || ""}
-                      onChange={(e) => setValues((v) => ({ ...v, record_id: e.target.value }))}
-                    >
-                      {data.records
-                        .filter((r) => admin || r.department_id === ownDepartment)
-                        .map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.reference}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
+                  <SharedMasterSelect
+                    label="Source record"
+                    value={values["record_id"] || ""}
+                    onChange={recordId => setValues(current => ({ ...current, record_id: recordId }))}
+                    options={data.records.filter(record => admin || record.department_id === ownDepartment).map(record => ({ value: record.id, label: `${record.reference} · ${record.title}` }))}
+                  />
                   {field("document_type", "Document type")}
                 </>
               )}

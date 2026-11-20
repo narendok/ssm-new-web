@@ -13,3 +13,7 @@ test('budget cards separate currencies, subtract commitments once, and never cou
   assert.deepEqual(budgetSummaries(rows),[{currency:'INR',allocated:1100,committed:220,spent:130,available:750},{currency:'USD',allocated:50,committed:10,spent:5,available:35}]);
   assert.equal(rows[0].data.committedAmount,200);
 });
+test('budget cards exclude pending and rejected allocations but retain legacy approved rows',()=>{
+  const rows=[item('legacy','allocation',{currency:'INR',allocatedAmount:50,committedAmount:5,spentAmount:2}),item('pending','allocation',{currency:'INR',status:'Pending_Approval',allocatedAmount:1000,committedAmount:0,spentAmount:0}),item('rejected','allocation',{currency:'INR',status:'Rejected',allocatedAmount:2000,committedAmount:0,spentAmount:0})];
+  assert.deepEqual(budgetSummaries(rows),[{currency:'INR',allocated:50,committed:5,spent:2,available:43}]);
+});

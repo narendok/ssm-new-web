@@ -102,6 +102,7 @@ export type SidebarWorkGroup = {
 
 export type RoleAwareSidebarProps = {
   adminDepartment?: AreaId | undefined;
+  adminAllDepartments?: boolean | undefined;
   persona: Persona;
   activeArea: AreaId;
   view: string;
@@ -237,11 +238,14 @@ export function RoleAwareSidebar({
   isMobile = false,
   onCloseMobile,
   adminDepartment,
+  adminAllDepartments = false,
 }: RoleAwareSidebarProps) {
   const isAdmin = persona.kind === "admin";
   const userRoleKey = (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
     ? persona.departmentId
-    : (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw");
+    : isAdmin && adminAllDepartments
+      ? "admin"
+      : (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw");
 
   // 1. Favorites State Management with LocalStorage persistence
   const [favoriteIds, setFavoriteIds] = useState<string[]>(() => {
@@ -370,8 +374,8 @@ export function RoleAwareSidebar({
             label: "Dashboard / Command Center",
             shortLabel: "Overview",
             icon: LayoutDashboard,
-            isActive: activeArea === "home" && ["index","summary"].includes(view),
-            onClick: () => handleItemClick(() => onNavigate("home", "index")),
+            isActive: activeArea === "home" && ["index", "summary", "queue"].includes(view),
+            onClick: () => handleItemClick(() => onNavigate("home", "queue")),
           },
           {
             id: "adm-workqueue",
@@ -1398,8 +1402,14 @@ export function RoleAwareSidebar({
   }), [view, onNavigate]);
 
   const activeWorkGroups = useMemo(
-    () => singleActiveDestination(isAdmin ? [executiveGroup, ...deptWorkGroups, adminSettingsGroup] : deptWorkGroups),
-    [isAdmin, executiveGroup, deptWorkGroups, adminSettingsGroup]
+    () => singleActiveDestination(
+      isAdmin
+        ? adminAllDepartments
+          ? adminWorkGroups
+          : deptWorkGroups
+        : deptWorkGroups,
+    ),
+    [isAdmin, adminAllDepartments, adminWorkGroups, deptWorkGroups]
   );
 
   // Auto-expand group containing active item

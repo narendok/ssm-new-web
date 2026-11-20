@@ -24,7 +24,7 @@ test('web purchase form and settings consume the authenticated catalogue instead
   const rpc = read('src/lib/expense-settings.functions.ts');
   const supplierLinks = read('supabase/migrations/20261112142926_service_catalogue_supplier_master_links.sql');
   assert.match(form, /expenseOptions\.data\?\.services/);
-  assert.match(form, /searchableSelect\('category','Finance category',\(expenseOptions\.data\?\.categories\|\|\[\]\)\.map\(value=>\(\{value,label:value\}\)\),true\)/,
+  assert.match(form, /<SharedMasterSelect label="Finance category" value=\{values\['category'\]\|\|''\} required disabled=\{!expenseDepartment\|\|expenseOptions\.isPending\|\|expenseOptions\.isFetching\|\|Boolean\(expenseOptions\.error\)\|\|!expenseOptions\.data\?\.categories\.length\} options=\{\(expenseOptions\.data\?\.categories\|\|\[\]\)\.map/,
     'Finance category is a required searchable choice from the saved expense settings');
   assert.match(form, /Project stage: \{expenseProject\.currentStage\}/,
     'expense suggestions label the selected project context as its stage');

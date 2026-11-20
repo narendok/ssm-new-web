@@ -45,26 +45,54 @@ test('Admin Portal UI: DepartmentProjectWorkspace is rendered for Admin, matchin
   assert.doesNotMatch(headerSection[0], /HeaderAction label="Legal Hub"/, 'Legal Hub removed from cluttered header');
 });
 
-test('Admin Portal UI: RoleAwareSidebar displays executive command directory and department layout to Admin', () => {
+test('Admin Portal UI: All-department Admin sees admin groups; a selected department uses its lead group set', () => {
   const sidebarSource = fs.readFileSync(path.resolve(__dirname, '../src/components/RoleAwareSidebar.tsx'), 'utf8');
 
-  // Verify activeWorkGroups for admin includes executiveGroup + deptWorkGroups matching department lead layout
+  // All mode uses the consolidated Admin menu; selecting a department narrows to that department's lead menu.
   assert.match(
     sidebarSource,
-    /isAdmin\s*\?\s*\[executiveGroup,\s*\.\.\.deptWorkGroups,\s*adminSettingsGroup\]\s*:\s*deptWorkGroups/,
-    'Admin sidebar renders Executive Command Directory + deptWorkGroups + Settings at bottom'
+    /isAdmin\s*\?\s*adminAllDepartments\s*\?\s*adminWorkGroups\s*:\s*deptWorkGroups\s*:\s*deptWorkGroups/,
+    'All-department Admin gets the Admin groups; department context gets the department groups'
   );
 
-  // Verify All Departments Directory item exists in executiveGroup
-  assert.match(sidebarSource, /All Departments Directory/, 'All Departments Directory item present');
-  assert.match(sidebarSource, /id:\s*"executive_oversight"/, 'executive_oversight group present');
+  assert.match(sidebarSource, /id:\s*"overview"/, 'Admin overview group is present');
+  assert.match(sidebarSource, /label:\s*"Work Queue & Approvals"/, 'Admin work queue and approvals destination is present');
 
-  // Verify userRoleKey for admin falls back to activeArea / ehw
+  // Admin All mode selects Admin favorites without changing the authenticated role.
   assert.match(
     sidebarSource,
-    /const userRoleKey = \(persona\.kind === "lead" \|\| persona\.kind === "member"\) && persona\.departmentId\s*\?\s*persona\.departmentId\s*:\s*\(activeArea && activeArea !== "home" && activeArea !== "rnd" \? activeArea : "ehw"\)/,
-    'userRoleKey uses active department'
+    /isAdmin && adminAllDepartments\s*\?\s*"admin"/,
+    'All-department mode uses Admin navigation defaults'
   );
+});
+
+test('Admin project selection escapes the general department workspace and opens project analysis', () => {
+  const indexSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
+  const departmentWorkspace = indexSource.indexOf('<DepartmentProjectWorkspace');
+  const projectAnalysis = indexSource.indexOf('key={`admin-project-analysis:${adminProjectFilter}`}');
+  assert.ok(departmentWorkspace >= 0, 'general department workspace branch exists');
+  assert.ok(projectAnalysis > departmentWorkspace, 'admin project analysis branch remains in the shared renderer');
+
+  const departmentWorkspaceGuard = indexSource.slice(
+    indexSource.lastIndexOf(') : !(', departmentWorkspace),
+    departmentWorkspace,
+  );
+  assert.match(departmentWorkspaceGuard, /persona\.kind === "admin"[\s\S]*adminDepartment === "all"[\s\S]*adminProjectFilter !== "all"[\s\S]*view === "queue"/,
+    'selected Admin All project bypasses the earlier general department workspace branch');
+});
+
+test('Smart Upload follows the selected Admin department view while preserving Admin identity', () => {
+  const indexSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
+  assert.match(indexSource, /const activeUploadDepartmentCode =\s*persona\.kind === "admin" && adminDepartment !== "all"\s*\? adminDepartment\s*:\s*testMembership\?\.departmentCode \?\? persona\.departmentId/,
+    'selected Admin department takes priority over the Admin membership department for chooser context');
+  assert.match(indexSource, /smartUploadChoiceAvailable\(choice,activeDepartment,adminAccess && adminDepartment === "all"\)/,
+    'only Admin All view bypasses workflow visibility filtering');
+  assert.match(indexSource, /roleProfileAvailableToDepartment\(profile,activeDepartment,adminAccess && adminDepartment === "all"\)/,
+    'role profiles follow the selected department view');
+  assert.match(indexSource, /activeDepartmentCode=\{activeUploadDepartmentCode\}/,
+    'Smart Upload receives the active department context');
+  assert.match(indexSource, /isAdmin=\{\(testMembership\?\.role==="admin"\|\|\(!testMembership&&persona\.kind==="admin"\)\) && adminDepartment === "all"\}/,
+    'all-role chooser is shown only in Admin All view; authenticated identity is unchanged');
 });
 
 test('Admin Portal UI: DepartmentLeadLoginModal highlights Main Admin as top selection', () => {

@@ -67,12 +67,24 @@ export const sharedInventoryPartCatalogSchema = z.object({
     createdAt: z.string(),
     note: z.string(),
     isDemo: z.boolean(),
+    kitIssueId: z.string().uuid().nullable().optional(),
+    sourceRecordId: z.string().uuid().nullable().optional(),
+    sourceRecordReference: z.string().nullable().optional(),
   })),
+  kitBoms: z.array(z.object({
+    id: z.string().uuid(), reference: z.string(), title: z.string(), projectId: z.string().uuid(),
+    projectReference: z.string(), revision: z.string(),
+    lines: z.array(z.object({
+      partId: z.string().uuid(), partReference: z.string(), partTitle: z.string(),
+      quantityPerUnit: z.number().positive(), unit: z.string(),
+    })).min(1),
+  })).default([]),
 });
 
 export type SharedInventoryPartMaster = z.infer<typeof sharedInventoryPartCatalogSchema>["items"][number];
 export type SharedInventoryAssignment = z.infer<typeof sharedInventoryPartCatalogSchema>["assignments"][number];
 export type SharedInventoryMovement = z.infer<typeof sharedInventoryPartCatalogSchema>["movements"][number];
+export type SharedInventoryKitBom = z.infer<typeof sharedInventoryPartCatalogSchema>["kitBoms"][number];
 
 const commonEvent = {
   requestId: z.string().uuid(),
@@ -112,4 +124,17 @@ export const sharedInventoryEventResultSchema = z.object({
   quantity: z.number().optional(),
 });
 
+export const sharedInventoryKitIssueInputSchema = z.object({
+  requestId: z.string().uuid(),
+  bomId: z.string().uuid(),
+  projectId: z.string().uuid(),
+  buildQuantity: z.number().int().positive().max(1_000_000),
+  allocations: z.array(z.object({ partId: z.string().uuid(), assignmentId: z.string().uuid() })).min(1),
+});
+export const sharedInventoryKitIssueResultSchema = z.object({
+  kitIssueId: z.string().uuid(), idempotent: z.boolean(), lineCount: z.number().int().optional(),
+  bomId: z.string().uuid().optional(), projectId: z.string().uuid().optional(), buildQuantity: z.number().int().optional(),
+});
+
 export type SharedInventoryEventInput = z.infer<typeof sharedInventoryEventInputSchema>;
+export type SharedInventoryKitIssueInput = z.infer<typeof sharedInventoryKitIssueInputSchema>;

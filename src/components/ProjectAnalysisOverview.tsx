@@ -40,6 +40,9 @@ export function ProjectAnalysisOverview({
   onOpenProject,
   showReferenceScenarios = true,
   renderProjectInputs,
+  initialProjectId = "all",
+  initialTab = "inputs",
+  showProjectSelector = true,
 }: {
   projects: AnalysisRecord[];
   records: AnalysisRecord[];
@@ -47,10 +50,13 @@ export function ProjectAnalysisOverview({
   onOpenProject?: ((project: AnalysisRecord) => void) | undefined;
   showReferenceScenarios?: boolean;
   renderProjectInputs?: ((projectId:string)=>ReactNode) | undefined;
+  initialProjectId?: string;
+  initialTab?: "analysis" | "scenarios" | "inputs";
+  showProjectSelector?: boolean;
 }) {
-  const [projectId, setProjectId] = useState("all");
+  const [projectId, setProjectId] = useState(initialProjectId);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"analysis" | "scenarios" | "inputs">("inputs");
+  const [tab, setTab] = useState<"analysis" | "scenarios" | "inputs">(initialTab);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("all");
 
   const visible = projects.filter(
@@ -122,7 +128,7 @@ export function ProjectAnalysisOverview({
               onChange={(e) => setQuery(e.target.value)}
             />
           </div>
-          {tab !== "scenarios" && (
+          {showProjectSelector && tab !== "scenarios" && (
             <CompactFilterSelect
               label="Project"
               icon={FolderKanban}

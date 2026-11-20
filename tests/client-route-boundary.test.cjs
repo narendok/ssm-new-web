@@ -123,7 +123,7 @@ test("the normal portal is the sample-data experience; the standalone browser-lo
   assert.equal((route.match(/label="Reset sample"/g) || []).length, 1, "sample reset has one portal location");
   assert.match(route, /persona\.kind === "admin" &&\s*\(?\s*<Action\s+label="Reset sample"/);
   assert.doesNotMatch(route, /label="Reset sample data"|onResetDemo/);
-  assert.match(route, /label="Shared TEST data"/);
+  assert.doesNotMatch(route, /label="Shared TEST data"/, "shared TEST workspace is not a normal header action");
   assert.match(route, /<DemoDataPanel loaded=\{portal\.demoLoaded\} onLoad=\{onLoadDemo\}/);
   assert.match(localTestWorkspace, /id="local-test-documents-register"/);
   const sampleSeed = between(route, "const demoPortal = (): PortalState => {", "const createId =");
@@ -152,6 +152,15 @@ test("sample banner and reset stay out of authenticated account views", () => {
   );
   assert.match(authenticatedVaultBranch, /<SharedDocumentVault/);
   assert.doesNotMatch(authenticatedVaultBranch, /browser-local|TEST DATA · THIS BROWSER/);
+});
+
+test("travel policy UI mounts only for authenticated Admin and Operations roles", () => {
+  const workspace = fs.readFileSync(path.join(root, "src/components/SharedBusinessWorkspace.tsx"), "utf8");
+  const settings = fs.readFileSync(path.join(root, "src/components/ExpenseSettingsPanel.tsx"), "utf8");
+  const policy = fs.readFileSync(path.join(root, "src/components/TravelPolicySettings.tsx"), "utf8");
+  assert.ok(workspace.includes('canViewTravelPolicy={admin||(lead&&actor.department_code==="OPS")}'));
+  assert.ok(settings.includes("canViewTravelPolicy && <TravelPolicySettings"));
+  assert.doesNotMatch(policy, /travel-policy-access/, "unscoped roles do not call the policy RPC for a settings preflight");
 });
 
 test("local register storage remains separate from authenticated document and upload contracts", () => {

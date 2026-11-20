@@ -9,19 +9,49 @@ const read = file => fs.readFileSync(path.join(root, file), "utf8");
 test("shared TEST record forms use searchable master directories and persist canonical IDs", () => {
   const workspace = read("src/components/SharedTestWorkspace.tsx");
   assert.match(workspace, /isSelectableMasterStatus/);
-  assert.match(workspace, /data\.customerOptions\.filter\(option => isSelectableMasterStatus\(option\.status\)\)/);
-  assert.match(workspace, /data\.partOptions\.filter\(option => isSelectableMasterStatus\(option\.status\)\)/);
-  assert.match(workspace, /data\.productOptions\.filter\(option => isSelectableMasterStatus\(option\.status\)\)/);
-  assert.match(workspace, /record_type === "Project" && isSelectableMasterStatus\(r\.status\)/);
-  for (const directory of ["customerOptions", "supplierOptions", "partOptions", "productOptions"]) {
-    assert.ok(workspace.includes(`data.${directory}`), `${directory} must feed record master selectors`);
+  for (const kind of ["customers", "suppliers", "parts", "products"]) {
+    assert.match(workspace, new RegExp(`sharedMasterDirectory\\(data, "${kind}"\\)`), `${kind} uses the shared ID-keyed directory`);
   }
+  assert.match(workspace, /customerMasters\.filter\(option => isSelectableMasterStatus\(option\.status\)\)/);
+  assert.match(workspace, /partMasters\.filter\(option => isSelectableMasterStatus\(option\.status\)\)/);
+  assert.match(workspace, /productMasters\.filter\(option => isSelectableMasterStatus\(option\.status\)\)/);
+  assert.match(workspace, /record_type === "Project" && isSelectableMasterStatus\(r\.status\)/);
+  assert.match(read("src/lib/shared-master-snapshot.ts"), /optionsByKind[\s\S]*snapshot\.records/,
+    "the common directory combines canonical summary options with authorized visible master records");
   assert.match(workspace, /case "projects": return projects\.map\(project => \(\{ value: project\.id, label: `\$\{project\.reference\} · \$\{project\.title\}` \}\)\)/);
   assert.match(workspace, /<SharedMasterSelect\s+label="Project"[\s\S]*?options=\{recordMasterOptions\("projects"\)\}/);
   assert.match(workspace, /item\.master \? <SharedMasterSelect label=\{item\.label\} options=\{recordMasterOptions\(item\.master\)\}/);
   assert.match(workspace, /masterIdFields: Record<string, string> = \{ customers: "customerId", suppliers: "supplierId", parts: "partId", products: "productId" \}/);
   assert.match(workspace, /if \(idField && selectedId\) mappedFields\[idField\] = selectedId/);
   assert.match(workspace, /item\.key !== "projectId"/);
+});
+
+test("canonical master directories unify server options and visible records by ID", async () => {
+  const { sharedMasterDirectory } = await import("../src/lib/shared-master-snapshot.ts");
+  const snapshot = {
+    customerOptions: [{ id: "customer-1", reference: "CUS-01-R2", title: "Current Customer", status: "Active" }],
+    supplierOptions: [],
+    partOptions: [{ id: "part-1", reference: "PART-01", title: "Canonical Part", status: "Active" }],
+    productOptions: [],
+    records: [
+      { id: "customer-1", record_type: "Customer", reference: "CUS-01-R1", title: "Old Customer Label", status: "Active", fields: {}, updated_at: "2026-11-20" },
+      { id: "customer-2", record_type: "Customer", reference: "CUS-02", title: "Visible-only Customer", status: "Active", fields: {}, updated_at: "2026-11-20" },
+      { id: "supplier-1", record_type: "Supplier", reference: "SUP-01", title: "Visible Supplier", status: "Active", fields: {}, updated_at: "2026-11-20" },
+      { id: "part-1", record_type: "Part", reference: "PART-OLD", title: "Old Part Label", status: "Active", fields: { mpn: "MPN-01" }, updated_at: "2026-11-20" },
+      { id: "part-2", record_type: "Part", reference: "PART-02", title: "Second Part", status: "Inactive", fields: { mpn: "MPN-02" }, updated_at: "2026-11-20" },
+      { id: "product-1", record_type: "Product", reference: "PROD-01", title: "Visible Product", status: "Active", fields: {}, updated_at: "2026-11-20" },
+    ],
+  };
+  const customers = sharedMasterDirectory(snapshot, "customers");
+  assert.deepEqual(customers.map(({ id, reference, title }) => [id, reference, title]), [
+    ["customer-1", "CUS-01-R2", "Current Customer"],
+    ["customer-2", "CUS-02", "Visible-only Customer"],
+  ]);
+  assert.equal(sharedMasterDirectory(snapshot, "suppliers")[0].id, "supplier-1");
+  assert.deepEqual(sharedMasterDirectory(snapshot, "parts").map(part => [part.id, part.reference, part.mpn]), [
+    ["part-1", "PART-01", "MPN-01"], ["part-2", "PART-02", "MPN-02"],
+  ]);
+  assert.equal(sharedMasterDirectory(snapshot, "products")[0].id, "product-1");
 });
 
 test("shared TEST reads resolve renamed master labels by canonical ID without mutating stored rows", async () => {
@@ -203,6 +233,46 @@ test("shared TEST master edits update canonical IDs together with selected displ
     "new record creation persists the canonical ID instead of a display label");
   assert.match(workspace, /value=\{recordMasterValue\(item\)\}[^\n]*onChange=\{value => setRecordMasterValue\(item, value\)\}/,
     "both create and edit selectors use the same canonical linkage behavior");
+});
+
+test("reopened Shared TEST records expose and save canonical Customer, Project, and Supplier links", () => {
+  const workspace = read("src/components/SharedTestWorkspace.tsx");
+  assert.match(workspace, /const customerLink = resolveEditableMasterLink\(record\?\.fields \|\| \{\}, customerLinkMasters/,
+    "opening Edit/revise resolves saved Customer aliases against the shared directory");
+  assert.match(workspace, /const projectLink = resolveEditableMasterLink\(record\?\.fields \|\| \{\}, projectLinkMasters/,
+    "opening Edit/revise resolves saved Project aliases against directory and snapshot masters");
+  assert.match(workspace, /const supplierLink = resolveEditableMasterLink\(record\?\.fields \|\| \{\}, supplierLinkMasters/,
+    "opening Edit/revise resolves saved Supplier aliases against the shared directory");
+  assert.match(workspace, /aria-label="Editable master links"[\s\S]*?SharedMasterSelect label="Customer"[\s\S]*?customer_master_changed: "true"[\s\S]*?SharedMasterSelect label="Project"[\s\S]*?project_master_changed: "true"[\s\S]*?SharedMasterSelect label="Supplier"[\s\S]*?supplier_master_changed: "true"/,
+    "the reopen dialog gives each canonical link a searchable selector and tracks explicit changes");
+  assert.match(workspace, /replaceEditableMasterLink\(recordFields, selected, customerLinkAliases\)/,
+    "the save path replaces the full Customer alias family with canonical ID and labels");
+  assert.match(workspace, /replaceEditableMasterLink\(recordFields, selected, projectLinkAliases\)/,
+    "the save path replaces the full Project alias family with canonical ID and labels");
+  assert.match(workspace, /replaceEditableMasterLink\(recordFields, selected, supplierLinkAliases\)/,
+    "the save path replaces the full Supplier alias family with canonical ID and labels");
+  assert.match(workspace, /Choose an active (Customer|Project|Supplier) from the searchable list/,
+    "forged or inactive master IDs fail closed before the shared write");
+});
+
+test("Shared TEST dynamic project, stage, department, record, and assignee entries are searchable", () => {
+  const workspace = read("src/components/SharedTestWorkspace.tsx");
+  assert.match(workspace, /label=\{`Target stage \$\{p\.reference\}`\}[\s\S]*?projectStageOptions\(p\)\.map\(stage => \(\{ value: stage\.stageCode, label: `\$\{stage\.stageCode\} · \$\{stage\.name\}` \}\)\)/,
+    "only eligible stages from the saved project baseline are searchable");
+  assert.match(workspace, /label="Task project" value=\{activeProjectId\}[^\n]*options=\{projectSelectOptions\}/,
+    "the task filter searches canonical projects plus its all-projects option");
+  assert.match(workspace, /label="Review department" value=\{reviewer\}[^\n]*options=\{departmentSelectOptions\}/,
+    "the review selector searches configured departments");
+  assert.match(workspace, /label="Record type" required[\s\S]*?options=\{\(spec\?\.types \|\| \[\]\)\.map\(type => \(\{ value: type, label: type \}\)\)\}/,
+    "record type choices follow and search the selected department's configured catalogue");
+  assert.match(workspace, /label="Department"[\s\S]*?options=\{departmentSelectOptions\}/,
+    "Admin create forms search the canonical department directory");
+  assert.match(workspace, /const createTaskAssigneeOptions = sharedTaskAssigneeOptions\([\s\S]*?selectedDepartment,[\s\S]*?configuredRoles[\s\S]*?\.filter\(option => option\.configuredProfile\)/,
+    "new task assignees come only from active configured role profiles for the selected department");
+  assert.match(workspace, /label="Task assignee"[\s\S]*?roleConfigurationQuery\.isPending \|\| roleConfigurationQuery\.isError \|\| !createTaskAssigneeOptions\.length/,
+    "assignee selection stays disabled until verified role profiles are available");
+  assert.match(workspace, /label="Source record"[\s\S]*?data\.records\.filter\(record => admin \|\| record\.department_id === ownDepartment\)/,
+    "document source records search within the authenticated department scope");
 });
 
 test("shared department task creation receives canonical project summaries for searchable selection", () => {

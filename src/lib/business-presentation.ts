@@ -12,7 +12,7 @@ export function personalAssignments(items: BusinessItem[], memberId: string, sec
 
 export function budgetSummaries(items: BusinessItem[]) {
   const totals = new Map<string, { currency: string; allocated: number; committed: number; spent: number; available: number }>();
-  for (const item of items.filter(item => item.kind === "allocation")) {
+  for (const item of items.filter(item => item.kind === "allocation" && (item.data["status"] === undefined || item.data["status"] === "Approved"))) {
     const currency = typeof item.data["currency"] === "string" ? item.data["currency"] : "Unspecified currency";
     const row = totals.get(currency) ?? { currency, allocated: 0, committed: 0, spent: 0, available: 0 };
     const amount = (key: string) => typeof item.data[key] === "number" && Number.isFinite(item.data[key]) ? item.data[key] as number : 0;

@@ -3677,35 +3677,8 @@ function Portal() {
       ? (personas.find((p) => p.id === initialRole) ?? safeUnassignedPersona)
       : (personas[0] ?? safeUnassignedPersona);
 
-  const [adminDepartment, setAdminDepartment] = useState<AreaId>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved =
-          window.sessionStorage.getItem("scms_admin_department") ||
-          window.localStorage.getItem("scms_admin_department");
-        if (
-          saved &&
-          [
-            "ehw",
-            "fw",
-            "sw",
-            "mech",
-            "pur",
-            "qa",
-            "emf",
-            "mmf",
-            "sales",
-            "fin",
-            "sit",
-            "hrops",
-          ].includes(saved)
-        ) {
-          return saved as AreaId;
-        }
-      } catch {}
-    }
-    return "ehw";
-  });
+  const [adminDepartment, setAdminDepartment] = useState<AreaId | "all">("all");
+  const [adminProjectFilter, setAdminProjectFilter] = useState("all");
 
   const [activeArea, setActiveArea] = useState<AreaId>(() => {
     if (
@@ -3714,35 +3687,7 @@ function Portal() {
     ) {
       return initialPersona.departmentId;
     }
-    if (initialPersona.kind === "admin") {
-      if (typeof window !== "undefined") {
-        try {
-          const saved =
-            window.sessionStorage.getItem("scms_admin_department") ||
-            window.localStorage.getItem("scms_admin_department");
-          if (
-            saved &&
-            [
-              "ehw",
-              "fw",
-              "sw",
-              "mech",
-              "pur",
-              "qa",
-              "emf",
-              "mmf",
-              "sales",
-              "fin",
-              "sit",
-              "hrops",
-            ].includes(saved)
-          ) {
-            return saved as AreaId;
-          }
-        } catch {}
-      }
-      return "ehw";
-    }
+    if (initialPersona.kind === "admin") return "home";
     return "home";
   });
   const [clientDeliverablesFocus, setClientDeliverablesFocus] = useState(0);
@@ -3831,9 +3776,6 @@ function Portal() {
       initialPersona.departmentId
     ) {
       return `demo-dept-${initialPersona.departmentId}`;
-    }
-    if (initialPersona.kind === "admin") {
-      return "demo-dept-ehw";
     }
     return null;
   });
@@ -4024,12 +3966,18 @@ function Portal() {
         return;
       }
     }
-    if (persona.kind === "admin" && area !== "home" && area !== "rnd") {
-      setAdminDepartment(area);
-      try {
-        window.sessionStorage.setItem("scms_admin_department", area);
-        window.localStorage.setItem("scms_admin_department", area);
-      } catch {}
+    if (persona.kind === "admin") {
+      if (area === "home") {
+        setAdminDepartment("all");
+        setAdminProjectFilter("all");
+        setDepartmentContext(null);
+      } else if (area !== "rnd") {
+        setAdminDepartment(area);
+        setAdminProjectFilter("all");
+        setDepartmentContext(
+          findAreaDepartment(portal?.departments ?? [], area)?.id ?? `demo-dept-${area}`,
+        );
+      }
     }
     setActiveArea(area);
     setView(targetView);
@@ -4038,12 +3986,16 @@ function Portal() {
     setQueueStage(null);
     setMobileMenu(false);
   };
+  const activeUploadDepartmentCode =
+    persona.kind === "admin" && adminDepartment !== "all"
+      ? adminDepartment
+      : testMembership?.departmentCode ?? persona.departmentId;
   const handleSmartUploadChoice = (
     choice: "sor" | "bom" | "technical" | "quotation" | "invoice" | "receipt" | "role" | "other",
   ) => {
-    const activeDepartment=testMembership?.departmentCode??persona?.departmentId;
+    const activeDepartment = activeUploadDepartmentCode;
     const adminAccess=testMembership?.role==="admin"||(!testMembership&&persona.kind==="admin");
-    if(!smartUploadChoiceAvailable(choice,activeDepartment,adminAccess)){
+    if(!smartUploadChoiceAvailable(choice,activeDepartment,adminAccess && adminDepartment === "all")){
       announce(`This workflow belongs to another department. Your ${normalizeUploadDepartment(activeDepartment)||"current"} department can only open its authorized Smart Upload routes.`);
       return;
     }
@@ -4073,9 +4025,9 @@ function Portal() {
     openDocuments();
   };
   const handleSmartUploadRoleProfile = (profile: RoleUseCaseProfile) => {
-    const activeDepartment=testMembership?.departmentCode??persona?.departmentId;
+    const activeDepartment = activeUploadDepartmentCode;
     const adminAccess=testMembership?.role==="admin"||(!testMembership&&persona.kind==="admin");
-    if(!roleProfileAvailableToDepartment(profile,activeDepartment,adminAccess)){
+    if(!roleProfileAvailableToDepartment(profile,activeDepartment,adminAccess && adminDepartment === "all")){
       announce("This Smart Upload profile is not assigned to your signed-in department.");
       return;
     }
@@ -4240,15 +4192,25 @@ function Portal() {
     );
     setModal("create");
   };
-  const handleAdminDepartmentChange = (deptId: AreaId, nextView?: typeof view) => {
+  const handleAdminDepartmentChange = (deptId: AreaId | "all", nextView?: typeof view) => {
+    if (deptId === "all") {
+      setAdminDepartment("all");
+      setAdminProjectFilter("all");
+      setDepartmentContext(null);
+      setActiveArea("home");
+      setView(nextView ?? "queue");
+      setSelectedId(null);
+      setSelectedAssignee(null);
+      setQueueStage(null);
+      announce("Admin · All departments overview active.");
+      return;
+    }
     setAdminDepartment(deptId);
+    setAdminProjectFilter("all");
     setActiveArea(deptId);
     setDepartmentContext(
       findAreaDepartment(portal.departments, deptId)?.id ?? `demo-dept-${deptId}`,
     );
-    try {
-      window.sessionStorage.setItem("scms_admin_department", deptId);
-    } catch {}
     if (nextView) {
       setView(nextView);
     } else if (
@@ -4283,12 +4245,11 @@ function Portal() {
   const switchPersona = (next: Persona) => {
     setPersona(next);
     if (next.kind === "admin") {
-      const deptToUse = adminDepartment || "ehw";
-      setDepartmentContext(
-        findAreaDepartment(portal.departments, deptToUse)?.id ?? `demo-dept-${deptToUse}`,
-      );
-      setActiveArea(deptToUse);
-      setView("project");
+      setAdminDepartment("all");
+      setAdminProjectFilter("all");
+      setDepartmentContext(null);
+      setActiveArea("home");
+      setView("queue");
     } else {
       const nextDepartment =
         next.kind === "lead" || next.kind === "member"
@@ -5693,8 +5654,9 @@ function Portal() {
       : (persona.kind === "lead" || persona.kind === "member") && persona.departmentId
         ? persona.departmentId
         : persona.kind === "admin"
-          ? adminDepartment ||
-            (activeArea && activeArea !== "home" && activeArea !== "rnd" ? activeArea : "ehw")
+          ? adminDepartment === "all"
+            ? "home"
+            : adminDepartment
           : activeArea;
   const configuredDepartments = organizationConfiguration.data?.departments ?? portal.departments;
   const baseActive = areaById(effectiveArea);
@@ -5894,6 +5856,7 @@ function Portal() {
         <RoleAwareSidebar
           persona={persona}
           adminDepartment={effectiveArea}
+          adminAllDepartments={persona.kind === "admin" && adminDepartment === "all"}
           activeArea={effectiveArea as any}
           view={view}
           recordTypeFilter={recordTypeFilter}
@@ -5984,11 +5947,11 @@ function Portal() {
         className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarExpanded ? "lg:pl-64" : "lg:pl-16"}`}
       >
         <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
-          <div className="flex h-16 items-center gap-3 px-4 md:px-8">
+          <div className="flex min-h-14 items-center gap-2 px-3 md:px-6">
             <button
               aria-label="Open menu"
               onClick={() => setMobileMenu(true)}
-              className="grid size-10 place-items-center rounded-lg border border-border bg-card transition-colors hover:bg-secondary lg:hidden"
+              className="grid size-9 place-items-center rounded-lg border border-border bg-card transition-colors hover:bg-secondary lg:hidden"
             >
               <Menu className="size-4" />
             </button>
@@ -6012,6 +5975,8 @@ function Portal() {
                   ? "Northstar Mobility Systems · Fleet Test Portal"
                   : persona.kind === "lead" || persona.kind === "member"
                     ? active.name.replace(/^DEMO · /, "")
+                    : persona.kind === "admin" && adminDepartment === "all"
+                      ? "Company Overview"
                     : view === "index"
                       ? "Unified index"
                       : active.name.replace(/^DEMO · /, "")}
@@ -6021,18 +5986,11 @@ function Portal() {
                   ? "Rohan Verma · Client Representative"
                   : persona.kind === "lead" || persona.kind === "member"
                     ? `${persona.label}`
-                    : `Executive Admin · ${active.short} Department Access`}
+                  : adminDepartment === "all"
+                    ? "Executive Admin · All departments"
+                    : `Executive Admin · ${active.short} Department view`}
               </p>
             </button>
-            {testMembership && !testMembership.isClient && (
-              <Action
-                label="Shared TEST data"
-                onClick={() => {
-                  setSharedTestInitialTab("Tasks");
-                  setShowSharedTestWorkspace(true);
-                }}
-              />
-            )}
             {portal?.demoLoaded && !testMembership && (
               <>
                 <span
@@ -6065,10 +6023,27 @@ function Portal() {
               onSelect={switchPersona}
               onOpenAuth={() => setLoginModalOpen(true)}
               onLogout={handleLogout}
-              adminDepartment={effectiveArea}
+              adminDepartment={adminDepartment}
               onAdminDepartmentChange={handleAdminDepartmentChange}
               onOpenDepartmentsDirectory={() => setView("departments")}
             />
+            {persona.kind === "admin" && adminDepartment === "all" && (
+              <div className="hidden items-center gap-1.5 md:flex">
+                <label htmlFor="admin-project-filter" className="sr-only">Filter company overview by project</label>
+                <select
+                  id="admin-project-filter"
+                  aria-label="Filter by project"
+                  value={adminProjectFilter}
+                  onChange={(event) => setAdminProjectFilter(event.target.value)}
+                  className="h-9 max-w-64 rounded-lg border border-border bg-card px-2.5 text-xs font-medium text-foreground"
+                >
+                  <option value="all">All projects · Department overview</option>
+                  {selectableProjects.map((project) => (
+                    <option key={project.id} value={project.id}>{project.reference} · {project.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {persona.kind !== "client" && (
               <>
                 <div className="relative hidden w-44 shrink xl:block 2xl:w-56">
@@ -6193,6 +6168,8 @@ function Portal() {
                   key={testMembership.membershipId}
                   view="tickets"
                   membership={testMembership}
+                  departmentScopeCode={testMembership.departmentCode || null}
+                  adminAllDepartments={false}
                 />
               ) : (
                 <ClientOEMPortal
@@ -6247,7 +6224,7 @@ function Portal() {
           ) : view === "departments" ? (
             <CommonDepartmentSearchView
               departments={buildDepartmentDirectoryMetadata(portal.departments)}
-              currentDepartment={adminDepartment}
+              currentDepartment={adminDepartment === "all" ? "home" : adminDepartment}
               onSelectDepartment={(deptId, viewTab) => {
                 handleAdminDepartmentChange(deptId, (viewTab as typeof view) || "project");
               }}
@@ -6374,7 +6351,13 @@ function Portal() {
                 }
               />
             </section>
-          ) : (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") &&
+          ) : !(
+            persona.kind === "admin" &&
+            adminDepartment === "all" &&
+            adminProjectFilter !== "all" &&
+            view === "queue"
+          ) &&
+            (persona.kind === "lead" || persona.kind === "member" || persona.kind === "admin") &&
             (view === "project" ||
               view === "queue" ||
               view === "summary" ||
@@ -6734,7 +6717,7 @@ function Portal() {
             />
           ) : view === "inventory" ? (
             testMembership ? <SharedInventoryWorkspace
-              key={`${testMembership.membershipId}:inventory`}
+              key={`${testMembership.membershipId}:inventory:${departmentContext ?? testMembership.departmentCode ?? "ALL"}`}
               membershipId={testMembership.membershipId}
               canAdjustSharedInventory={testMembership.role === "admin"}
               items={portal.inventory ?? []}
@@ -6759,7 +6742,11 @@ function Portal() {
               readOnly={false}
               onMove={moveInventory}
               onAssign={assignInventory}
-              activeDepartment="PUR"
+              activeDepartment={(
+                portal.departments.find((item) => item.id === departmentContext)?.code ??
+                testMembership.departmentCode ??
+                "ALL"
+              ).toUpperCase()}
               isFullPage={true}
               onBack={() => setView("queue")}
             /> : <LiveInventoryWorkspace
@@ -6921,6 +6908,8 @@ function Portal() {
               key={`${testMembership.membershipId}:${view}`}
               view={view}
               membership={testMembership}
+              departmentScopeCode={Object.entries(DEPARTMENT_MODULES).find(([, area]) => area === activeDepartmentScope)?.[0] || testMembership.departmentCode || null}
+              adminAllDepartments={persona.kind === "admin" && adminDepartment === "all"}
             />
           ) : view === "budgets" ? (
             <DepartmentBudgetsWorkspace
@@ -7044,6 +7033,28 @@ function Portal() {
               records={activeRecords}
               onBack={() => navigate("home")}
               onSelect={openRecord}
+            />
+          ) : persona.kind === "admin" && adminDepartment === "all" && adminProjectFilter !== "all" && view === "queue" ? (
+            <ProjectAnalysisOverview
+              key={`admin-project-analysis:${adminProjectFilter}`}
+              projects={selectableProjects as any}
+              records={activeRecords as any}
+              documents={scopedDocuments as any}
+              initialProjectId={adminProjectFilter}
+              initialTab="analysis"
+              showProjectSelector={false}
+              renderProjectInputs={(projectId) => (
+                <ProjectInputsWorkspace
+                  key={projectId}
+                  sources={activeRecords as any}
+                  initialSourceId={projectId}
+                />
+              )}
+              onOpenProject={(project) => {
+                setSelectedProjectId(project.reference);
+                setSelectedId(project.id);
+                setView("project");
+              }}
             />
           ) : effectiveArea === "home" ? (
             <CommandCenter
@@ -7359,6 +7370,7 @@ function Portal() {
           purchasingSubView={purchasingSubView}
           onSelectPurchasingSubView={setPurchasingSubView}
           persona={persona}
+          adminAllDepartments={persona.kind === "admin" && adminDepartment === "all"}
           canOpenSettings={persona.id === "admin" || !!testMembership}
           activeArea={activeArea}
           view={view}
@@ -7672,8 +7684,8 @@ function Portal() {
         onClose={() => setSmartUploadOpen(false)}
         onChoose={handleSmartUploadChoice}
         onChooseRoleProfile={handleSmartUploadRoleProfile}
-        activeDepartmentCode={testMembership?.departmentCode??persona?.departmentId?.toUpperCase()??"EHW"}
-        isAdmin={testMembership?.role==="admin"||(!testMembership&&persona.kind==="admin")}
+        activeDepartmentCode={activeUploadDepartmentCode}
+        isAdmin={(testMembership?.role==="admin"||(!testMembership&&persona.kind==="admin")) && adminDepartment === "all"}
       />
       {globalSorOpen && (
         <SmartSorImporterModal
@@ -8693,11 +8705,11 @@ function CommandCenter({
               : "Operational workspace"
             : `${persona.label} · active persona`
         }
-        title="Command Center"
+        title={persona.kind === "admin" && !departmentContext ? "Company Overview" : "Command Center"}
         description={
           departmentContext
             ? "Department-wise quick management and today checklist."
-            : "Department-wise quick management, lifecycle tracking, and daily task checklist."
+            : "Company-wide department status, approvals, lifecycle tracking, and daily work at a glance."
         }
         actions={
           <>
@@ -18033,8 +18045,8 @@ function PersonaSwitcher({
   onSelect: (persona: Persona) => void;
   onOpenAuth?: () => void;
   onLogout?: () => void;
-  adminDepartment?: AreaId;
-  onAdminDepartmentChange?: (deptId: AreaId) => void;
+  adminDepartment?: AreaId | "all";
+  onAdminDepartmentChange?: (deptId: AreaId | "all") => void;
   onOpenDepartmentsDirectory?: () => void;
 }) {
   if (persona.kind === "client") {
@@ -18122,14 +18134,15 @@ function PersonaSwitcher({
       <div className="flex items-center gap-1.5 rounded-lg border border-primary/40 bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground shadow-xs transition-colors hover:border-primary">
         <Building className="size-3.5 text-primary shrink-0" />
         <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground whitespace-nowrap">
-          Department:
+          View:
         </span>
         <select
           aria-label="Select department access"
-          value={adminDepartment ?? "ehw"}
-          onChange={(event) => onAdminDepartmentChange?.(event.target.value as AreaId)}
+          value={adminDepartment ?? "all"}
+          onChange={(event) => onAdminDepartmentChange?.(event.target.value as AreaId | "all")}
           className="min-w-0 bg-transparent text-xs font-bold text-foreground outline-none cursor-pointer [&>option]:bg-background [&>option]:text-foreground"
         >
+          <option value="all">Admin · All departments</option>
           {(
             departments ??
             Object.entries(DEPARTMENT_MODULES).map(([code, area]) => ({
@@ -18348,6 +18361,7 @@ function MobileMenu({
   purchasingSubView,
   onSelectPurchasingSubView,
   persona,
+  adminAllDepartments = false,
   activeArea,
   view,
   recordTypeFilter,
@@ -18384,6 +18398,7 @@ function MobileMenu({
   purchasingSubView?: PurchasingSubView | undefined;
   onSelectPurchasingSubView?: ((view: PurchasingSubView) => void) | undefined;
   persona: Persona;
+  adminAllDepartments?: boolean;
   canOpenSettings: boolean;
   activeArea: AreaId;
   view: string;
@@ -18418,6 +18433,7 @@ function MobileMenu({
       <div className="h-full w-[min(20rem,90vw)] border-r border-sidebar-border bg-sidebar p-3 shadow-2xl flex flex-col justify-between">
         <RoleAwareSidebar
           persona={persona}
+          adminAllDepartments={adminAllDepartments}
           activeArea={activeArea}
           view={view}
           recordTypeFilter={recordTypeFilter}

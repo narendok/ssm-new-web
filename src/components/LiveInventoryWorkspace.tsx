@@ -1,4 +1,5 @@
 import { ResponsiveFilterBar, CompactFilterSelect } from "@/components/ResponsiveFilterBar";
+import { SharedMasterSelect } from "@/components/SharedMasterSelect";
 import React, { useMemo, useState } from "react";
 import {
   Boxes,
@@ -53,6 +54,8 @@ import {
 import type {
   SharedInventoryAssignment,
   SharedInventoryEventInput,
+  SharedInventoryKitBom,
+  SharedInventoryKitIssueInput,
   SharedInventoryMovement,
   SharedInventoryPartMaster,
 } from "@/lib/shared-inventory.schema";
@@ -1069,7 +1072,7 @@ export type LiveInventoryWorkspaceProps = {
   assignments: InventoryAssignment[];
   allowedCategories: InventoryCategory[];
   readOnly?: boolean;
-  activeDepartment?: "EHW" | "PUR" | "MECH" | "QA" | "ALL";
+  activeDepartment?: string | undefined;
   isFullPage?: boolean;
   onBack?: () => void;
   sharedPartMasters?: SharedInventoryPartMaster[] | undefined;
@@ -1083,8 +1086,12 @@ export type LiveInventoryWorkspaceProps = {
   }> | undefined;
   sharedInventoryAssignments?: SharedInventoryAssignment[] | undefined;
   sharedInventoryMovements?: SharedInventoryMovement[] | undefined;
+  sharedInventoryKitBoms?: SharedInventoryKitBom[] | undefined;
+  /** Prevent local demo equipment from being presented as authenticated company assets. */
+  assetRegistryMode?: "local_demo" | "unavailable" | undefined;
   canAdjustSharedInventory?: boolean | undefined;
   onSharedInventoryEvent?: ((input: SharedInventoryEventInput) => Promise<void>) | undefined;
+  onIssueSharedInventoryKit?: ((input: SharedInventoryKitIssueInput) => Promise<void>) | undefined;
   sharedInventoryActionPending?: boolean | undefined;
   sharedInventoryActionError?: string | undefined;
   onMove: (itemId: string, change: number, reason: InventoryMovement["reason"]) => void;
@@ -1114,8 +1121,11 @@ export function LiveInventoryWorkspace({
   sharedInventoryReceiptOptions,
   sharedInventoryAssignments,
   sharedInventoryMovements,
+  sharedInventoryKitBoms,
+  assetRegistryMode = "local_demo",
   canAdjustSharedInventory = false,
   onSharedInventoryEvent,
+  onIssueSharedInventoryKit,
   sharedInventoryActionPending = false,
   sharedInventoryActionError,
   onMove,
@@ -1182,7 +1192,9 @@ export function LiveInventoryWorkspace({
   });
 
   const [grnList, setGrnList] = useState<GoodsReceivedNote[]>(initialGRNRecords);
-  const [assetList, setAssetList] = useState<AssetRecord[]>(initialSerializedAssets);
+  const [assetList, setAssetList] = useState<AssetRecord[]>(() =>
+    assetRegistryMode === "unavailable" ? [] : initialSerializedAssets,
+  );
 
   // Department-Scoped Assets calculation (Section 7 of handoff)
   const scopedAssets = useMemo(() => {
@@ -1216,7 +1228,9 @@ export function LiveInventoryWorkspace({
   const [searchQuery, setSearchQuery] = useState("");
   const [sharedPartSearch, setSharedPartSearch] = useState("");
   const [sharedPartCategory, setSharedPartCategory] = useState("All");
-  const [sharedPartDepartment, setSharedPartDepartment] = useState("All");
+  const [sharedPartDepartment, setSharedPartDepartment] = useState(() =>
+    activeDepartment && activeDepartment !== "ALL" ? activeDepartment : "All",
+  );
   const [sharedAssignPartId, setSharedAssignPartId] = useState<string | null>(null);
   const [sharedAssignProjectId, setSharedAssignProjectId] = useState("");
   const [sharedAssignRoleId, setSharedAssignRoleId] = useState("");
@@ -1234,6 +1248,10 @@ export function LiveInventoryWorkspace({
   const [sharedAssignmentAction, setSharedAssignmentAction] = useState<"return" | "consume">("return");
   const [sharedAssignmentActionQuantity, setSharedAssignmentActionQuantity] = useState("1");
   const [sharedAssignmentActionNote, setSharedAssignmentActionNote] = useState("");
+  const [kitIssueBomId, setKitIssueBomId] = useState("");
+  const [kitIssueBuildQuantity, setKitIssueBuildQuantity] = useState("1");
+  const [kitIssueAssignmentIds, setKitIssueAssignmentIds] = useState<Record<string, string>>({});
+  const [kitIssueOpen, setKitIssueOpen] = useState(false);
   const [sharedInventoryNotice, setSharedInventoryNotice] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [selectedCrossTag, setSelectedCrossTag] = useState<string>("All");
@@ -2008,6 +2026,28 @@ export function LiveInventoryWorkspace({
     }
   };
 
+  const submitSharedKitIssue = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const bom = sharedInventoryKitBoms?.find((candidate) => candidate.id === kitIssueBomId);
+    const buildQuantity = Number(kitIssueBuildQuantity);
+    if (!bom || !onIssueSharedInventoryKit || !Number.isInteger(buildQuantity) || buildQuantity <= 0) return;
+    const allocations = bom.lines.map((line) => ({ partId: line.partId, assignmentId: kitIssueAssignmentIds[line.partId] || "" }));
+    if (allocations.some((allocation) => !allocation.assignmentId)) {
+      setSharedInventoryNotice("Select an active, authorized allocation for each exact BOM Part before issuing the kit.");
+      return;
+    }
+    try {
+      await onIssueSharedInventoryKit({
+        requestId: crypto.randomUUID(), bomId: bom.id, projectId: bom.projectId, buildQuantity, allocations,
+      });
+      setSharedInventoryNotice(`Kit issued from released BOM ${bom.reference}; component stock was consumed from the selected allocations.`);
+      setKitIssueOpen(false);
+      setKitIssueAssignmentIds({});
+    } catch (error) {
+      setSharedInventoryNotice(error instanceof Error ? error.message : "BOM kit issue failed.");
+    }
+  };
+
   return (
     <div className={`ops-section overflow-hidden rounded-xl border border-border bg-panel shadow-sm ${isFullPage ? "mt-2" : "mt-8"}`}>
       {/* Full Page Breadcrumb Header */}
@@ -2107,8 +2147,12 @@ export function LiveInventoryWorkspace({
         </div>
         <div className="p-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-foreground">Serialized Assets</span>
-          <p className="mt-1 font-mono text-lg font-bold text-foreground">{assetList.length} machines</p>
-          <span className="text-[10px] text-muted-foreground">Line 2 & Labs active</span>
+          <p className="mt-1 font-mono text-lg font-bold text-foreground">
+            {assetRegistryMode === "unavailable" ? "Not connected" : `${assetList.length} machines`}
+          </p>
+          <span className="text-[10px] text-muted-foreground">
+            {assetRegistryMode === "unavailable" ? "No authenticated asset feed" : "Line 2 & Labs active"}
+          </span>
         </div>
       </div>
 
@@ -2900,14 +2944,26 @@ export function LiveInventoryWorkspace({
             </div>
             <div className="flex flex-wrap gap-2">
               <input aria-label="Search shared parts" className="h-8 min-w-56 rounded-md border border-input bg-background px-2 text-xs" placeholder="Search part, MPN or reference…" value={sharedPartSearch} onChange={event => setSharedPartSearch(event.target.value)} />
-              <select aria-label="Filter shared parts by category" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={sharedPartCategory} onChange={event => setSharedPartCategory(event.target.value)}>
-                <option value="All">All categories</option>
-                {sharedInventoryCategoryOptions(sharedPartMasters ?? []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-              <select aria-label="Filter shared parts by department" className="h-8 rounded-md border border-input bg-background px-2 text-xs" value={sharedPartDepartment} onChange={event => setSharedPartDepartment(event.target.value)}>
-                <option value="All">All departments</option>
-                {sharedInventoryDepartmentOptions(sharedPartMasters ?? []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
+              <SharedMasterSelect
+                label="Filter shared parts by category"
+                value={sharedPartCategory}
+                onChange={setSharedPartCategory}
+                options={[{ value: "All", label: "All categories" }, ...sharedInventoryCategoryOptions(sharedPartMasters ?? [])]}
+              />
+              <SharedMasterSelect
+                label="Filter shared parts by department"
+                value={sharedPartDepartment}
+                onChange={setSharedPartDepartment}
+                disabled={Boolean(activeDepartment && activeDepartment !== "ALL")}
+                options={[
+                  ...((!activeDepartment || activeDepartment === "ALL") ? [{ value: "All", label: "All departments" }] : []),
+                  ...sharedInventoryDepartmentOptions(sharedPartMasters ?? [])
+                    .filter(option => !activeDepartment || activeDepartment === "ALL" || option.value === activeDepartment),
+                  ...(activeDepartment && activeDepartment !== "ALL" && !sharedInventoryDepartmentOptions(sharedPartMasters ?? []).some(option => option.value === activeDepartment)
+                    ? [{ value: activeDepartment, label: `${activeDepartment} · current department` }]
+                    : []),
+                ]}
+              />
             </div>
           </div>
           {sharedPartCatalogState === "loading" ? (
@@ -2971,7 +3027,26 @@ export function LiveInventoryWorkspace({
 
           <div className="mt-6 grid gap-5 xl:grid-cols-2">
             <section aria-label="Shared inventory allocations" className="rounded-lg border border-border">
-              <div className="border-b border-border px-3 py-2"><h4 className="text-xs font-semibold">Active role allocations ({sharedInventoryAssignments?.length ?? 0})</h4><p className="text-[10px] text-muted-foreground">Project, department, and L1–L4 profile are stored by stable IDs.</p></div>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2"><div><h4 className="text-xs font-semibold">Active role allocations ({sharedInventoryAssignments?.length ?? 0})</h4><p className="text-[10px] text-muted-foreground">Project, department, and L1–L4 profile are stored by stable IDs.</p></div>{(sharedInventoryKitBoms?.length ?? 0) > 0 && <button type="button" disabled={!onIssueSharedInventoryKit || sharedInventoryActionPending} onClick={() => { setKitIssueBomId(sharedInventoryKitBoms?.[0]?.id ?? ""); setKitIssueBuildQuantity("1"); setKitIssueAssignmentIds({}); setKitIssueOpen(true); }} className="h-7 rounded bg-primary px-3 text-[10px] font-semibold text-primary-foreground disabled:opacity-50">Issue BOM kit to build</button>}</div>
+              {kitIssueOpen && <form onSubmit={submitSharedKitIssue} className="grid gap-2 border-b border-border bg-secondary/20 p-3 text-[10px]">
+                <p className="font-semibold">Kit issue consumes assigned component stock at build / kit issue—not at finished-device shipment.</p>
+                <label className="grid gap-1">Released Shared TEST BOM<select required className="h-8 rounded border border-input bg-background px-2" value={kitIssueBomId} onChange={(event) => { setKitIssueBomId(event.target.value); setKitIssueAssignmentIds({}); }}>
+                  {(sharedInventoryKitBoms ?? []).map((bom) => <option key={bom.id} value={bom.id}>{bom.reference} · {bom.title} · {bom.projectReference} · Rev {bom.revision || "—"}</option>)}
+                </select></label>
+                <label className="grid gap-1">Build quantity<input required type="number" min="1" step="1" className="h-8 rounded border border-input bg-background px-2" value={kitIssueBuildQuantity} onChange={(event) => setKitIssueBuildQuantity(event.target.value)} /></label>
+                {sharedInventoryKitBoms?.find((bom) => bom.id === kitIssueBomId)?.lines.map((line) => {
+                  const requiredQty = line.quantityPerUnit * (Number(kitIssueBuildQuantity) || 0);
+                  const candidates = (sharedInventoryAssignments ?? []).filter((allocation) => allocation.projectId === sharedInventoryKitBoms?.find((bom) => bom.id === kitIssueBomId)?.projectId && allocation.partId === line.partId && allocation.quantity >= requiredQty);
+                  return <label key={line.partId} className="grid gap-1">{line.partReference} · {line.quantityPerUnit} {line.unit}/unit · issue {requiredQty} {line.unit}
+                    <select required className="h-8 rounded border border-input bg-background px-2" value={kitIssueAssignmentIds[line.partId] ?? ""} onChange={(event) => setKitIssueAssignmentIds((current) => ({ ...current, [line.partId]: event.target.value }))}>
+                      <option value="">Select matching project allocation</option>
+                      {candidates.map((allocation) => <option key={allocation.id} value={allocation.id}>{allocation.roleName} · remaining {allocation.quantity} · {allocation.location}</option>)}
+                    </select>
+                  </label>;
+                })}
+                <p className="text-muted-foreground">The server checks the released BOM, exact Part IDs, allocations, permissions and quantities in one transaction. No inventory mutation occurs just by opening this form.</p>
+                <div className="flex justify-end gap-2"><button type="button" onClick={() => setKitIssueOpen(false)} className="h-7 rounded border border-border px-3">Cancel</button><button type="submit" disabled={sharedInventoryActionPending || !onIssueSharedInventoryKit} className="h-7 rounded bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50">{sharedInventoryActionPending ? "Issuing…" : "Confirm kit issue"}</button></div>
+              </form>}
               {(sharedInventoryAssignments?.length ?? 0) > 0 ? <div className="max-h-72 overflow-auto"><table className="w-full text-left text-[10px]"><thead className="sticky top-0 bg-secondary/70 text-muted-foreground"><tr><th className="px-3 py-2">Part</th><th className="px-3 py-2">Project</th><th className="px-3 py-2">Profile</th><th className="px-3 py-2 text-right">Remaining</th><th className="px-3 py-2 text-right">Action</th></tr></thead><tbody className="divide-y divide-border">{sharedInventoryAssignments?.map(assignment => <React.Fragment key={assignment.id}><tr><td className="px-3 py-2">{assignment.partReference}</td><td className="px-3 py-2">{assignment.projectReference}</td><td className="px-3 py-2">L{assignment.hierarchyLevel} · {assignment.roleName} ({assignment.departmentCode})</td><td className="px-3 py-2 text-right">{assignment.quantity}</td><td className="px-3 py-2 text-right"><button type="button" disabled={!onSharedInventoryEvent || sharedInventoryActionPending} onClick={() => { setSharedAssignmentActionId(sharedAssignmentActionId === assignment.id ? null : assignment.id); setSharedAssignmentActionQuantity(String(assignment.quantity)); setSharedAssignmentAction("return"); }} className="h-6 rounded border border-border px-2 text-[10px] font-semibold disabled:opacity-50">Return / use</button></td></tr>{sharedAssignmentActionId === assignment.id && <tr className="bg-secondary/30"><td colSpan={5} className="px-3 py-2"><form onSubmit={submitSharedAssignmentClose} className="grid gap-2 md:grid-cols-[130px_90px_1fr_auto] md:items-end"><label className="grid gap-1 text-muted-foreground">Outcome<select aria-label="Allocation close outcome" className="h-7 rounded border border-input bg-background px-2 text-foreground" value={sharedAssignmentAction} onChange={event => setSharedAssignmentAction(event.target.value as typeof sharedAssignmentAction)}><option value="return">Return reusable stock</option><option value="consume">Consume / scrap</option></select></label><label className="grid gap-1 text-muted-foreground">Quantity<input aria-label="Allocation close quantity" type="number" min="0.001" step="0.001" max={assignment.quantity} required className="h-7 rounded border border-input bg-background px-2 text-foreground" value={sharedAssignmentActionQuantity} onChange={event => setSharedAssignmentActionQuantity(event.target.value)} /></label><label className="grid gap-1 text-muted-foreground">Reason<input aria-label="Allocation close reason" required minLength={3} maxLength={500} className="h-7 rounded border border-input bg-background px-2 text-foreground" value={sharedAssignmentActionNote} onChange={event => setSharedAssignmentActionNote(event.target.value)} /></label><button type="submit" disabled={sharedInventoryActionPending} className="h-7 rounded bg-primary px-3 font-semibold text-primary-foreground disabled:opacity-50">{sharedInventoryActionPending ? "Saving…" : "Save"}</button></form></td></tr>}</React.Fragment>)}</tbody></table></div> : <p className="p-3 text-[10px] text-muted-foreground">No shared allocations are recorded.</p>}
             </section>
             <section aria-label="Shared inventory movement audit" className="rounded-lg border border-border">
@@ -3172,7 +3247,7 @@ export function LiveInventoryWorkspace({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {!readOnly && (
+              {!readOnly && assetRegistryMode !== "unavailable" && (
                 <button
                   onClick={() => setBulkAssetModalOpen(true)}
                   className="flex h-8 items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 text-xs font-semibold text-primary hover:bg-primary/20"
@@ -3181,24 +3256,31 @@ export function LiveInventoryWorkspace({
                   <span>+ Bulk Import Assets (.csv)</span>
                 </button>
               )}
-              <button
+              {assetRegistryMode !== "unavailable" && <button
                 onClick={exportAssetRegisterCsv}
                 className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-xs font-semibold text-foreground hover:bg-secondary"
               >
                 <Download className="size-3.5" />
                 <span>Export Asset Register</span>
-              </button>
-              <button
+              </button>}
+              {assetRegistryMode !== "unavailable" && <button
                 onClick={exportCalibrationScheduleCsv}
                 className="flex h-8 items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
               >
                 <Calendar className="size-3.5" />
                 <span>Calibration Schedule</span>
-              </button>
+              </button>}
             </div>
           </div>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {assetRegistryMode === "unavailable" ? (
+            <div className="mt-4 rounded-xl border border-dashed border-border bg-card/40 p-6 text-center">
+              <h4 className="text-sm font-semibold text-foreground">Shared asset register is not connected</h4>
+              <p className="mx-auto mt-2 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                Local sample equipment is hidden in this authenticated workspace. The shared asset and custodian feed, including maintenance and calibration actions, must be connected before this view can show or change company assets.
+              </p>
+            </div>
+          ) : <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {scopedAssets.map((asset) => (
               <div
                 key={asset.id}
@@ -3250,7 +3332,7 @@ export function LiveInventoryWorkspace({
                 </div>
               </div>
             ))}
-          </div>
+          </div>}
         </div>
       )}
 

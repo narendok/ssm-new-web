@@ -44,6 +44,8 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [viewer, "client@example.com"],
     [uuid(7), "procurement@example.com"],
     [uuid(8), "service@example.com"],
+    [uuid(9), "ops.lead@example.com"],
+    [uuid(19), "finance.lead@example.com"],
   ])
     await db.query("INSERT INTO auth.users VALUES($1,$2)", [id, email]);
   await db.query(
@@ -62,6 +64,8 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [viewer, "viewer"],
     [uuid(7), "department_lead"],
     [uuid(8), "department_lead"],
+    [uuid(9), "department_lead"],
+    [uuid(19), "department_lead"],
   ])
     mids[id] = (
       await db.query(
@@ -76,6 +80,9 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [sd, "SAL", admin],
     [uuid(15), "PUR", uuid(7)],
     [uuid(17), "SIT", uuid(8)],
+    [uuid(18), "OPS", uuid(9)],
+    [uuid(20), "FIN", uuid(19)],
+    [uuid(21), "CLIENT", admin],
   ])
     await db.query(
       "INSERT INTO departments(id,organization_id,name,department_type,code,lead_member_id) VALUES($1,$2,$3,$3,$3,$4)",
@@ -107,17 +114,36 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104174711_repair_expense_request_routing_patch.sql"),"utf8"));
   await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104175534_validate_expense_request_details.sql"),"utf8"));
   for (const migration of [
+    "20261119120000_shared_travel_policy_settings.sql",
+    "20261120173000_redact_travel_policy_for_unscoped_roles.sql",
+    "20261119143000_enforce_single_open_travel_advance.sql",
+    "20261119150000_require_active_travel_policy_for_advance_guard.sql",
+    "20261119153000_serialize_single_open_travel_advance.sql",
+  ]) await db.exec(fs.readFileSync(path.join(root,"supabase/migrations",migration),"utf8"));
+  for (const migration of [
     "20261104171344_shared_expense_catalogue.sql",
     "20261106050628_shared_department_service_catalogue.sql",
     "20261106051636_validate_shared_service_catalogue.sql",
     "20261111162055_link_expense_service_catalogue.sql",
     "20261112142917_canonical_expense_supplier_options.sql",
     "20261112142926_service_catalogue_supplier_master_links.sql",
+    "20261120110000_shared_expense_location_catalogue.sql",
   ]) await db.exec(fs.readFileSync(path.join(root, "supabase/migrations", migration), "utf8"));
   await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261112225842_shared_ticket_department_help.sql"), "utf8"));
+  await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261120194500_independent_budget_allocation_approval.sql"), "utf8"));
+  await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261120222032_admin_expense_department_scope.sql"), "utf8"));
+  await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261120233000_internal_budget_allocation_department.sql"), "utf8"));
+  await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261120234000_enforce_active_travel_caps.sql"), "utf8"));
   const patchedBusinessFn=(await db.query("SELECT pg_get_functiondef('mutate_business_workspace(text,jsonb,uuid)'::regprocedure) AS definition")).rows[0].definition;
   assert.match(patchedBusinessFn,/Pending_Procurement/);
   assert.match(patchedBusinessFn,/COALESCE\(data->>'requestType','travel'\)/);
+  assert.match(patchedBusinessFn,/approve_allocation/);
+  assert.match(patchedBusinessFn,/COALESCE\(payload->>'status','Approved'\)='Approved'/);
+  assert.match(patchedBusinessFn,/EXPENSE_DEPARTMENT_OVERRIDE_DENIED/);
+  assert.match(patchedBusinessFn,/active AND upper\(code\)<>'CLIENT'/);
+  assert.match(patchedBusinessFn,/Pending_Policy_Exception/);
+  const patchedNotifyFn=(await db.query("SELECT pg_get_functiondef('private.business_notify(uuid)'::regprocedure) AS definition")).rows[0].definition;
+  assert.match(patchedNotifyFn,/Pending_Policy_Exception/);
   async function as(user, callback) {
     await db.query("SELECT set_config('request.jwt.claim.sub',$1,false)", [user ?? ""]);
     await db.exec("SET ROLE authenticated");
@@ -149,6 +175,82 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   async function loadExpenseCatalogue(user) {
     return as(user, async () => (await db.query("SELECT get_expense_catalogue(NULL) result")).rows[0].result);
   }
+  const policyBefore = (await as(admin, async () => db.query("SELECT get_travel_policy(NULL) result"))).rows[0].result;
+  assert.equal(policyBefore.company.status, "Draft", "illustrative policy is not active by default");
+  assert.equal(policyBefore.companyVersion, 0);
+  assert.equal(policyBefore.canManageCompany, true);
+  await assert.rejects(
+    as(hw, async () => db.query("SELECT save_travel_policy($1,$2::jsonb,0,false)", [hd, JSON.stringify(policyBefore.company)])),
+    /TRAVEL_POLICY_MANAGE_DENIED/,
+    "a non-OPS department lead cannot edit another department's policy",
+  );
+  const draftToSave = { ...policyBefore.company, effectiveFrom: "2026-11-20" };
+  const savedDraft = (await as(admin, async () => db.query(
+    "SELECT save_travel_policy(NULL,$1::jsonb,0,false) result", [JSON.stringify(draftToSave)],
+  ))).rows[0].result;
+  assert.equal(savedDraft.company.status, "Draft");
+  assert.equal(savedDraft.companyDraft.status, "Draft");
+  assert.equal(savedDraft.companyVersion, 1);
+  const publishedPolicy = (await as(admin, async () => db.query(
+    "SELECT save_travel_policy(NULL,$1::jsonb,1,true) result", [JSON.stringify(draftToSave)],
+  ))).rows[0].result;
+  assert.equal(publishedPolicy.company.status, "Active");
+  assert.equal(publishedPolicy.companyDraft, null);
+  assert.equal(publishedPolicy.companyVersion, 2);
+  const unscopedPolicy = (await as(hw, async () => db.query("SELECT get_travel_policy(NULL) result"))).rows[0].result;
+  assert.equal(unscopedPolicy.canView, false, "non-OPS leads cannot view stored company policy settings");
+  assert.equal(unscopedPolicy.companyVersion, 0, "stored policy version is not disclosed outside Admin/OPS");
+  assert.equal(unscopedPolicy.companyDraft, null);
+  assert.equal(unscopedPolicy.company.effectiveFrom, null, "the saved effective date is redacted");
+  const opsScope = (await as(uuid(9), async () => db.query("SELECT get_travel_policy($1) result", [uuid(18)]))).rows[0].result;
+  assert.equal(opsScope.canManageDepartment, true, "OPS lead can manage the OPS scope");
+  assert.equal(opsScope.ownDepartment, uuid(18));
+  const opsValue = {
+    ...publishedPolicy.company,
+    advancePercent: 70,
+    bands: publishedPolicy.company.bands.map(band => ({
+      ...band,
+      hotelMetro: Math.floor(band.hotelMetro * 0.9),
+      hotelOther: Math.floor(band.hotelOther * 0.9),
+      mealsPerDay: Math.floor(band.mealsPerDay * 0.9),
+      localPerDay: Math.floor(band.localPerDay * 0.9),
+    })),
+  };
+  const savedOpsPolicy = (await as(uuid(9), async () => db.query(
+    "SELECT save_travel_policy($1,$2::jsonb,0,false) result", [uuid(18), JSON.stringify(opsValue)],
+  ))).rows[0].result;
+  assert.equal(savedOpsPolicy.department.status, "Active", "OPS lead saves only the own-department policy beneath published company limits");
+  await assert.rejects(
+    as(uuid(9), async () => db.query("SELECT save_travel_policy($1,$2::jsonb,1,false)", [hd, JSON.stringify(opsValue)])),
+    /TRAVEL_POLICY_MANAGE_DENIED/,
+  );
+  const overCapOpsPolicy = {
+    ...opsValue,
+    bands: opsValue.bands.map((band, index) => index === 0 ? { ...band, hotelMetro: publishedPolicy.company.bands[0].hotelMetro + 1 } : band),
+  };
+  await assert.rejects(
+    as(uuid(9), async () => db.query("SELECT save_travel_policy($1,$2::jsonb,1,false)", [uuid(18), JSON.stringify(overCapOpsPolicy)])),
+    /DEPARTMENT_POLICY_EXCEEDS_COMPANY_CAP/,
+  );
+  const approvedLocation=(await as(admin,async()=>db.query("SELECT manage_expense_location(NULL,'TEST Pilot Office','Bengaluru','metro',true) result"))).rows[0].result;
+  assert.equal(approvedLocation.name,'TEST Pilot Office');
+  assert.equal((await loadExpenseCatalogue(employee)).locations.find(location=>location.id===approvedLocation.id).cityTier,'metro','all authorized departments read the same canonical accounting locations');
+  await assert.rejects(as(hw,()=>db.query("SELECT manage_expense_location(NULL,'TEST Unauthorized Office','Pune','other',true)")),/EXPENSE_LOCATION_ADMIN_REQUIRED/);
+  const locationRequestKey=crypto.randomUUID();
+  const locationRequest=(await as(employee,async()=>db.query("SELECT request_expense_location($1::jsonb,$2) result",[JSON.stringify({name:'TEST East Service Centre',city:'Pune',reason:'Required for planned supplier reimbursement visits'}),locationRequestKey]))).rows[0].result;
+  assert.equal(locationRequest.status,'Pending');
+  assert.equal((await loadExpenseCatalogue(employee)).locationRequests.length,1,'requester can track their location proposal');
+  assert.equal((await loadExpenseCatalogue(qa)).locationRequests.length,0,'other departments cannot read an employee’s location proposal');
+  assert.equal((await loadExpenseCatalogue(admin)).locationRequests[0].requesterName,'member');
+  await assert.rejects(as(hw,()=>db.query("SELECT review_expense_location($1,'approve',NULL,NULL,'other',NULL)",[locationRequest.id])),/EXPENSE_LOCATION_REVIEW_DENIED/);
+  await as(admin,()=>db.query("SELECT review_expense_location($1,'approve',NULL,NULL,'other',NULL)",[locationRequest.id]));
+  const approvedRequestedLocation=(await loadExpenseCatalogue(employee)).locations.find(location=>location.city==='Pune');
+  assert.equal(approvedRequestedLocation.name,'TEST East Service Centre','Finance/Admin approval makes a location available to all clients from the shared catalogue');
+  await call(admin, "save_profile", { data: { memberId: mids[employee], employeeCode: "TEST-EMP-01", email: "employee.ehw@example.com", travelBand: "staff" } });
+  assert.equal((await db.query("SELECT payload->>'travelBand' band FROM business_items WHERE organization_id=$1 AND kind='profile' AND owner_id=$2", [org, mids[employee]])).rows[0]?.band, "staff", "HR profile saves the authorized travel band used by the server policy check");
+  const effectiveTravel = (await as(employee, async () => db.query("SELECT get_effective_travel_policy($1,$2::date) result", [hd, "2026-12-20"]))).rows[0].result;
+  assert.equal(effectiveTravel.employeeBand, "staff");
+  assert.equal(effectiveTravel.isEffective, true);
   await assert.rejects(load(null), /MEMBERSHIP_REQUIRED/);
   const supplierMasterId=uuid(30);
   await db.query("INSERT INTO operational_records(id,organization_id,department_id,area,record_type,reference,title,created_by,updated_by) VALUES($1,$2,$3,'procurement','Supplier','SUP-TEST-001','TEST approved component supplier',$4,$4)",[supplierMasterId,org,uuid(15),admin]);
@@ -176,25 +278,34 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     end = new Date(now.getTime() + 86400000 * 30).toISOString().slice(0, 10);
   await assert.rejects(
     call(admin, "allocate", {
-      data: { departmentId: hd, category: "Travel", allocatedAmount: 1000, currency: "INR" },
+      data: { departmentId: hd, category: "Travel & Transport", allocatedAmount: 1000, currency: "INR" },
     }),
     /INVALID_ALLOCATION/,
   );
   await assert.rejects(
+    call(admin, "allocate", { data: {
+      departmentId: hd, category: "Unlisted free-text category", allocatedAmount: 1000,
+      currency: "INR", periodId: "invalid-category", startDate: start, endDate: end,
+    } }),
+    /INVALID_ALLOCATION/,
+    "allocations accept only the selected department's active Finance categories",
+  );
+  await assert.rejects(
     call(employee, "request_expense", {
-      data: { category: "Travel", amount: 100, currency: "INR", purpose: "Missing date" },
+      data: { category: "Travel & Transport", amount: 100, currency: "INR", purpose: "Missing date" },
     }),
     /INVALID_EXPENSE/,
   );
   const validBase={category:"Travel & Transport",amount:100,currency:"INR",purpose:"Customer / Supplier / Site Visit",requiredDate:new Date(Date.now()+86400000).toISOString().slice(0,10)};
-  await assert.rejects(call(employee,"request_expense",{data:{...validBase,requestType:"travel"}}),/INVALID_TRAVEL_DETAILS/);
+  await assert.rejects(call(employee,"request_expense",{data:{...validBase,category:"Unlisted free-text category",requestType:"reimbursement",merchant:"TEST rail",expenseDate:validBase.requiredDate}}),/INVALID_EXPENSE/);
+  await assert.rejects(call(employee,"request_expense",{data:{...validBase,requestType:"travel"}}),/APPROVED_EXPENSE_LOCATION_REQUIRED/);
   await assert.rejects(call(employee,"request_expense",{data:{...validBase,requestType:"reimbursement",merchant:"TEST rail"}}),/INVALID_REIMBURSEMENT_DETAILS/);
   await assert.rejects(call(employee,"request_expense",{data:{...validBase,requestType:"purchase",purchaseKind:"goods",itemOrService:"TEST component order"}}),/INVALID_PURCHASE_QUANTITY/);
   const alloc = (
     await call(admin, "allocate", {
       data: {
         departmentId: hd,
-        category: "Travel",
+        category: "Travel & Transport",
         allocatedAmount: 1000,
         currency: "INR",
         periodId: "test",
@@ -203,10 +314,33 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
       },
     })
   ).id;
+  await assert.rejects(
+    call(admin, "allocate", { data: {
+      departmentId: uuid(21), category: "Travel & Transport", allocatedAmount: 1000,
+      currency: "INR", periodId: "test-client", startDate: start, endDate: end,
+    } }),
+    /INVALID_DEPARTMENT/,
+    "the shared RPC rejects budget allocations for client accounts even if the UI is bypassed",
+  );
+  await assert.rejects(
+    call(admin, "allocate", { data: {
+      departmentId: hd, category: "Unlisted free-text category", allocatedAmount: 1000,
+      currency: "INR", periodId: "test-invalid-category", startDate: start, endDate: end,
+    } }),
+    /INVALID_ALLOCATION/,
+    "the shared RPC rejects unconfigured allocation categories",
+  );
+  let allocationRow = (await load(admin)).items.find((i) => i.id === alloc);
+  assert.equal(allocationRow.data.status, "Pending_Approval");
+  assert.equal(allocationRow.data.approvedBy, undefined, "creator is never recorded as approver");
+  await assert.rejects(
+    call(admin, "approve_allocation", { id: alloc, version: allocationRow.version, data: {} }),
+    /SELF_APPROVAL_DENIED/,
+  );
   const requestKey = crypto.randomUUID();
   const payload = {
     data: {
-      category: "Travel",
+      category: "Travel & Transport",
       amount: 600,
       currency: "INR",
       purpose: "Synthetic test trip",
@@ -216,6 +350,19 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
       expenseDate: end,
     },
   };
+  await assert.rejects(
+    call(employee, "request_expense", { data: { ...payload.data, departmentId: qd } }),
+    /EXPENSE_DEPARTMENT_OVERRIDE_DENIED/,
+    "a department member cannot target a different department through submitted data",
+  );
+  const adminScopedExpense = (await call(admin, "request_expense", {
+    data: { ...payload.data, departmentId: qd, purpose: "TEST QA site reimbursement" },
+  })).id;
+  assert.equal(
+    (await load(admin)).items.find((item) => item.id === adminScopedExpense).departmentId,
+    qd,
+    "Admin-selected department scope is persisted by the shared mutation",
+  );
   const req = (await call(employee, "request_expense", payload, requestKey)).id;
   assert.equal((await call(employee, "request_expense", payload, requestKey)).id, req);
   await assert.rejects(
@@ -233,6 +380,23 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     (await load(qa)).items.some((i) => i.id === req),
     false,
   );
+  await assert.rejects(
+    call(admin, "approve_expense", { id: req, version: row.version, data: { allocationId: alloc } }),
+    /EXACT_ACTIVE_ALLOCATION_REQUIRED/,
+    "pending allocations cannot fund expense approvals",
+  );
+  await assert.rejects(
+    call(viewer, "approve_allocation", { id: alloc, version: allocationRow.version, data: {} }),
+    /ITEM_UNAVAILABLE/,
+  );
+  await call(uuid(19), "approve_allocation", {
+    id: alloc,
+    version: allocationRow.version,
+    data: {},
+  });
+  allocationRow = (await load(admin)).items.find((i) => i.id === alloc);
+  assert.equal(allocationRow.data.status, "Approved");
+  assert.equal(allocationRow.data.approvedBy, mids[uuid(19)]);
   await assert.rejects(
     call(employee, "approve_expense", { id: req, version: row.version, data: {} }),
     /SELF_APPROVAL/,
@@ -275,6 +439,17 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     }),
     /STALE_VERSION/,
   );
+  const rejectedAllocationId = (await call(admin, "allocate", { data: {
+    departmentId: hd, category: "Travel & Transport", allocatedAmount: 200, currency: "INR",
+    periodId: "test-rejected", startDate: start, endDate: end,
+  } })).id;
+  const rejectedAllocation = (await load(admin)).items.find((i) => i.id === rejectedAllocationId);
+  await assert.rejects(
+    call(uuid(19), "reject_allocation", { id: rejectedAllocationId, version: rejectedAllocation.version, data: { reason: "no" } }),
+    /REASON_REQUIRED/,
+  );
+  await call(uuid(19), "reject_allocation", { id: rejectedAllocationId, version: rejectedAllocation.version, data: { reason: "TEST allocation not authorized" } });
+  assert.equal((await load(admin)).items.find((i) => i.id === rejectedAllocationId).data.status, "Rejected");
   await assert.rejects(call(employee,"request_expense",{data:{...payload.data,requestType:"purchase",purchaseKind:"goods",itemOrService:"TEST unknown supplier",quantity:1,supplierId:uuid(32)}}),/INVALID_SUPPLIER/);
   const purchase=(await call(employee,"request_expense",{data:{...payload.data,requestType:"purchase",purchaseKind:"goods",itemOrService:"TEST sensor evaluation quantity",quantity:4,projectId:projectMasterId,supplierId:supplierMasterId,supplierName:"Forged supplier label"}})).id;
   const savedPurchase=(await load(employee)).items.find(i=>i.id===purchase);
@@ -289,8 +464,10 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   await call(uuid(7),"approve_expense",{id:purchase,version:procurementItem.version,data:{}});
   assert.equal((await load(employee)).items.find(i=>i.id===purchase).data.status,"Pending_Finance");
   const travel = (await call(employee, "request_expense", { data: {
-    ...payload.data, requestType: "travel", destination: "TEST client site",
+    ...payload.data, requestType: "travel", destination: "forged client text", locationId: approvedLocation.id,
     travelStartDate: end, travelEndDate: end,
+    travelTransportEstimate: 750, travelHotelRate: 0, travelHotelNights: 0,
+    travelMealRate: 0, travelMealDays: 1, travelLocalRate: 0, travelLocalDays: 1,
   } })).id;
   const service = (await call(employee, "request_expense", { data: {
     ...payload.data, requestType: "purchase", purchaseKind: "service",
@@ -298,6 +475,64 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   } })).id;
   const employeeItems = (await load(employee)).items;
   assert.equal(employeeItems.find(item => item.id === travel).data.status, "Pending_Finance");
+  assert.equal(employeeItems.find(item => item.id === travel).data.locationId,approvedLocation.id,'travel request persists the canonical Location ID');
+  assert.equal(employeeItems.find(item => item.id === travel).data.destination,'TEST Pilot Office · Bengaluru','server derives the persisted location label from the selected master');
+  assert.equal(employeeItems.find(item => item.id === travel).data.locationCityTier,'metro');
+  assert.equal(employeeItems.find(item => item.id === travel).data.travelPolicyBand, 'staff');
+  assert.equal(employeeItems.find(item => item.id === travel).data.travelAdvanceCap, 600);
+  assert.equal(employeeItems.find(item => item.id === travel).data.policyExceptionStatus, 'Not_Required');
+  await call(admin, "save_profile", { data: { memberId: mids[qa], employeeCode: "TEST-QA-01", email: "qa@example.com", travelBand: "manager" } });
+  const committedBeforePolicyException = Number((await db.query("SELECT COALESCE(sum((payload->>'committedAmount')::numeric),0) total FROM business_items WHERE organization_id=$1 AND kind='allocation'", [org])).rows[0].total);
+  const policyExceptionId = (await call(qa, "request_expense", { data: {
+    ...payload.data, requestType: "travel", amount: 700, destination: "TEST exception review trip",
+    locationId: approvedLocation.id, travelStartDate: end, travelEndDate: end,
+    travelTransportEstimate: 0, travelHotelRate: 6000, travelHotelNights: 1,
+    travelMealRate: 0, travelMealDays: 1, travelLocalRate: 0, travelLocalDays: 1,
+    travelPolicyExceptionReason: "TEST hotel rate above approved band limit",
+  } })).id;
+  const pendingException = (await load(qa)).items.find(item => item.id === policyExceptionId);
+  assert.equal(pendingException.data.status, "Pending_Policy_Exception");
+  assert.equal(pendingException.data.policyExceptionStatus, "Pending");
+  assert.ok((await load(uuid(19))).items.some(item => item.id === policyExceptionId), "Finance can read the exception it is asked to review");
+  assert.ok((await db.query("SELECT 1 FROM private.business_notifications WHERE item_id=$1 AND recipient_id=$2", [policyExceptionId, mids[uuid(19)]])).rows.length, "Finance receives a notification for a pending policy exception");
+  await assert.rejects(call(qa, "approve_travel_exception", { id: policyExceptionId, version: pendingException.version, data: {} }), /FINANCE_AUTHORITY_REQUIRED/);
+  await call(uuid(19), "approve_travel_exception", { id: policyExceptionId, version: pendingException.version, data: {} });
+  const clearedException = (await load(qa)).items.find(item => item.id === policyExceptionId);
+  assert.equal(clearedException.data.policyExceptionStatus, "Approved");
+  assert.equal(clearedException.data.status, clearedException.data.policyNormalStatus, "exception approval continues through the original approval path");
+  assert.equal(Number((await db.query("SELECT COALESCE(sum((payload->>'committedAmount')::numeric),0) total FROM business_items WHERE organization_id=$1 AND kind='allocation'", [org])).rows[0].total), committedBeforePolicyException, "policy-exception review alone does not reserve additional budget");
+  await call(admin, "save_profile", { data: { memberId: mids[uuid(19)], employeeCode: "TEST-FIN-01", email: "finance.lead@example.com", travelBand: "manager" } });
+  const financeExceptionId = (await call(uuid(19), "request_expense", { data: {
+    ...payload.data, requestType: "travel", amount: 700, destination: "TEST finance self-review trip",
+    locationId: approvedLocation.id, travelStartDate: end, travelEndDate: end,
+    travelTransportEstimate: 0, travelHotelRate: 6000, travelHotelNights: 1,
+    travelMealRate: 0, travelMealDays: 1, travelLocalRate: 0, travelLocalDays: 1,
+    travelPolicyExceptionReason: "TEST rate above assigned band limit",
+  } })).id;
+  const financeException = (await load(uuid(19))).items.find(item => item.id === financeExceptionId);
+  await assert.rejects(call(uuid(19), "approve_travel_exception", { id: financeExceptionId, version: financeException.version, data: {} }), /SELF_APPROVAL_DENIED/);
+  await call(admin, "approve_travel_exception", { id: financeExceptionId, version: financeException.version, data: {} });
+  await call(admin, "save_profile", { data: { memberId: mids[fw], employeeCode: "TEST-FW-01", email: "fw@example.com", travelBand: "staff" } });
+  const rejectedExceptionId = (await call(fw, "request_expense", { data: {
+    ...payload.data, requestType: "travel", amount: 700, destination: "TEST rejected exception trip",
+    locationId: approvedLocation.id, travelStartDate: end, travelEndDate: end,
+    travelTransportEstimate: 0, travelHotelRate: 6000, travelHotelNights: 1,
+    travelMealRate: 0, travelMealDays: 1, travelLocalRate: 0, travelLocalDays: 1,
+    travelPolicyExceptionReason: "TEST rate above assigned band limit",
+  } })).id;
+  const rejectedException = (await load(fw)).items.find(item => item.id === rejectedExceptionId);
+  await assert.rejects(call(uuid(19), "reject_travel_exception", { id: rejectedExceptionId, version: rejectedException.version, data: { reason: "" } }), /REASON_REQUIRED/);
+  await call(uuid(19), "reject_travel_exception", { id: rejectedExceptionId, version: rejectedException.version, data: { reason: "TEST exception does not meet company policy" } });
+  const savedRejectedException = (await load(fw)).items.find(item => item.id === rejectedExceptionId);
+  assert.equal(savedRejectedException.data.status, "Rejected");
+  assert.equal(savedRejectedException.data.policyExceptionStatus, "Rejected");
+  assert.equal(savedRejectedException.data.policyExceptionDecisionReason, "TEST exception does not meet company policy");
+  await assert.rejects(call(employee, "request_expense", { data: {
+    ...payload.data, requestType: "travel", locationId: approvedLocation.id,
+    travelStartDate: end, travelEndDate: end,
+    travelTransportEstimate: 750, travelHotelRate: 0, travelHotelNights: 0,
+    travelMealRate: 0, travelMealDays: 1, travelLocalRate: 0, travelLocalDays: 1,
+  } }), /ACTIVE_TRAVEL_ADVANCE_EXISTS/, "an active one-open-advance policy blocks a second unsettled advance");
   assert.equal(employeeItems.find(item => item.id === service).data.status, "Pending_Procurement");
   assert.equal(employeeItems.find(item => item.id === service).data.serviceCatalogueId, "calibration");
   assert.equal(employeeItems.find(item => item.id === service).data.serviceCatalogueName, "Equipment calibration & maintenance");
@@ -351,7 +586,8 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   assert.equal((await load(hw)).items.find(item => item.id === hardwareService).data.serviceCatalogueName, "EHW calibration");
   await assert.rejects(call(hw, "request_expense", {
     data: { ...departmentRequest, departmentId: qd, serviceCatalogueId: "qa-calibration" },
-  }), /EXPENSE_SERVICE_CATALOGUE_ENTRY_REQUIRED/);
+  }), /EXPENSE_DEPARTMENT_OVERRIDE_DENIED/,
+  "a department lead cannot change the expense department to reach another catalogue");
   const ticket = (
     await call(employee, "ticket_create", {
       data: {

@@ -4,6 +4,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   sharedInventoryEventInputSchema,
   sharedInventoryEventResultSchema,
+  sharedInventoryKitIssueInputSchema,
+  sharedInventoryKitIssueResultSchema,
   sharedInventoryPartCatalogSchema,
 } from "./shared-inventory.schema";
 
@@ -13,6 +15,10 @@ interface SharedInventoryRpc {
     error: { message: string } | null;
   }>;
   rpc(name: "record_shared_inventory_event", args: { p_action: string; p_payload: Json }): Promise<{
+    data: unknown;
+    error: { message: string } | null;
+  }>;
+  rpc(name: "issue_shared_inventory_bom_kit", args: { p_payload: Json }): Promise<{
     data: unknown;
     error: { message: string } | null;
   }>;
@@ -39,4 +45,16 @@ export const recordSharedInventoryEvent = createServerFn({ method: "POST" })
     );
     if (error) throw new Error(error.message);
     return sharedInventoryEventResultSchema.parse(result);
+  });
+
+export const issueSharedInventoryBomKit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(sharedInventoryKitIssueInputSchema)
+  .handler(async ({ data, context }) => {
+    const { data: result, error } = await (context.supabase as unknown as SharedInventoryRpc).rpc(
+      "issue_shared_inventory_bom_kit",
+      { p_payload: data as Json },
+    );
+    if (error) throw new Error(error.message);
+    return sharedInventoryKitIssueResultSchema.parse(result);
   });

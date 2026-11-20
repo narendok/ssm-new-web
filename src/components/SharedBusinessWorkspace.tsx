@@ -1,5 +1,5 @@
 import { useOrganizationConfiguration } from '@/lib/organization-configuration';
-import { getExpenseCatalogue } from '@/lib/expense-settings.functions';
+import { getEffectiveTravelPolicy, getExpenseCatalogue, requestExpenseLocation } from '@/lib/expense-settings.functions';
 import { suggestExpenseCategoryForStage } from '@/lib/expense-suggestions';
 import { ExpenseSettingsPanel } from './ExpenseSettingsPanel';
 import { useRef, useState } from "react";
@@ -31,6 +31,7 @@ import type { DepartmentHelpRequest, ServiceTicket } from "@/lib/service-tickets
 import { personalAssignments } from "@/lib/business-presentation";
 import { SharedMasterSelect } from "./SharedMasterSelect";
 import { mergeCanonicalSupplierOptions } from "@/lib/shared-master-options";
+import { evaluateTravelEstimate, travelDateValidationMessage } from "@/lib/expense-validation";
 
 type Question = { id: string; label: string; type: string; required: boolean; options?: string[] };
 const input = "rounded-md border border-input bg-background px-2 py-1.5 text-sm w-full";
@@ -48,12 +49,34 @@ export function canonicalSupplierDisplay(
   const supplier = id ? suppliers.find((item) => item.id === id) : undefined;
   return supplier ? `${supplier.reference} · ${supplier.title}` : str(savedName);
 }
+function ExpenseLocationRequest({onRequested,disabled}:{onRequested:()=>void;disabled:boolean}) {
+  const send=useServerFn(requestExpenseLocation);
+  const [open,setOpen]=useState(false),[name,setName]=useState(""),[city,setCity]=useState(""),[reason,setReason]=useState(""),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
+  return <div className="space-y-2">
+    <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={()=>setOpen(value=>!value)}>{open?"Cancel location request":"Location not listed? Request it"}</Button>
+    {open&&<div className="grid gap-2 rounded-md border p-3">
+      <p className="text-xs text-muted-foreground">Finance/Admin reviews proposed locations. A requested location cannot be used until approved.</p>
+      <input className={input} aria-label="Requested location name" placeholder="Facility / location name" value={name} onChange={event=>setName(event.target.value)}/>
+      <input className={input} aria-label="Requested location city" placeholder="City" value={city} onChange={event=>setCity(event.target.value)}/>
+      <input className={input} aria-label="Why this location is needed" placeholder="Reason for adding this location" value={reason} onChange={event=>setReason(event.target.value)}/>
+      <Button type="button" size="sm" disabled={busy||disabled||name.trim().length<2||city.trim().length<2||reason.trim().length<3} onClick={()=>{
+        setBusy(true);setMessage("");
+        void send({data:{name:name.trim(),city:city.trim(),reason:reason.trim(),requestId:crypto.randomUUID()}}).then(()=>{setMessage("Sent to Finance/Admin for review.");setName("");setCity("");setReason("");onRequested();}).catch(error=>setMessage(error instanceof Error?error.message:"Location request failed.")).finally(()=>setBusy(false));
+      }}>{busy?"Sending…":"Request location review"}</Button>
+      {message&&<p role="status" className="text-xs">{message}</p>}
+    </div>}
+  </div>;
+}
 export function SharedBusinessWorkspace({
   view,
   membership,
+  departmentScopeCode,
+  adminAllDepartments,
 }: {
   view: string;
   membership: TestMembership;
+  departmentScopeCode: string | null;
+  adminAllDepartments: boolean;
 }) {
   const departmentConfiguration=useOrganizationConfiguration(membership.membershipId);
   const load = useServerFn(getBusinessWorkspace),
@@ -75,8 +98,25 @@ export function SharedBusinessWorkspace({
     [notice, setNotice] = useState(""),
     [search, setSearch] = useState("");
   const loadExpenseCatalogue=useServerFn(getExpenseCatalogue);
-  const expenseDepartment=values['departmentId'] || query.data?.departments.find(d=>d.code===membership.departmentCode)?.id || null;
-  const expenseOptions=useQuery({queryKey:['expense-settings',membership.organizationId,expenseDepartment],queryFn:()=>loadExpenseCatalogue({data:{department:expenseDepartment}}),enabled:view==='budgets'});
+  const loadEffectiveTravelPolicy=useServerFn(getEffectiveTravelPolicy);
+  const workspaceAdmin = membership.role === "admin";
+  const fixedExpenseDepartment = query.data?.departments.find((department) =>
+    department.code.toUpperCase() ===
+      (workspaceAdmin ? departmentScopeCode : membership.departmentCode)?.toUpperCase(),
+  ) || (!adminAllDepartments ? query.data?.departments.find((department) =>
+    department.code.toUpperCase() === membership.departmentCode?.toUpperCase(),
+  ) : undefined);
+  const expenseDepartment = action === "allocate"
+    ? values["departmentId"] || (adminAllDepartments ? null : fixedExpenseDepartment?.id || null)
+    : adminAllDepartments
+      ? values["departmentId"] || null
+      : fixedExpenseDepartment?.id || null;
+  const expenseOptions=useQuery({queryKey:['expense-settings',membership.organizationId,expenseDepartment],queryFn:()=>loadExpenseCatalogue({data:{department:expenseDepartment}}),enabled:view==='budgets'&&Boolean(expenseDepartment)});
+  const effectiveTravelPolicyQuery=useQuery({
+    queryKey:['effective-travel-policy',membership.organizationId,membership.membershipId,expenseDepartment,values['travelStartDate']||businessDate()],
+    queryFn:()=>loadEffectiveTravelPolicy({data:{department:expenseDepartment!,travelDate:values['travelStartDate']||businessDate()}}),
+    enabled:action==='request_expense'&&(values['requestType']||'travel')==='travel'&&Boolean(expenseDepartment),
+  });
   const pending = useRef<{ signature: string; id: string } | null>(null);
 
   const lock = useRef(false);
@@ -142,6 +182,21 @@ export function SharedBusinessWorkspace({
     );
   const canonicalSuppliers = mergeCanonicalSupplierOptions(expenseOptions.data?.suppliers, data.suppliers);
   const expenseProject = data.projects.find(project => project.id === values['projectId']);
+  const travelLocation=expenseOptions.data?.locations.find(location=>location.id===values['locationId']);
+  const travelDays=(()=>{
+    const start=values['travelStartDate'],end=values['travelEndDate'];
+    if(!start||!end)return 0;
+    const startTime=Date.parse(`${start}T00:00:00Z`),endTime=Date.parse(`${end}T00:00:00Z`);
+    return Number.isFinite(startTime)&&Number.isFinite(endTime)&&endTime>=startTime?Math.floor((endTime-startTime)/86400000)+1:0;
+  })();
+  const activeTravelPolicy=effectiveTravelPolicyQuery.data?.isEffective?effectiveTravelPolicyQuery.data:undefined;
+  const travelEstimatePreview=activeTravelPolicy?.band&&travelLocation?evaluateTravelEstimate({
+    band:activeTravelPolicy.band,cityTier:travelLocation.cityTier,advancePercent:activeTravelPolicy.policy.advancePercent,
+    amount:Number(values['amount']||0),transportEstimate:Number(values['travelTransportEstimate']||0),
+    hotelRate:Number(values['travelHotelRate']||0),hotelNights:Number(values['travelHotelNights']||0),
+    mealRate:Number(values['travelMealRate']||0),mealDays:Number(values['travelMealDays']||travelDays),
+    localRate:Number(values['travelLocalRate']||0),localDays:Number(values['travelLocalDays']||travelDays),tripDays:travelDays,
+  }):null;
   const expenseService = expenseOptions.data?.services.find(service => service.id === values['serviceCatalogueId']);
   const expenseCategorySuggestion = suggestExpenseCategoryForStage(
     expenseProject?.currentStage,
@@ -191,6 +246,9 @@ export function SharedBusinessWorkspace({
         <input
           className={input}
           type={type}
+          min={type === "number" ? 0 : undefined}
+          max={type === "number" ? 1000000000000 : undefined}
+          step={type === "number" ? "0.01" : undefined}
           required={required}
           value={values[name] || ""}
           onChange={(e) => setValues({ ...values, [name]: e.target.value })}
@@ -274,8 +332,28 @@ export function SharedBusinessWorkspace({
         financeLimit: values["financeLimit"] ? Number(values["financeLimit"]) : null,
       };
     if (action === "request_expense") {
+      if (!expenseDepartment) {
+        setError("Choose a department before creating the expense request.");
+        return;
+      }
       if(!expenseOptions.data){setError('Expense settings are unavailable. Retry before submitting.');return;}
-      payload = { ...payload, category: values['category'], amount: Number(values['amount']), purchaseKind: values['purchaseKind'] || 'goods', purpose: values['requestType']==='purchase' ? values['itemOrService'] : values['requestType']==='reimbursement' ? values['merchant'] : values['destination'], requestType: values['requestType'] || 'travel' };
+      if (!expenseOptions.data.categories.includes(values["category"] || "")) {
+        setError("Choose a Finance category configured for the selected department.");
+        return;
+      }
+      if((values['requestType']||'travel')==='travel'){
+        const dateError=travelDateValidationMessage(values['travelStartDate'],values['travelEndDate']);
+        if(dateError){setError(dateError);return;}
+        if(!values['locationId']){setError('Choose an approved shared location.');return;}
+        if(effectiveTravelPolicyQuery.error){setError('The applicable travel policy could not be checked. Retry before submitting.');return;}
+        if(effectiveTravelPolicyQuery.isPending){setError('Loading the applicable travel policy. Retry in a moment.');return;}
+        if(effectiveTravelPolicyQuery.data?.isEffective){
+          if(!effectiveTravelPolicyQuery.data.employeeBand||!effectiveTravelPolicyQuery.data.band){setError('HR/Admin must assign your travel-policy band in your shared profile before a capped travel request can be submitted.');return;}
+          if(!travelEstimatePreview||travelEstimatePreview.estimate<=0){setError('Enter a valid itemized travel estimate within the trip dates.');return;}
+          if(travelEstimatePreview.requiresException&&(values['travelPolicyExceptionReason']||'').trim().length<3){setError('Add a reason for the travel-policy exception so Finance/Admin can review it.');return;}
+        }
+      }
+      payload = { ...payload, departmentId: expenseDepartment, category: values['category'], amount: Number(values['amount']), purchaseKind: values['purchaseKind'] || 'goods', purpose: values['requestType']==='purchase' ? values['itemOrService'] : values['requestType']==='reimbursement' ? values['merchant'] : values['destination'], requestType: values['requestType'] || 'travel', ...(values['requestType']==='travel'?{locationId:values['locationId'],travelHotelRate:values['travelHotelRate']||'0',travelHotelNights:values['travelHotelNights']||'0',travelMealRate:values['travelMealRate']||'0',travelMealDays:values['travelMealDays']||String(travelDays),travelLocalRate:values['travelLocalRate']||'0',travelLocalDays:values['travelLocalDays']||String(travelDays),travelTransportEstimate:values['travelTransportEstimate']||'0',travelPolicyExceptionReason:values['travelPolicyExceptionReason']||''}: {}) };
     }
     if (action === 'request_expense' && values['requestType']==='purchase' && values['purchaseKind']==='service') {
       if (!expenseService) {
@@ -322,7 +400,7 @@ export function SharedBusinessWorkspace({
     <div className="space-y-4">
       {notice&&<p role="status" className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs">{notice}</p>}
       {error&&!action&&<p role="alert" className="text-sm text-destructive">{error}</p>}
-      {view==='budgets'&&<><ExpenseSettingsPanel accountKey={membership.organizationId+membership.membershipId} departments={data.departments}/><SharedBudgetPresentation data={data} membership={membership} onAction={open}/></>}
+      {view==='budgets'&&<><ExpenseSettingsPanel accountKey={membership.organizationId+membership.membershipId} departments={data.departments} canViewTravelPolicy={admin||(lead&&actor.department_code==="OPS")}/><SharedBudgetPresentation data={data} membership={membership} onAction={open}/></>}
           {view === "tickets" && <ServiceTicketsWorkspace
         ticketGroups={departmentConfiguration.data?.departments.find(d=>d.code==="SIT")?.ticketGroups ?? []}
         departmentOptions={data.departments}
@@ -485,21 +563,57 @@ export function SharedBusinessWorkspace({
           <DialogHeader>
             <DialogTitle>{action === 'request_expense' ? 'New expense request' : action?.replaceAll("_", " ")}</DialogTitle>
             <DialogDescription>
-              Changes save to the shared TEST account with your account identity.
+              Changes save to the shared workspace with your account identity.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={submit} className="space-y-3">
             {action === "allocate" && (
               <>
-                {select(
-                  "departmentId",
-                  "Department",
-                  data.departments
-                    .filter((d) => d.code !== "CLIENT")
-                    .map((d) => ({ value: d.id, label: d.name })),
-                  true,
-                )}
-                {field("category", "Category")}
+                <div className="space-y-1">
+                  <p className="text-xs">Department</p>
+                  <SharedMasterSelect
+                    label="allocation department"
+                    value={values["departmentId"] || ""}
+                    options={data.departments
+                      .filter((department) => department.code !== "CLIENT")
+                      .map((department) => ({ value: department.id, label: department.name }))}
+                    required
+                    onChange={(departmentId) =>
+                      setValues((previous) => ({ ...previous, departmentId, category: "", projectId: "" }))
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs">Finance category</p>
+                  <SharedMasterSelect
+                    label="allocation Finance category"
+                    value={values["category"] || ""}
+                    options={(expenseOptions.data?.categories || []).map((category) => ({
+                      value: category,
+                      label: category,
+                    }))}
+                    required
+                    disabled={
+                      !values["departmentId"] ||
+                      expenseOptions.isPending ||
+                      expenseOptions.isFetching ||
+                      Boolean(expenseOptions.error) ||
+                      !expenseOptions.data?.categories.length
+                    }
+                    onChange={(category) =>
+                      setValues((previous) => ({ ...previous, category }))
+                    }
+                  />
+                  {!values["departmentId"] ? (
+                    <p className="text-xs text-muted-foreground">Choose a department to load its configured categories.</p>
+                  ) : expenseOptions.isPending || expenseOptions.isFetching ? (
+                    <p className="text-xs text-muted-foreground" role="status">Loading department categories…</p>
+                  ) : expenseOptions.error ? (
+                    <p className="text-xs text-destructive" role="alert">Finance categories are unavailable. Retry before creating an allocation.</p>
+                  ) : !expenseOptions.data?.categories.length ? (
+                    <p className="text-xs text-muted-foreground">No shared Finance categories are configured for this department.</p>
+                  ) : null}
+                </div>
                 {field("allocatedAmount", "Approved allocation", "number")}
                 {field("currency", "Currency")}
                 {field("periodId", "Period reference")}
@@ -516,17 +630,52 @@ export function SharedBusinessWorkspace({
             )}
             {action === "request_expense" && (
               <>
+                {adminAllDepartments ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium">Department</p>
+                    <SharedMasterSelect
+                      label="expense department"
+                      value={values["departmentId"] || ""}
+                      options={data.departments
+                        .filter((department) => department.code !== "CLIENT")
+                        .map((department) => ({ value: department.id, label: `${department.code} · ${department.name}` }))}
+                      required
+                      onChange={(departmentId) => setValues((previous) => ({
+                        ...previous,
+                        departmentId,
+                        category: "",
+                        locationId: "",
+                        serviceCatalogueId: "",
+                        supplierId: "",
+                      }))}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs">
+                    <span className="text-muted-foreground">Department</span>
+                    <span className="truncate font-medium">{fixedExpenseDepartment?.name || "Your department is not configured"}</span>
+                  </div>
+                )}
                 {searchableSelect("projectId","Project (optional)",data.projects.map((p)=>({value:p.id,label:`${p.reference} · ${p.title}${p.currentStage?` · ${p.currentStage}`:""}`})))}
 {expenseProject?.currentStage&&<p className="text-xs text-muted-foreground">Project stage: {expenseProject.currentStage}. Suggestions are optional and never approve spend.</p>}
-<div className="grid grid-cols-3 gap-2" role="group" aria-label="Request type">{([{value:'travel',label:'Travel / advance'},{value:'reimbursement',label:'Reimbursement'},{value:'purchase',label:'Purchase'}] as const).map(option=><Button key={option.value} type="button" size="sm" variant={(values['requestType']||'travel')===option.value?'default':'outline'} aria-pressed={(values['requestType']||'travel')===option.value} onClick={()=>setValues(previous=>({...previous,requestType:option.value,category:''}))}>{option.label}</Button>)}</div>
+<div className="grid grid-cols-3 gap-2" role="group" aria-label="Request type">{([{value:'travel',label:'Travel',description:'Travel / advance'},{value:'reimbursement',label:'Reimburse',description:'Reimbursement'},{value:'purchase',label:'Purchase',description:'Purchase'}] as const).map(option=><Button key={option.value} type="button" size="sm" title={option.description} aria-label={option.description} variant={(values['requestType']||'travel')===option.value?'default':'outline'} aria-pressed={(values['requestType']||'travel')===option.value} onClick={()=>setValues(previous=>({...previous,requestType:option.value,category:''}))}>{option.label}</Button>)}</div>
 {expenseOptions.error&&<p role="alert">Expense choices could not load. {expenseOptions.error.message}</p>}
-{searchableSelect('category','Finance category',(expenseOptions.data?.categories||[]).map(value=>({value,label:value})),true)}
+<SharedMasterSelect label="Finance category" value={values['category']||''} required disabled={!expenseDepartment||expenseOptions.isPending||expenseOptions.isFetching||Boolean(expenseOptions.error)||!expenseOptions.data?.categories.length} options={(expenseOptions.data?.categories||[]).map(value=>({value,label:value}))} onChange={category=>setValues(previous=>({...previous,category}))}/>
+{!expenseDepartment?<p className="text-xs text-muted-foreground">Choose the target department to load its shared Finance categories.</p>:expenseOptions.isPending||expenseOptions.isFetching?<p role="status" className="text-xs text-muted-foreground">Loading department expense settings…</p>:expenseOptions.error?<p role="alert" className="text-xs text-destructive">Department expense settings are unavailable.</p>:!expenseOptions.data?.categories.length?<p className="text-xs text-muted-foreground">No shared Finance categories are configured for this department.</p>:null}
 {expenseCategorySuggestion&&<div className="flex items-center justify-between gap-2 rounded-md bg-muted p-2 text-xs"><span>Suggested from request/project context: <strong>{expenseCategorySuggestion}</strong></span>{values['category']!==expenseCategorySuggestion&&<Button type="button" size="sm" variant="outline" onClick={()=>setValues(previous=>({...previous,category:expenseCategorySuggestion}))}>Use suggestion</Button>}</div>}
 <p className="text-xs text-muted-foreground">Travel and reimbursement go to Finance; goods and service requests go to Procurement first. Choose one Finance category; no separate business-purpose field is required.</p>
-{values['requestType']==='travel'&&<>{field('destination','Destination / visit location')}<div className="grid grid-cols-2 gap-3">{field('travelStartDate','Travel start','date')}{field('travelEndDate','Travel end','date')}</div></>}
+{values['requestType']==='travel'&&<><div className="space-y-1"><p className="text-xs font-medium">Approved travel location</p><SharedMasterSelect label="approved travel location" value={values['locationId']||''} onChange={id=>{const chosen=expenseOptions.data?.locations.find(location=>location.id===id);setValues(previous=>({...previous,locationId:id,destination:chosen?`${chosen.name} · ${chosen.city}`:''}));}} options={(expenseOptions.data?.locations||[]).map(location=>({value:location.id,label:`${location.reference} · ${location.name} · ${location.city}`}))}/>{!(expenseOptions.data?.locations.length)&&<p className="text-xs text-muted-foreground">No approved accounting locations are configured yet.</p>}</div><ExpenseLocationRequest onRequested={()=>void expenseOptions.refetch()} disabled={busy}/><div className="grid grid-cols-2 gap-3">{field('travelStartDate','Travel start','date')}{field('travelEndDate','Travel end','date')}</div>
+{effectiveTravelPolicyQuery.isPending&&<p role="status" className="text-xs text-muted-foreground">Checking your effective travel policy…</p>}
+{effectiveTravelPolicyQuery.error&&<p role="alert" className="text-xs text-destructive">Travel policy could not be checked. Retry before submitting.</p>}
+{activeTravelPolicy&&<div className="space-y-2 rounded-lg border bg-muted/30 p-3"><div><p className="text-sm font-semibold">Active travel policy · {activeTravelPolicy.employeeBand}</p><p className="text-xs text-muted-foreground">Policy version {activeTravelPolicy.policyVersion} · {travelDays||'Choose dates'} travel day(s) · {travelLocation?`${travelLocation.city} (${travelLocation.cityTier})`:'Choose an approved location'}</p></div>
+<div className="grid grid-cols-2 gap-2">{field('travelTransportEstimate','Transport estimate (₹)','number',false)}{field('travelHotelRate','Hotel / night (₹)','number',false)}{field('travelHotelNights','Hotel nights','number',false)}{field('travelMealRate','Meals / day (₹)','number',false)}{field('travelMealDays','Meal days','number',false)}{field('travelLocalRate','Local travel / day (₹)','number',false)}{field('travelLocalDays','Local travel days','number',false)}</div>
+{travelEstimatePreview&&<p className="text-xs">Trip estimate <strong>₹{money(travelEstimatePreview.estimate)}</strong> · advance ceiling <strong>₹{money(travelEstimatePreview.advanceCap)}</strong>{travelEstimatePreview.requiresException&&<span className="text-amber-700 dark:text-amber-300"> · Finance/Admin exception review required</span>}</p>}
+{travelEstimatePreview?.requiresException&&field('travelPolicyExceptionReason','Reason for exceeding a policy cap','text')}
+<p className="text-xs text-muted-foreground">The server checks hotel, meal, local travel and advance limits. Transport is included in the estimate; no transport fare cap is configured.</p></div>}
+</>}
 {values['requestType']==='reimbursement'&&<>{field('merchant','Merchant / payee')}{field('expenseDate','Expense date','date')}{field('receiptReference','Receipt reference','text',false)}</>}
 {values['requestType']==='purchase'&&<><div className="flex gap-2" role="group" aria-label="Purchase type">{(['goods','service'] as const).map(kind=><Button key={kind} type="button" size="sm" variant={(values['purchaseKind']||'goods')===kind?'default':'outline'} aria-pressed={(values['purchaseKind']||'goods')===kind} onClick={()=>setValues(previous=>({...previous,purchaseKind:kind}))}>{kind==='goods'?'Goods / materials':'Service'}</Button>)}</div>{values['purchaseKind']==='service'&&<div className="space-y-3 rounded-lg border p-3"><SharedMasterSelect label="Service catalogue" value={values['serviceCatalogueId']||''} onChange={chooseExpenseService} options={(expenseOptions.data?.services||[]).map(item=>({value:item.id,label:item.name}))}/>{select('serviceAction','Request',[{value:'new',label:'New service'},{value:'renew',label:'Renew existing service'},{value:'seats',label:'Add seats / capacity'}],true)}<div className="grid grid-cols-2 gap-3">{select('billingCycle','Billing cycle',[{value:'Monthly',label:'Monthly'},{value:'Annual',label:'Annual'},{value:'One-time',label:'One-time'}],true)}{field('serviceSeats','Seats / units','number')}</div>{field('serviceOwner','Responsible owner')}{values['serviceAction']!=='new'&&field('existingServiceReference','Existing subscription / contract reference')}</div>}{field('itemOrService','What is needed')}{(values['purchaseKind']||'goods')==='goods'&&field('quantity','Quantity','number')}<div className="space-y-1"><p className="text-xs">Preferred supplier (optional)</p><SharedMasterSelect label="Search supplier" value={values['supplierId']||''} options={[...canonicalSuppliers.map(supplier=>({value:supplier.id,label:`${supplier.reference} · ${supplier.title} · ${supplier.status}`})),{value:'__other__',label:'Other / not listed'}]} onChange={value=>setValues(previous=>({...previous,supplierId:value==='__other__'?'':value,supplierOther:value==='__other__'?'yes':'no',supplierName:value==='__other__'?previous['supplierName']||'':''}))}/></div>{values['supplierOther']==='yes'&&field('supplierName','Supplier name / reference','text',false)}{field('quotationReference','Quote / invoice link or reference (optional)','text',false)}</>}
-                {field("amount", "Estimate", "number")}
+                {field("amount", values["requestType"] === "travel" ? "Advance requested (₹)" : "Amount requested (₹)", "number")}
                 {field("currency", "Currency")}
                 {field("requiredDate", "Required date", "date")}
               </>
@@ -564,6 +713,7 @@ export function SharedBusinessWorkspace({
                     by("allocation")
                       .filter(
                         (i) =>
+                          (i.data["status"] === undefined || i.data["status"] === "Approved") &&
                           i.departmentId === target?.departmentId &&
                           i.projectId === target?.projectId &&
                           i.data["category"] === target?.data["category"] &&
@@ -578,6 +728,16 @@ export function SharedBusinessWorkspace({
                 )}
               </>
             )}
+            {(action === "approve_travel_exception" || action === "reject_travel_exception") && target && (
+              <div className="space-y-2 rounded-lg border p-3 text-sm">
+                <p className="font-medium">Travel-policy exception review</p>
+                <p>{str(target.data["requesterName"])} · {str(target.data["destination"])} · {str(target.data["currency"])} {money(target.data["amount"])}</p>
+                <p className="text-xs text-muted-foreground">Trip estimate {str(target.data["currency"])} {money(target.data["travelEstimate"])} · policy advance ceiling {str(target.data["currency"])} {money(target.data["travelAdvanceCap"])}</p>
+                <p className="text-xs">Reason: {str(target.data["travelPolicyExceptionReason"]) || "—"}</p>
+                {action === "reject_travel_exception" && field("reason", "Decision reason")}
+                {action === "approve_travel_exception" && <p className="text-xs text-muted-foreground">This clears the policy exception only; the request continues through its normal approval path.</p>}
+              </div>
+            )}
             {action === "post_expense" && (
               <>
                 {field("actualAmount", "Verified actual amount", "number")}
@@ -585,7 +745,7 @@ export function SharedBusinessWorkspace({
                 {field("evidenceRef", "Receipt / invoice evidence reference")}
               </>
             )}
-            {action === "reject_expense" && field("reason", "Reason")}
+            {(action === "reject_expense" || action === "reject_allocation" || action === "reject_travel_exception") && field("reason", "Reason")}
             {action === "review_training" &&
               field("evidenceRef", "Attendance / assessment evidence reference")}
             {action === "ticket_create" && (
@@ -649,6 +809,11 @@ export function SharedBusinessWorkspace({
                     false,
                   ),
                 )}
+                {select("travelBand", "Travel policy band", [
+                  { value: "staff", label: "Staff / individual contributor" },
+                  { value: "manager", label: "Department lead / manager" },
+                  { value: "senior", label: "Senior leadership" },
+                ])}
               </>
             )}
             {action === "publish_template" && (
