@@ -1,6 +1,24 @@
 export type RecordField = { key: string; label: string; required?: boolean; kind?: "text" | "date" | "select"; options?: string[]; master?: "people" | "suppliers" | "parts" | "products" | "projects" | "customers" | "locations" | "routes" | "documentTypes"; readOnly?: boolean; automaticValue?: string; automaticLabel?: string };
 export type RecordFormSpec = { types: string[]; fields: RecordField[]; sourceSpec?:RecordFormSpec };
 export type RecordAttachmentSpec = { documentType: string; label: string; accept: string; stageCode: string };
+export type ProjectLinkMode = "none" | "optional" | "required";
+export function projectLinkModeForRecordType(
+  department: string,
+  type: string,
+  stages: readonly { department: string; exitTypes: readonly string[] }[] = [],
+): ProjectLinkMode {
+  if (!type) return "none";
+  const code = department.toUpperCase();
+  // Sales intake precedes a project; HR/People records are departmental records.
+  if ((code === "SAL" && type === "Enquiry") || ["HR", "HROPS", "HR/OPS"].includes(code)) return "none";
+  const stageBound = stages.some(stage => stage.department.toUpperCase() === code && stage.exitTypes.includes(type));
+  if (stageBound) return "required";
+  if (code === "SAL" && ["Opportunity", "Order", "Handover"].includes(type)) return "optional";
+  const spec = recordFormSpec(code);
+  const projectField = spec?.fields.find(field => field.key === "projectId" || field.key === "project_id" || field.master === "projects");
+  if (!projectField) return "none";
+  return projectField.required ? "required" : "optional";
+}
 const auditStatuses = ["Draft", "Planned", "Scheduled", "In progress", "Awaiting closure", "Closed", "Overdue"];
 const automaticHardwareStages: Record<string, { code: string; label: string }> = {
   PRS: { code: "HW_02", label: "HW_02 · Hardware PRS baseline" },
@@ -258,11 +276,16 @@ export const formSpecs: Partial<Record<string, RecordFormSpec>> = {
     ],
   },
   hrops: {
-    types: ["Skill matrix", "Training need", "License alert", "DMAIC tollgate"],
+    types: ["Skill matrix", "Training need", "License alert", "DMAIC tollgate", "Asset"],
     fields: [
       { key: "controlledNumber", label: "Controlled number", required: true },
       { key: "title", label: "Title", required: true },
       { key: "owner", label: "Owner", master: "people" },
+      { key: "assetTag", label: "Asset tag", required: true },
+      { key: "serialNumber", label: "Serial number", required: true },
+      { key: "category", label: "Asset category", required: true },
+      { key: "manufacturer", label: "Manufacturer" },
+      { key: "model", label: "Model" },
     ],
   },
   audit: {

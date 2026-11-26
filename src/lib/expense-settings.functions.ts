@@ -2,6 +2,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { requireSupabaseAuth } from '@/integrations/supabase/auth-middleware';
 import type { Json } from '@/integrations/supabase/types';
+import { effectiveTravelPolicyResult, travelPolicySchema, type EffectiveTravelPolicy } from '@/lib/effective-travel-policy.schema';
 const scope = z.object({ department: z.string().uuid().nullable() });
 const serviceOption=z.object({id:z.string(),name:z.string(),category:z.string(),provider:z.string(),cycle:z.string(),owner:z.string(),supplierId:z.string().uuid().optional()});
 const supplierOption=z.object({id:z.string().uuid(),reference:z.string(),title:z.string(),status:z.string()});
@@ -31,15 +32,7 @@ export const reviewExpenseLocation=createServerFn({method:'POST'}).middleware([r
  if(r.error)throw new Error(r.error.message);return z.object({id:z.string().uuid(),status:z.string(),location:locationOption.nullable()}).parse(r.data);
 });
 
-const travelBand = z.object({
- id:z.enum(['staff','manager','senior']),label:z.string().min(1).max(120),
- hotelMetro:z.number().min(0).max(1_000_000),hotelOther:z.number().min(0).max(1_000_000),
- mealsPerDay:z.number().min(0).max(1_000_000),localPerDay:z.number().min(0).max(1_000_000),
-});
-const travelPolicy = z.object({
- currency:z.literal('INR'),status:z.enum(['Draft','Active','Pending_Admin_Review']),effectiveFrom:z.string().nullable().optional(),
- advancePercent:z.number().min(0).max(100),oneOpenAdvance:z.boolean(),cityTiers:z.array(z.string()),bands:z.array(travelBand).length(3),
-});
+const travelPolicy = travelPolicySchema;
 const travelPolicyResult = z.object({
  company:travelPolicy,companyDraft:travelPolicy.nullable(),department:travelPolicy.nullable(),departmentDraft:travelPolicy.nullable(),companyVersion:z.number().int().nonnegative(),departmentVersion:z.number().int().nonnegative(),
  scopeDepartment:z.string().uuid().nullable(),isAdmin:z.boolean(),canView:z.boolean(),ownDepartment:z.string().uuid().nullable(),
@@ -57,11 +50,7 @@ export const saveTravelPolicy=createServerFn({method:'POST'}).middleware([requir
  if(r.error)throw new Error(r.error.message);return travelPolicyResult.parse(r.data);
 });
 
-const effectiveTravelPolicyResult=z.object({
- policy:travelPolicy,isEffective:z.boolean(),policyVersion:z.number().int().nonnegative(),
- employeeBand:z.enum(['staff','manager','senior']).nullable(),band:travelBand.nullable(),
-});
-export type EffectiveTravelPolicy=z.infer<typeof effectiveTravelPolicyResult>;
+export type { EffectiveTravelPolicy };
 export const getEffectiveTravelPolicy=createServerFn({method:'GET'}).middleware([requireSupabaseAuth]).validator(z.object({department:z.string().uuid(),travelDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/)}).parse).handler(async({context,data})=>{
  const r=await (context.supabase as unknown as Rpc).rpc('get_effective_travel_policy',{p_department:data.department,p_travel_date:data.travelDate});
  if(r.error)throw new Error(r.error.message);return effectiveTravelPolicyResult.parse(r.data);

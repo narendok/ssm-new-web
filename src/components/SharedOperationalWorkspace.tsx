@@ -10,7 +10,8 @@ import { automaticRecordReference, procurementTrack, revisionOptions, referenceA
 import { SharedSupplierSelect } from "./SharedSupplierSelect";
 import { InlineSupplierModal, InlinePartModal, type SupplierRecordItem, type PartRecordItem } from "./InlineMasterModals";
 import type { RecordField } from "@/lib/record-form-catalogue";
-import { hardwareAttachmentForRecordType, hardwareStageForRecordType, recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
+import { hardwareAttachmentForRecordType, hardwareStageForRecordType, projectLinkModeForRecordType, recordFormSpec, recordFields, recordFieldValues } from "@/lib/record-form-catalogue";
+import { extractRecordSourceText, parseRecordSourcePairs, suggestRecordFieldKey, type RecordSourcePair } from "@/lib/record-source-ocr";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -20,11 +21,13 @@ import { beginControlledDocumentUpload, completeControlledDocumentUpload } from 
 import { sharedStageSaveError } from "@/lib/shared-stage-errors";
 import { getCoordination } from "./SharedProjectAnalysis";
 import { DepartmentProjectWorkspace } from "./DepartmentProjectWorkspace";
+import type { AreaId } from "./RoleAwareSidebar";
+import { TaskWorkTimer } from "./TaskWorkTimer";
 import { SharedTestWorkspace } from "./SharedTestWorkspace";
 import { ApprovalsFullPageView, type ApprovalRecord } from "./ApprovalsFullPageView";
 import type { TaskRecord, TeamMember } from "./DepartmentLeadCoordinationCenter";
 import type { TestMembership } from "@/lib/test-auth.functions";
-import type { SharedJson, SharedTestAction } from "@/lib/shared-test.schema";
+import type { SharedJson, SharedTestAction, SharedTestSnapshot } from "@/lib/shared-test.schema";
 import { sharedTaskDueDate } from "@/lib/shared-task-date";
 import { memberHasDepartmentPermission, memberHasDepartmentScope, departmentIdsForMember } from "@/lib/shared-department-access";
 import { getSharedDepartmentRoleConfiguration } from "@/lib/department-roles.functions";
@@ -42,19 +45,58 @@ import {
 
 const fieldClass = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
 type Register = "Projects" | "Records" | "Tasks" | "Approvals" | "Documents";
-function TaskWorkTimer({ task, memberId, onToggle }: { task: { id: string; assignee_id: string | null; actual_seconds?: number | undefined; timer_started_at?: string | null | undefined; timer_started_by?: string | null | undefined }; memberId: string; onToggle: (id: string, action: "start" | "stop") => void }) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!task.timer_started_at) return;
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, [task.timer_started_at]);
-  const ownTimer = task.timer_started_by === memberId;
-  const seconds = (task.actual_seconds ?? 0) + (task.timer_started_at ? Math.max(0, Math.floor((now - new Date(task.timer_started_at).getTime()) / 1000)) : 0);
-  const display = `${Math.floor(seconds / 3600).toString().padStart(2,"0")}:${Math.floor((seconds % 3600) / 60).toString().padStart(2,"0")}:${(seconds % 60).toString().padStart(2,"0")}`;
-  return <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3" aria-label="Task work timer"><div><p className="text-xs text-muted-foreground">Actual time logged</p><p className="font-mono text-lg font-semibold tabular-nums">{display}</p>{task.timer_started_at && <p className="text-[10px] text-muted-foreground">{ownTimer ? "Your timer is running" : "Timer is running for the assigned member"}</p>}</div>{task.assignee_id === memberId && <Button size="sm" variant={ownTimer ? "outline" : "default"} disabled={!!task.timer_started_at && !ownTimer} onClick={() => onToggle(task.id, ownTimer ? "stop" : "start")}>{ownTimer ? "Stop & save time" : "Start timer"}</Button>}</section>;
+type SharedOperationalWorkspaceProps = {
+  membership: TestMembership;
+  view: string;
+  darkMode: boolean;
+  onLogout: () => Promise<void>;
+  adminDepartment?: string;
+  initialProjectScope?: string | undefined;
+  recordTypeFilter?: string | null | undefined;
+  onClearRecordTypeFilter?: (() => void) | undefined;
+  onOpenInputs?: ((sourceId?: string) => void) | undefined;
+  onOpenVault?: ((documentId?: string, projectId?: string) => void) | undefined;
+  onOpenTasks: () => void;
+  onOpenApprovals?: (() => void) | undefined;
+};
+type SharedOperationalWorkspaceContentProps = SharedOperationalWorkspaceProps & {
+  sharedData: SharedTestSnapshot;
+  refreshShared: () => Promise<void>;
+};
+
+export function SharedOperationalWorkspace(props: SharedOperationalWorkspaceProps) {
+  const load = useServerFn(getSharedTestWorkspace);
+  const query = useQuery({
+    queryKey: ["shared-test-workspace", props.membership.organizationId, props.membership.membershipId],
+    queryFn: () => load(),
+    refetchInterval: 15000,
+    retry: 1,
+  });
+
+  if (query.isPending)
+    return <p className="text-sm text-muted-foreground">Loading your shared workspace…</p>;
+  if (query.error || !query.data)
+    return (
+      <div className="rounded-xl border border-border bg-card p-4">
+        <p role="alert">
+          {query.error instanceof Error ? query.error.message : "Shared data unavailable"}
+        </p>
+        <Button variant="outline" onClick={() => void query.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+
+  return (
+    <SharedOperationalWorkspaceContent
+      {...props}
+      sharedData={query.data}
+      refreshShared={async () => { await query.refetch(); }}
+    />
+  );
 }
-export function SharedOperationalWorkspace({
+
+function SharedOperationalWorkspaceContent({
   membership,
   view,
   darkMode,
@@ -66,42 +108,26 @@ export function SharedOperationalWorkspace({
   onOpenInputs,
   onOpenVault,
   onOpenTasks,
-}: {
-  membership: TestMembership;
-  view: string;
-  darkMode: boolean;
-  onLogout: () => Promise<void>;
-  adminDepartment?: string;
-  initialProjectScope?: string | undefined;
-  recordTypeFilter?: string | null | undefined;
-  onClearRecordTypeFilter?: (() => void) | undefined;
-  onOpenInputs?: ((sourceId?:string) => void) | undefined;
-  onOpenVault?: ((documentId?:string,projectId?:string)=>void) | undefined;
-  onOpenTasks: () => void;
-}) {
+  onOpenApprovals,
+  sharedData,
+  refreshShared,
+}: SharedOperationalWorkspaceContentProps) {
   const [reuseOpen,setReuseOpen] = useState(false);
   const [selectedTask,setSelectedTask] = useState<TaskRecord | null>(null);
   const [reuseRevisionId,setReuseRevisionId]=useState(''),[reuseAssessment,setReuseAssessment]=useState('');
   const attachReuse=useServerFn(attachReusableRevisionToRecord),loadReuse=useServerFn(getLifecycleWorkspace);
   const reuseOptions=useQuery({queryKey:['lifecycle-workspace',membership.membershipId],queryFn:()=>loadReuse(),retry:false});
-  const load = useServerFn(getSharedTestWorkspace),
-    coordination = useServerFn(getCoordination),
+  const coordination = useServerFn(getCoordination),
     write = useServerFn(mutateSharedTestWorkspace),
     writeTaskTimer = useServerFn(mutateSharedTaskTimer),
     loadRoleConfiguration = useServerFn(getSharedDepartmentRoleConfiguration),
     registerDocument = useServerFn(registerSharedDocument),
     beginFileUpload = useServerFn(beginControlledDocumentUpload),
     completeFileUpload = useServerFn(completeControlledDocumentUpload);
-  const query = useQuery({
-    queryKey: ["shared-test-workspace", membership.organizationId, membership.membershipId],
-    queryFn: () => load(),
-    refetchInterval: 15000,
-    retry: 1,
-  });
   async function toggleTaskTimer(taskId: string, action: "start" | "stop") {
     try {
       await writeTaskTimer({ data: { taskId, action } });
-      await query.refetch();
+      await refreshShared();
       setNotice(action === "start" ? "Task timer started." : "Task time saved.");
     } catch (timerError) {
       setError(timerError instanceof Error ? timerError.message : "Task timer could not be updated.");
@@ -124,17 +150,22 @@ export function SharedOperationalWorkspace({
     [department, setDepartment] = useState(""),
     [advanced, setAdvanced] = useState<Register | null>(null);
   useEffect(() => {
-    if (!query.data) return;
-    const selectableProjects = query.data.records
+    const selectableProjects = sharedData.records
       .filter((record) => record.record_type === "Project" && isSelectableMasterStatus(record.status))
       .map(({ id, reference }) => ({ id, reference }));
     setScope((current) => resolveSharedProjectScope(current, selectableProjects));
-  }, [query.data]);
+  }, [sharedData]);
   const [form, setForm] = useState<"create_project" | "create_record" | "update_record" | null>(
       null,
     ),
     [recordId, setRecordId] = useState(""),
     [values, setValues] = useState<Record<string, string>>({});
+  const [recordSmartUpload, setRecordSmartUpload] = useState(false);
+  const [recordOcrText, setRecordOcrText] = useState("");
+  const [recordOcrProgress, setRecordOcrProgress] = useState("");
+  const [recordOcrError, setRecordOcrError] = useState("");
+  const [recordOcrPairs, setRecordOcrPairs] = useState<RecordSourcePair[]>([]);
+  const [recordOcrTargets, setRecordOcrTargets] = useState<Record<string, string>>({});
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
@@ -147,6 +178,8 @@ export function SharedOperationalWorkspace({
 
 
   const lock = useRef(false),
+    recordFileInput = useRef<HTMLInputElement | null>(null),
+    recordSmartUploadPickerPending = useRef(false),
     createRecordRequestId = useRef<string | null>(null),
     createDocumentRequestId = useRef<string | null>(null),
     createReuseRequestId = useRef<string|null>(null),
@@ -164,32 +197,19 @@ export function SharedOperationalWorkspace({
       retry.current = null;
       setNotice("Saved to the shared workspace.");
       setForm(null);
-      await Promise.all([query.refetch(), common.refetch(), reuseOptions.refetch()]);
+      await Promise.all([refreshShared(), common.refetch(), reuseOptions.refetch()]);
       return true;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Save failed. Your input is preserved.";
       setError(sharedStageSaveError(action, message));
-      void query.refetch();
+      void refreshShared();
       return false;
     } finally {
       setBusy(false);
       lock.current = false;
     }
   }
-  if (query.isPending)
-    return <p className="text-sm text-muted-foreground">Loading your shared workspace…</p>;
-  if (query.error || !query.data)
-    return (
-      <div className="rounded-xl border border-border bg-card p-4">
-        <p role="alert">
-          {query.error instanceof Error ? query.error.message : "Shared data unavailable"}
-        </p>
-        <Button variant="outline" onClick={() => void query.refetch()}>
-          Retry
-        </Button>
-      </div>
-    );
-  const data = query.data,
+  const data = sharedData,
     actor = data.membership;
   const configuredRoles = roleConfiguration.data?.roles ?? [];
   const workspaceDepartmentIds = departmentIdsForMember(
@@ -238,7 +258,7 @@ export function SharedOperationalWorkspace({
       throw new Error("Supplier registration failed: No canonical UUID was returned by the database.");
     }
 
-    await Promise.all([query.refetch(), common.refetch()]);
+    await Promise.all([refreshShared(), common.refetch()]);
     const createdId = res.id;
     setValues((prev) => ({
       ...prev,
@@ -281,7 +301,7 @@ export function SharedOperationalWorkspace({
       throw new Error("Component part registration failed: No canonical UUID was returned by the database.");
     }
 
-    await Promise.all([query.refetch(), common.refetch()]);
+    await Promise.all([refreshShared(), common.refetch()]);
     const createdId = res.id;
     setValues((prev) => ({
       ...prev,
@@ -293,10 +313,11 @@ export function SharedOperationalWorkspace({
     setNotice(`Component ${part.mpn} saved to Part Master.`);
     setInlinePartOpen(false);
   }
-  const targetDeptCode = adminDepartment
+  const adminAllDepartments = actor.role === "admin" && adminDepartment === "all";
+  const targetDeptCode = adminDepartment && adminDepartment !== "all"
     ? (adminDepartment === "sales" ? "SAL" : adminDepartment === "hrops" ? "HR" : adminDepartment.toUpperCase())
     : "";
-  const resolvedAdminDept = adminDepartment
+  const resolvedAdminDept = adminDepartment && adminDepartment !== "all"
     ? data.departments.find(
         (d) =>
           d.id === adminDepartment ||
@@ -306,7 +327,7 @@ export function SharedOperationalWorkspace({
     : null;
   const selectedDepartment =
     actor.role === "admin"
-      ? (resolvedAdminDept?.id || department || data.departments.find((d) => d.code === "EHW")?.id || data.departments[0]?.id || "")
+      ? (adminAllDepartments ? department : resolvedAdminDept?.id || department || data.departments.find((d) => d.code === "EHW")?.id || data.departments[0]?.id || "")
       : (() => {
           const preferredDepartment = department || resolvedAdminDept?.id || actorDeptId;
           return workspaceDepartmentIds.includes(preferredDepartment)
@@ -315,6 +336,7 @@ export function SharedOperationalWorkspace({
         })();
   const dept = data.departments.find((d) => d.id === selectedDepartment);
   const canCreateRecords = hasPermission(selectedDepartment, "records:create");
+  const canCreateInAnyDepartment = adminAllDepartments && data.departments.some((item) => hasPermission(item.id, "records:create"));
   const canAssignTasks = hasPermission(selectedDepartment, "tasks:assign");
   const canRequestReview = hasPermission(selectedDepartment, "records:edit");
   const canDecideGate = hasPermission(selectedDepartment, "approvals:decide");
@@ -348,13 +370,70 @@ export function SharedOperationalWorkspace({
     label: `${product.reference} · ${product.title}`,
   }));
   const originalRecord = data.records.find(r => r.id === recordId);
-  const generatedReferenceBase = automaticRecordReference(data.records.find(r => r.id === values["projectId"] && r.record_type === "Project")?.reference || "", dept?.code || "", values["record_type"] || "");
-  const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : generatedReferenceBase, data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
-  const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
   const selectedProjectRecord=data.records.find(r=>r.record_type==="Project"&&r.id===values["projectId"]);
   const projectBaseline=readLifecycleBaseline(String(selectedProjectRecord?.fields['lifecycleBaseline']||''));
   const configuredRecordStages=projectBaseline?.stages ?? CANONICAL_STAGE_TEMPLATES.map(stage=>({code:stage.stageCode,name:stage.name,phase:stage.phaseCode,department:stage.defaultOwner,exitTypes:[]}));
+  const generatedReferenceBase = automaticRecordReference(
+    data.records.find(r => r.id === values["projectId"] && r.record_type === "Project")?.reference ||
+      (projectLinkModeForRecordType(dept?.code || actor.department_code || "", values["record_type"] || "", configuredRecordStages) === "none" ? "GEN" : ""),
+    dept?.code || "",
+    values["record_type"] || "",
+  );
+  const revisions = revisionOptions(form === "update_record" ? originalRecord?.reference || "" : generatedReferenceBase, data.records, form === "update_record" ? String(originalRecord?.fields["revision"] || "01") : undefined);
+  const selectedRevision = revisions.some(option => option.value === values["revision"]) ? values["revision"]! : revisions[0]!.value;
   const spec=recordFormSpec(dept?.code || actor.department_code || '',projectBaseline?.stages.filter(stage=>stage.department===dept?.code).flatMap(stage=>stage.exitTypes));
+  useEffect(() => {
+    if (form !== "create_record" || !adminAllDepartments || !selectedDepartment || values["record_type"]) return;
+    const initialType = spec?.types[0];
+    if (!initialType) return;
+    const mode = projectLinkModeForRecordType(dept?.code || "", initialType, configuredRecordStages);
+    setValues((previous) => previous["record_type"] ? previous : {
+      ...previous,
+      record_type: initialType,
+      projectId: mode !== "none" ? previous["projectId"] || "" : "",
+      procurementTrack: procurementTrack(initialType) || "",
+    });
+  }, [adminAllDepartments, configuredRecordStages, dept?.code, form, selectedDepartment, spec?.types, values]);
+  const projectLinkMode=projectLinkModeForRecordType(dept?.code || actor.department_code || '',values["record_type"] || "",configuredRecordStages);
+  const projectApplies=projectLinkMode!=="none";
+  const projectRequired=projectLinkMode==="required";
+  useEffect(() => {
+    if (form !== "create_record" || !recordSmartUpload || !recordFile) {
+      setRecordOcrText(""); setRecordOcrProgress(""); setRecordOcrError(""); setRecordOcrPairs([]); setRecordOcrTargets({});
+      return;
+    }
+    let active = true;
+    setRecordOcrText(""); setRecordOcrProgress("Preparing local source review…"); setRecordOcrError(""); setRecordOcrPairs([]); setRecordOcrTargets({});
+    void extractRecordSourceText(recordFile, message => { if (active) setRecordOcrProgress(message); })
+      .then(text => {
+        if (!active) return;
+        const pairs = parseRecordSourcePairs(text);
+        setRecordOcrText(text);
+        setRecordOcrPairs(pairs);
+        setRecordOcrProgress("");
+        if (!text.trim()) setRecordOcrError("No readable text was found. Complete the form manually; the original will still attach to the Draft.");
+        else if (!pairs.length) setRecordOcrError("Text was read, but no labeled values were found. Review the text and map fields manually.");
+      })
+      .catch(error => {
+        if (!active) return;
+        setRecordOcrProgress("");
+        setRecordOcrError(error instanceof Error ? error.message : "Local extraction is unavailable. Fill the form manually; the source remains selected.");
+      });
+    return () => { active = false; };
+  }, [form, recordSmartUpload, recordFile]);
+  useEffect(() => {
+    if (!recordOcrPairs.length || !spec) return;
+    const fields = [
+      { key: "__record_title", label: "Record title" },
+      ...recordFields(spec, values["record_type"] || "").filter(field => !field.master && !field.readOnly && !field.options?.length && field.key !== "projectId"),
+    ];
+    setRecordOcrTargets(previous => Object.fromEntries(recordOcrPairs.map(pair => [
+      pair.id,
+      previous[pair.id] && fields.some(field => field.key === previous[pair.id])
+        ? previous[pair.id]
+        : pair.label.trim().toLowerCase() === "title" ? "__record_title" : suggestRecordFieldKey(pair.label, fields),
+    ])));
+  }, [recordOcrPairs, values["record_type"], dept?.code]);
   const projectStageCandidates=[selectedProjectRecord?.fields["currentStage"],selectedProjectRecord?.fields["lifecycleStage"],selectedProjectRecord?.stage].map(value=>typeof value==="string"?value:"").filter(Boolean);
   const projectStageCode=projectStageCandidates.find(code=>configuredRecordStages.some(stage=>stage.code===code))||"";
   const projectStoredStageLabel=projectStageCandidates[0]||"";
@@ -363,14 +442,24 @@ export function SharedOperationalWorkspace({
   const projectPhaseCode=String(selectedProjectRecord?.fields["companyPhase"]||"");
   const projectPhase=COMPANY_PHASES.find(([code])=>code===projectPhaseCode);
   const mappedAttachment=form==="create_record"?hardwareAttachmentForRecordType(values["record_type"]||""):undefined;
-  const attachmentSpec=form==="create_record"&&(mappedAttachment||projectStage)?mappedAttachment||{
+  const attachmentSpec=form==="create_record"?mappedAttachment||{
     documentType:"Technical document",
     label:`${values["record_type"]||"Record"} supporting original file`,
     accept:".pdf,.doc,.docx,.xlsx,.csv,.zip,.png,.jpg,.jpeg",
     stageCode:projectStageCode,
   }:undefined;
   const attachmentStageCode=attachmentSpec?.stageCode||"";
-  const attachmentAllowedAtStage=stageUploadAllowed(configuredRecordStages,projectStageCode,attachmentStageCode,data.tasks.filter(task=>task.record_id===selectedProjectRecord?.id&&task.stage_code&&task.status!=='Cancelled').map(task=>task.stage_code!));
+  const attachmentAllowedAtStage=!mappedAttachment
+    ? true
+    : stageUploadAllowed(configuredRecordStages,projectStageCode,attachmentStageCode,data.tasks.filter(task=>task.record_id===selectedProjectRecord?.id&&task.stage_code&&task.status!=='Cancelled').map(task=>task.stage_code!));
+  useEffect(() => {
+    if (form !== "create_record" || !recordSmartUpload || !recordSmartUploadPickerPending.current || !attachmentSpec) return;
+    const frame = window.requestAnimationFrame(() => {
+      recordSmartUploadPickerPending.current = false;
+      recordFileInput.current?.click();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [form, recordSmartUpload]);
 
   async function uploadRecordAttachment(documentId: string, file: File, revision: string) {
     if (!file.size || file.size > 25 * 1024 * 1024) throw new Error("Choose a non-empty file up to 25 MB.");
@@ -423,9 +512,9 @@ export function SharedOperationalWorkspace({
             payload: {
               title: String(payload["title"] || values["title"] || ""),
               documentType: attachmentSpec.documentType,
-              scope: "internal",
+              scope: String(payload["project_id"] || values["projectId"] || "") ? "internal" : "department",
               departmentId: selectedDepartment,
-              projectId: String(payload["project_id"] || values["projectId"] || ""),
+              ...(String(payload["project_id"] || values["projectId"] || "") ? { projectId: String(payload["project_id"] || values["projectId"] || "") } : {}),
               recordId: linkedRecord.id,
             },
           } });
@@ -445,12 +534,12 @@ export function SharedOperationalWorkspace({
       createRecordRequestId.current = null;
       createDocumentRequestId.current = null;
       createReuseRequestId.current=null;setReuseRevisionId('');setReuseAssessment('');
-      await Promise.all([query.refetch(), common.refetch(), reuseOptions.refetch()]);
+      await Promise.all([refreshShared(), common.refetch(), reuseOptions.refetch()]);
     } catch (e) {
       setError(recordForRetry
         ? `Record ${recordForRetry.reference} is saved as a Draft. The file is not complete yet; keep it selected and retry. ${e instanceof Error ? e.message : "Upload failed."}`
         : e instanceof Error ? e.message : "Record save failed. Your input is preserved.");
-      void query.refetch();
+      void refreshShared();
     } finally {
       setBusy(false);
       lock.current = false;
@@ -727,6 +816,10 @@ export function SharedOperationalWorkspace({
             projectId: t.record_id || "",
             stageCode: t.stage_code || "",
             assignee: data.members.find((m) => m.id === t.assignee_id)?.display_name || "Unassigned",
+            assigneeId: t.assignee_id || "",
+            actualSeconds: String(t.actual_seconds ?? 0),
+            timerStartedAt: t.timer_started_at || "",
+            timerStartedBy: t.timer_started_by || "",
             dueDate: date.dueDate,
             ...(date.warning ? { dueDateWarning: date.warning, storedDueDate: date.storedDueDate } : {}),
             workStatus: t.status === "In Progress" ? "In progress" : "To do",
@@ -764,10 +857,13 @@ export function SharedOperationalWorkspace({
       ? `Evidence revision ${a.evidence_revision}`
       : "Evidence not recorded",
   }));
-  function openCreate(kind: "create_project" | "create_record") {
+  function openCreate(kind: "create_project" | "create_record", smartUpload = false) {
     setForm(kind);
+    setRecordSmartUpload(smartUpload);
+    recordSmartUploadPickerPending.current = smartUpload;
     setRecordId("");
     setRecordFile(null);
+    setRecordOcrText(""); setRecordOcrProgress(""); setRecordOcrError(""); setRecordOcrPairs([]); setRecordOcrTargets({});
     setReuseRevisionId('');setReuseAssessment('');createReuseRequestId.current=null;
     setPersistedRecord(null);
     setAttachmentDocumentId(null);
@@ -782,9 +878,10 @@ export function SharedOperationalWorkspace({
     const defaultRecordType=kind==='create_record'
       ? scopedStage?.exitTypes.find(type=>scopedSpec?.types.includes(type))||spec?.types[0]||''
       : spec?.types[0]||'';
+    const defaultProjectMode=projectLinkModeForRecordType(dept?.code || actor.department_code || '',defaultRecordType,scopedBaseline?.stages||[]);
     setValues({
       revision: "01",
-      projectId: scopedProject?.id || "",
+      projectId: defaultProjectMode!=="none" ? scopedProject?.id || "" : "",
       record_type: defaultRecordType,
       ...(kind==='create_record'&&scopedStage?{title:`${scopedProject?.title||scopedProject?.reference} · ${scopedStage.name} · Draft`}:{}),
       procurementTrack: procurementTrack(defaultRecordType) || "",
@@ -815,21 +912,20 @@ export function SharedOperationalWorkspace({
     setError("");
     setForm("update_record");
   }
-  async function updateTask(id: string, patch: Partial<TaskRecord>) {
+  async function updateTask(id: string, patch: Partial<TaskRecord>): Promise<boolean> {
     const task = data.tasks.find((t) => t.id === id);
-    if (!task) return;
+    if (!task) return false;
     if (patch.status === "Cancelled") {
       const reason = patch.notes || patch.fields?.["cancellation_reason"] || patch.fields?.["reason"];
       if (!reason || String(reason).trim().length < 5) {
         setError("A substantive cancellation reason (minimum 5 characters) is required to cancel a task.");
-        return;
+        return false;
       }
-      await save("cancel_task", {
+      return save("cancel_task", {
         id,
         reason: String(reason).trim(),
         expected_updated_at: task.updated_at,
       });
-      return;
     }
     const targetStatus =
       patch.status === "Released" || patch.status === "Approved"
@@ -849,7 +945,7 @@ export function SharedOperationalWorkspace({
     if (patch.fields?.["assignee"] !== undefined) {
       if (!hasPermission(task.department_id, "tasks:assign")) {
         setError("This role does not have Assign tasks permission for the task's department.");
-        return;
+        return false;
       }
       const matches = data.members.filter(
         (m) =>
@@ -859,11 +955,19 @@ export function SharedOperationalWorkspace({
       );
       if (matches.length !== 1) {
         setError("Choose one verified department member.");
-        return;
+        return false;
       }
       payload["assignee_id"] = matches[0]!.id;
     }
-    await save("update_task", payload);
+    if (patch.fields?.["dueDate"] !== undefined) {
+      if (actor.role !== "department_lead" && actor.role !== "admin") {
+        setError("Only a department lead or admin can set a review due date.");
+        return false;
+      }
+      const date = String(patch.fields["dueDate"] || "").trim();
+      payload["due_at"] = date ? new Date(`${date}T17:00:00+05:30`).toISOString() : null;
+    }
+    return save("update_task", payload);
   }
   async function decide(id: string, outcome: string, notes?: string) {
     const approval = data.approvals.find((a) => a.id === id);
@@ -880,7 +984,7 @@ export function SharedOperationalWorkspace({
     return (
       <section className="space-y-3">
         <Button variant="outline" onClick={() => setAdvanced(null)}>
-          Back to project workspace
+          {view === "summary" ? "Back to department dashboard" : "Back to project workspace"}
         </Button>
         <SharedTestWorkspace
           membership={membership}
@@ -896,6 +1000,15 @@ export function SharedOperationalWorkspace({
         <span className="rounded border border-primary/30 bg-primary/10 px-2 py-1 text-xs">
           TEST · {actor.display_name}
         </span>
+        {adminAllDepartments && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            Department focus
+            <select aria-label="Department workspace" className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground" value={selectedDepartment} onChange={event => setDepartment(event.target.value)}>
+              <option value="">All departments</option>
+              {data.departments.map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
+            </select>
+          </label>
+        )}
         {actor.role !== "admin" && workspaceDepartments.length > 1 && (
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             Department workspace
@@ -930,6 +1043,13 @@ export function SharedOperationalWorkspace({
           records={records}
           currentUser={actor.display_name}
           userRole={actor.role === "member" ? "Employee" : "Lead"}
+          persona={{
+            id: actor.membership_id,
+            label: actor.display_name,
+            person: actor.display_name,
+            departmentId: dept?.code.toLowerCase() as AreaId | undefined,
+            kind: actor.role === "admin" ? "admin" : actor.role === "member" ? "member" : "lead",
+          }}
           onApprove={(id, notes) => decide(id, "approved", notes)}
           onReject={(id, reason) => decide(id, "rejected", reason)}
           onReturn={(id, reason) => decide(id, "returned", reason)}
@@ -937,9 +1057,13 @@ export function SharedOperationalWorkspace({
       ) : (
         <DepartmentProjectWorkspace onOpenAssetCatalog={()=>setReuseOpen(true)}
           sharedTestMembership={membership}
-          salesPipelineView={(dept?.code || actor.department_code)==="SAL" ? <SharedSalesPipeline snapshot={{...data,records:data.records.filter(r=>!["Enquiry","Opportunity"].includes(r.record_type)||scope==="all"||records.some(row=>row.id===r.id&&[scope,projectRows.find(p=>p.id===scope||p.reference===scope)?.id,projectRows.find(p=>p.id===scope||p.reference===scope)?.reference].includes(row.fields["projectId"])))}} onRefresh={async()=>{await Promise.all([query.refetch(),common.refetch()]);}} onOpenInputs={onOpenInputs}/> : undefined}
-          departmentCode={dept?.code || actor.department_code || "ALL"}
-          departmentName={dept?.name || actor.department_name || "Projects"}
+          dashboardAudience={actor.role === "member" ? "member" : actor.role === "admin" ? "admin" : "lead"}
+          dashboardAssignee={actor.display_name}
+          dashboardMemberId={actor.membership_id}
+          onToggleTaskTimer={(taskId, action) => void toggleTaskTimer(taskId, action)}
+          salesPipelineView={(dept?.code || actor.department_code)==="SAL" ? <SharedSalesPipeline snapshot={{...data,records:data.records.filter(r=>!["Enquiry","Opportunity"].includes(r.record_type)||scope==="all"||records.some(row=>row.id===r.id&&[scope,projectRows.find(p=>p.id===scope||p.reference===scope)?.id,projectRows.find(p=>p.id===scope||p.reference===scope)?.reference].includes(row.fields["projectId"])))}} onRefresh={async()=>{await Promise.all([refreshShared(),common.refetch()]);}} onOpenInputs={onOpenInputs}/> : undefined}
+          departmentCode={dept?.code || (adminAllDepartments ? "ALL" : actor.department_code || "ALL")}
+          departmentName={dept?.name || (adminAllDepartments ? "All departments" : actor.department_name || "Projects")}
           lead={
             data.members.find((m) => m.id === dept?.lead_member_id)?.display_name || "Not recorded"
           }
@@ -962,6 +1086,18 @@ export function SharedOperationalWorkspace({
               linkedRecordRefs: d.record_id ? [d.record_id] : [],
             }))}
           approvals={approvals}
+          approvalCurrentUser={actor.display_name}
+          approvalUserRole={actor.role === "member" ? "Employee" : "Lead"}
+          approvalPersona={{
+            id: actor.membership_id,
+            label: actor.display_name,
+            person: actor.display_name,
+            departmentId: dept?.code.toLowerCase() as AreaId | undefined,
+            kind: actor.role === "admin" ? "admin" : actor.role === "member" ? "member" : "lead",
+          }}
+          onApproveApproval={(id, notes) => decide(id, "approved", notes)}
+          onRejectApproval={(id, reason) => decide(id, "rejected", reason)}
+          onReturnApproval={(id, reason) => decide(id, "returned", reason)}
           team={team}
           projectScope={scope}
           recordTypeFilter={recordTypeFilter}
@@ -971,22 +1107,38 @@ export function SharedOperationalWorkspace({
           initialTab={
             view === "assignee" || view === "queue"
               ? "tasks"
+              : view === "summary"
+                ? "dashboard"
               : view === "records"
                 ? "records"
                 : view === "deliverables"
                   ? "deliverables"
                   : undefined
           }
-          onCreateRecord={() => canCreateRecords ? openCreate("create_record") : setError("This role does not have Create records permission for the selected department.")}
-          canCreateRecord={canCreateRecords}
+          onCreateRecord={() => adminAllDepartments
+            ? canCreateInAnyDepartment ? openCreate("create_record") : setError("This role does not have Create records permission in any department.")
+            : !selectedDepartment
+              ? setError("Choose a department focus before creating a department record.")
+            : canCreateRecords
+              ? openCreate("create_record")
+              : setError("This role does not have Create records permission for the selected department.")}
+          onSmartUploadRecord={() => adminAllDepartments
+            ? canCreateInAnyDepartment ? openCreate("create_record", true) : setError("This role does not have Create records permission in any department.")
+            : !selectedDepartment
+              ? setError("Choose a department focus before creating a department record.")
+            : canCreateRecords
+              ? openCreate("create_record", true)
+              : setError("This role does not have Create records permission for the selected department.")}
+          canCreateRecord={adminAllDepartments ? canCreateInAnyDepartment : canCreateRecords}
           canCreateTask={canAssignTasks}
           onCreateDeliverable={() => onOpenVault ? onOpenVault(undefined,projectRows.find(p=>p.id===scope||p.reference===scope)?.id) : setAdvanced("Documents")}
           onCreateProject={undefined}
           onOpenRecord={openRecord}
           onOpenTask={setSelectedTask}
-          onOpenApprovals={() => setAdvanced('Approvals')}
+          onOpenTasks={onOpenTasks}
+          onOpenApprovals={() => onOpenApprovals ? onOpenApprovals() : setAdvanced('Approvals')}
           onOpenDocument={id => onOpenVault ? onOpenVault(id,projectRows.find(p=>p.id===scope||p.reference===scope)?.id) : setAdvanced("Documents")}
-          onUpdateTask={(id, patch) => void updateTask(id, patch)}
+          onUpdateTask={(id, patch) => updateTask(id, patch)}
           onRequestStageReview={canRequestReview ? async (projectId, stageCode, notes) => {
             const project = data.records.find(record => record.id === projectId);
             if (!project) return false;
@@ -1003,6 +1155,10 @@ export function SharedOperationalWorkspace({
             });
           } : undefined}
           onCreateTask={async (task) => {
+            if (!selectedDepartment) {
+              setError("Choose a department focus before creating or assigning a department task.");
+              return false;
+            }
             if (!canAssignTasks) {
               setError("This role does not have Assign tasks permission for the selected department.");
               return false;
@@ -1021,7 +1177,7 @@ export function SharedOperationalWorkspace({
               setError("Choose one verified member.");
               return false;
             }
-            const stageCode=String(project.fields["currentStage"]||project.fields["lifecycleStage"]||project.fields["stage"]||"");
+            const stageCode=String(task.stageCode || project.fields["currentStage"]||project.fields["lifecycleStage"]||project.fields["stage"]||"");
             if (!stageCode) {
               setError("Choose a project with a canonical current stage before adding a department task.");
               return false;
@@ -1053,12 +1209,12 @@ export function SharedOperationalWorkspace({
               <dl className="grid grid-cols-2 gap-3 rounded-lg border border-border p-3">
                 <div><dt className="text-xs text-muted-foreground">Department</dt><dd>{data.departments.find((item) => item.code.toLowerCase() === selectedTask.area)?.name || selectedTask.area.toUpperCase()}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Status</dt><dd>{selectedTask.status}</dd></div>
-                <div><dt className="text-xs text-muted-foreground">Assigned to</dt><dd>{selectedTask.fields["assignee"] || "Unassigned"}</dd></div>
+                {actor.role !== "member" && <div><dt className="text-xs text-muted-foreground">Assigned to</dt><dd>{selectedTask.fields["assignee"] || "Unassigned"}</dd></div>}
                 <div><dt className="text-xs text-muted-foreground">Lifecycle stage</dt><dd>{selectedTask.fields["stageCode"] || "Not recorded"}</dd></div>
-                <div className="col-span-2"><dt className="text-xs text-muted-foreground">Due date</dt><dd>{selectedTask.fields["dueDateWarning"] ? <span className="text-amber-700 dark:text-amber-300">{selectedTask.fields["dueDateWarning"]}</span> : selectedTask.fields["dueDate"] || "No due date"}</dd></div>
+                <div className="col-span-2"><dt className="text-xs text-muted-foreground">Review due</dt><dd>{selectedTask.fields["dueDateWarning"] ? <span className="text-amber-700 dark:text-amber-300">{selectedTask.fields["dueDateWarning"]}</span> : selectedTask.fields["dueDate"] || "Not set"}</dd></div>
               </dl>
               {selectedTask.notes && <div><h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Task instructions</h3><p className="whitespace-pre-wrap">{selectedTask.notes}</p></div>}
-              {timerTask && <TaskWorkTimer task={timerTask} memberId={actor.membership_id} onToggle={(id, action) => void toggleTaskTimer(id, action)} />}
+              {actor.role === "member" && timerTask?.assignee_id === actor.membership_id && <TaskWorkTimer task={timerTask} memberId={actor.membership_id} onToggle={(id, action) => void toggleTaskTimer(id, action)} />}
               {related ? <p className="rounded-lg bg-muted p-3 text-xs">Related record: <strong>{related.reference} · {related.title}</strong></p> : <p className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">Related record details are limited to their owning department. This task shows only the information assigned to your department.</p>}
             </div>;
           })()}
@@ -1077,7 +1233,7 @@ export function SharedOperationalWorkspace({
                 ? "Edit original record"
                 : form === "create_project"
                   ? "New project"
-                  : "New record"}
+                  : recordSmartUpload ? "Create record from file" : "New record"}
             </DialogTitle>
             <DialogDescription>
               Saved using your authenticated identity. Formal approvals use their original workflow.
@@ -1099,6 +1255,10 @@ export function SharedOperationalWorkspace({
                   notes: notes || "",
                 });
               } else if (form === "create_record") {
+                if (!selectedDepartment || !hasPermission(selectedDepartment, "records:create")) {
+                  setError("Select a department where you have Create records permission.");
+                  return;
+                }
                 let fields: Record<string, string>;
                 try {
                   if (!spec) throw new Error("No record types configured for this department.");
@@ -1139,6 +1299,18 @@ export function SharedOperationalWorkspace({
           >
             {form !== "update_record" && (
               <>
+                {form === "create_record" && adminAllDepartments && (
+                  <label className="grid gap-1 text-xs">
+                    Department
+                    <select aria-label="Record department" className={fieldClass} required disabled={Boolean(persistedRecord)} value={selectedDepartment} onChange={(event) => {
+                      setDepartment(event.target.value);
+                      setValues((previous) => ({ ...previous, title: "", record_type: "", projectId: "", procurementTrack: "" }));
+                    }}>
+                      <option value="">Choose department…</option>
+                      {data.departments.filter((item) => hasPermission(item.id, "records:create")).map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}
+                    </select>
+                  </label>
+                )}
                 {["title", "reference"].map((key) => (
                   <label key={key} className="grid gap-1 text-xs">
                     {key === "reference" ? (form === "create_record" ? "Record reference · generated automatically" : "Project code") : "Title"}
@@ -1156,8 +1328,16 @@ export function SharedOperationalWorkspace({
                 {form === "create_record" && (
                   <>
                     <label className="grid gap-1 text-xs">
-                      Project · choose this searchable field; the generated record reference above is read-only ({projectRows.length} available)
-                      <SharedMasterSelect label="Project" required disabled={Boolean(persistedRecord)} options={projectRows.map(p=>({value:p.id,label:`${p.reference} · ${p.title}`}))} value={values["projectId"] || ""} onChange={id=>{
+                      Record type
+                      <select aria-label="Record type" className={fieldClass} required disabled={Boolean(persistedRecord)} value={values["record_type"] || ""}
+                        onChange={(e) => { if (!recordSmartUpload) setRecordFile(null); const nextType=e.target.value; const nextMode=projectLinkModeForRecordType(dept?.code || actor.department_code || '',nextType,configuredRecordStages); setValues(previous=>({...previous,title:values["title"] || "",reference:values["reference"] || "",projectId:nextMode==="none"?"":previous.projectId||"",revision:values["revision"]||"01",notes:values["notes"]||"",record_type:nextType,procurementTrack:procurementTrack(nextType)||""})); }}>
+                        <option value="">Choose record type…</option>
+                        {(spec?.types || []).map(type => {const m=type.match(/^Stage evidence · ((?:G\d|HW|FW|SW)_\d+)$/);const bound=m?configuredRecordStages.find(s=>s.code===m[1]):undefined;return <option key={type} value={type}>{bound?`${bound.code} · ${bound.name} evidence`:type}</option>})}
+                      </select>
+                    </label>
+                    {projectApplies && <label className="grid gap-1 text-xs">
+                      Project · {projectRequired ? "required" : "optional"} ({projectRows.length} available)
+                      <SharedMasterSelect label="Project" required={projectRequired} disabled={Boolean(persistedRecord)} options={projectRows.map(p=>({value:p.id,label:`${p.reference} · ${p.title}`}))} value={values["projectId"] || ""} onChange={id=>{
                         const project=data.records.find(r=>r.id===id);
                         const baseline=readLifecycleBaseline(String(project?.fields['lifecycleBaseline']||''));
                         const candidates=[project?.fields['currentStage'],project?.fields['lifecycleStage'],project?.stage].map(v=>typeof v==='string'?v:'').filter(Boolean);
@@ -1167,17 +1347,8 @@ export function SharedOperationalWorkspace({
                         const desired=stageDef?.exitTypes.find(type=>nextSpec?.types.includes(type))||'';
                         setValues(previous=>({...previous,projectId:id,...(desired?{['record_type']:desired}:{}),...(!previous['title']&&stageDef?{['title']:`${project?.title||project?.reference} · ${stageDef.name} · Draft`}:{})}));
                       }}/>
-
-                    </label>
-                    {values["projectId"]&&<section aria-label="Automatic project phase and stage" className="rounded-md border bg-muted/20 p-2 text-xs sm:col-span-2"><p className="font-medium">Project phase and record stage · automatic</p><p>{projectPhase?`${projectPhase[0]} · ${projectPhase[1]}`:projectStage?.phaseTitle||"Canonical phase not recorded"}</p><p>{projectStage?`${projectStage.stageCode} · ${projectStage.name}`:projectStoredStageLabel?`Legacy stage label: ${projectStoredStageLabel} · canonical stage code not recorded`:"No current lifecycle stage is recorded for this project."}</p>{!projectStage&&projectStoredStageLabel&&<p className="text-muted-foreground">Stage-bound upload stays locked until this legacy label is reconciled to a canonical stage; no phase is guessed.</p>}{mappedAttachment&&projectStage&&<p className="text-muted-foreground">This record’s original is mapped to {mappedAttachment.stageCode}; upload is enabled only at that stage or its immediate predecessor.</p>}</section>}
-                    <label className="grid gap-1 text-xs">
-                      Record type
-                      <select aria-label="Record type" className={fieldClass} required disabled={Boolean(persistedRecord)} value={values["record_type"] || ""}
-                        onChange={(e) => { setRecordFile(null); setValues({title: values["title"] || "", reference: values["reference"] || "", projectId: values["projectId"] || "", revision: values["revision"] || "01", notes: values["notes"] || "", record_type: e.target.value, procurementTrack: procurementTrack(e.target.value) || ""}); }}>
-                        <option value="">Choose record type…</option>
-                        {(spec?.types || []).map(type => {const m=type.match(/^Stage evidence · ((?:G\d|HW|FW|SW)_\d+)$/);const bound=m?configuredRecordStages.find(s=>s.code===m[1]):undefined;return <option key={type} value={type}>{bound?`${bound.code} · ${bound.name} evidence`:type}</option>})}
-                      </select>
-                    </label>
+                    </label>}
+                    {projectApplies && values["projectId"]&&<section aria-label="Automatic project phase and stage" className="rounded-md border bg-muted/20 p-2 text-xs sm:col-span-2"><p className="font-medium">Project phase and record stage · automatic</p><p>{projectPhase?`${projectPhase[0]} · ${projectPhase[1]}`:projectStage?.phaseTitle||"Canonical phase not recorded"}</p><p>{projectStage?`${projectStage.stageCode} · ${projectStage.name}`:projectStoredStageLabel?`Legacy stage label: ${projectStoredStageLabel} · canonical stage code not recorded`:"No current lifecycle stage is recorded for this project."}</p>{!projectStage&&projectStoredStageLabel&&<p className="text-muted-foreground">Stage-bound upload stays locked until this legacy label is reconciled to a canonical stage; no phase is guessed.</p>}{mappedAttachment&&projectStage&&<p className="text-muted-foreground">This record’s original is mapped to {mappedAttachment.stageCode}; upload is enabled only at that stage or its immediate predecessor.</p>}</section>}
                     {spec && recordFields(spec, values["record_type"] || "").filter(field => field.key !== "projectId").filter(field => field.key !== "procurementTrack" || !procurementTrack(values["record_type"] || "")).map(field => (
                       <label key={field.key} className="grid gap-1 text-xs">{field.label}
                         {renderFieldInput(field)}
@@ -1185,19 +1356,48 @@ export function SharedOperationalWorkspace({
                     ))}
                     {attachmentSpec && (
                       <div className="grid gap-2 text-xs"><label className="grid gap-1 text-xs">
-                        {attachmentSpec.label} · optional, attached to this record
+                        {attachmentSpec.label} · {recordSmartUpload ? "required source file" : "optional, attached to this record"}
                         <input
                           className={fieldClass}
                           aria-label={attachmentSpec.label}
+                          ref={recordFileInput}
                           type="file"
-                          accept={attachmentSpec.accept}
-                          disabled={busy || Boolean(attachmentDocumentId) || Boolean(persistedRecord) || !values["projectId"] || !attachmentAllowedAtStage}
+                          accept={recordSmartUpload ? `${attachmentSpec.accept},.pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.heic,.heif,.txt,.csv,.tsv,.json,.docx,.xlsx,.xlsm,.doc,.xls,.zip,.step,.stp,.stl,.3mf,.dxf,.bin,.hex,.elf,.sch,.dsn` : attachmentSpec.accept}
+                          disabled={busy || Boolean(attachmentDocumentId) || Boolean(persistedRecord) || !attachmentAllowedAtStage}
                           onChange={event => {setRecordFile(event.target.files?.[0] || null);setReuseRevisionId('');}}
                         />
                         {recordFile && <span className="text-muted-foreground">Selected: {recordFile.name} · {(recordFile.size / 1024).toFixed(1)} KB</span>}
-                        <span className="text-muted-foreground">{attachmentAllowedAtStage?`This record is linked to ${attachmentSpec.stageCode}. One Save creates the Draft record and privately links its original. A file does not advance the project or count as approval or release.`:!projectStageCode?"Upload is locked because the selected project has no canonical current-stage code. You can still save the draft record now.":`Upload is locked until the project reaches ${attachmentSpec.stageCode} (or the immediately following stage). Current project stage: ${projectStageCode}.`}</span>
+                        {recordSmartUpload && <span className="text-muted-foreground">PDF and common images use local OCR; TXT, CSV, TSV, JSON, DOCX, and XLSX are read locally. Older DOC/XLS files can be attached for manual entry.</span>}
+                        <span className="text-muted-foreground">{attachmentAllowedAtStage?`Save creates the Draft record and privately links this source file to it. A file does not advance the project or count as approval or release.`:!projectStageCode?"Upload is locked because the selected project has no canonical current-stage code. You can still save the draft record now.":`Upload is locked until the project reaches ${attachmentSpec.stageCode} (or the immediately following stage). Current project stage: ${projectStageCode}.`}</span>
                       </label><label className="grid gap-1">Or reuse an existing original revision<select aria-label="Reuse an existing original revision" className={fieldClass} disabled={busy||Boolean(persistedRecord)||!values['projectId']||!attachmentAllowedAtStage} value={reuseRevisionId} onChange={e=>{setReuseRevisionId(e.target.value);setRecordFile(null);}}><option value="">Upload a new file / no reuse</option>{reuseOptions.data?.assets.map(a=><option key={a.id} value={a.id}>{String(a.definition['title'])} · r{String(a.definition['revision'])} · {String(a.definition['status'])}</option>)}</select></label>{reuseOptions.error&&<p role="alert">Reusable revisions could not be loaded. {attachmentAllowedAtStage?"You can still upload a new original file.":"New uploads remain locked until the selected project’s phase and stage allow this record."}</p>}{reuseRevisionId&&<label className="grid gap-1">Intended use / compatibility<textarea aria-label="Record reuse compatibility" className={fieldClass} required minLength={5} disabled={Boolean(persistedRecord)} value={reuseAssessment} onChange={e=>setReuseAssessment(e.target.value)}/><span>Links the exact original revision for evaluation. Stock and source files remain unchanged.</span></label>}</div>
                     )}
+                    {recordSmartUpload && recordFile && <section className="grid gap-2 rounded-md border border-border/70 bg-muted/20 p-3 text-xs" aria-label="OCR field review">
+                      <p className="font-medium">Source fields · local review</p>
+                      <p>OCR and extraction run in this browser. Review each value, map it to a form field, then apply it. Project links must still be selected from the authorized project list.</p>
+                      {recordOcrProgress && <p role="status">{recordOcrProgress}</p>}
+                      {recordOcrError && <p role="status" className="text-amber-700">{recordOcrError}</p>}
+                      {recordOcrPairs.length > 0 && <>
+                        <div className="grid max-h-64 gap-2 overflow-auto">
+                          {recordOcrPairs.slice(0, 30).map(pair => <div key={pair.id} className="grid gap-1 rounded border bg-background p-2 sm:grid-cols-[1fr_12rem]">
+                            <label className="grid gap-1"><span className="font-medium">{pair.label}</span><input className={fieldClass} aria-label={`OCR value ${pair.label}`} value={pair.value} readOnly /></label>
+                            <label className="grid gap-1"><span>Map to field</span><select className={fieldClass} aria-label={`Map ${pair.label} to a record field`} value={recordOcrTargets[pair.id] || ""} onChange={event => setRecordOcrTargets(previous => ({ ...previous, [pair.id]: event.target.value }))}>
+                              <option value="">Do not map</option><option value="__record_title">Record title</option>
+                              {spec && recordFields(spec, values["record_type"] || "").filter(field => !field.master && !field.readOnly && !field.options?.length && field.key !== "projectId").map(field => <option key={field.key} value={field.key}>{field.label}</option>)}
+                            </select></label>
+                          </div>)}
+                        </div>
+                        <Button type="button" variant="secondary" disabled={!Object.values(recordOcrTargets).some(Boolean) || Boolean(persistedRecord)} onClick={() => setValues(previous => {
+                          const next = { ...previous };
+                          for (const pair of recordOcrPairs) {
+                            const key = recordOcrTargets[pair.id];
+                            if (key === "__record_title") next.title = pair.value;
+                            else if (key) next[key] = pair.value;
+                          }
+                          return next;
+                        })}>Apply mapped values to form</Button>
+                      </>}
+                      {recordOcrText && <details><summary className="cursor-pointer">Review full recognized text ({recordOcrText.length} characters)</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-background p-2">{recordOcrText.slice(0, 12000)}</pre></details>}
+                    </section>}
                   </>
                 )}
               </>
@@ -1236,7 +1436,7 @@ export function SharedOperationalWorkspace({
               <Button type="button" variant="outline" disabled={busy} onClick={() => { if (persistedRecord && recordFile) setNotice(`${persistedRecord.reference} remains a Draft; its original file was not completed.`); setForm(null); }}>
                 Cancel
               </Button>
-              <Button disabled={busy || (Boolean(persistedRecord) && !recordFile&&!reuseRevisionId)}>{busy ? recordFile ? "Saving record & private file…" : "Saving record…" : persistedRecord ? "Retry original file" : reuseRevisionId?'Save record & link revision':recordFile ? "Save record & upload original" : "Save record"}</Button>
+              <Button disabled={busy || (recordSmartUpload&&!recordFile) || (Boolean(persistedRecord) && !recordFile&&!reuseRevisionId)}>{busy ? recordFile ? "Saving record & private file…" : "Saving record…" : persistedRecord ? "Retry original file" : reuseRevisionId?'Save record & link revision':recordFile ? "Save record & upload original" : recordSmartUpload?"Choose a source file":"Save record"}</Button>
             </div>
           </form>
         </DialogContent>
@@ -1244,7 +1444,7 @@ export function SharedOperationalWorkspace({
       {inlineCustomerOpen && <InlineCustomerModal onClose={()=>setInlineCustomerOpen(false)} onSave={async customer=>{
         const result = await write({data:{action:"create_record",requestId:customer.operationId,payload:{record_type:"Customer",reference:`HLPL-CUS-${customer.operationId.slice(0,8).toUpperCase()}`,title:customer.name,fields:{name:customer.name,spocName:customer.contact,spocEmail:customer.email,revision:"01"}}}}) as {id?:string};
         if(!result?.id) throw new Error("Customer save did not return a persisted ID.");
-        await query.refetch();
+        await refreshShared();
         setValues(previous=>({...previous,customer:result.id!,customerId:result.id!,customer_id:result.id!,customerName:customer.name}));
         setInlineCustomerOpen(false);
       }}/>}

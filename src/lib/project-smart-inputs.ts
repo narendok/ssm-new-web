@@ -902,6 +902,168 @@ export const SMART_PARAMETER_SPECS: Record<string, SmartParameterSpec> = {
       },
     ],
   },
+  vehicle_application_class: {
+    id: "vehicle_application_class",
+    kind: "dropdown",
+    downstreamDocs: ["PRS", "SAR", "DVPR", "BOM"],
+    docImpact: "Defines electrical architecture profile, transient test levels, and body subsystem routing.",
+    presets: [
+      {
+        value: "Agricultural Tractor / Farm Equipment",
+        label: "Agricultural Tractor / Farm Equipment",
+        badge: "Agri Tractor",
+        description: "Includes automated hitch/EQL, steering-angle turn detection, and PTO interlocks.",
+      },
+      {
+        value: "Commercial Vehicle (Truck / Bus)",
+        label: "Commercial Vehicle (Truck / Bus)",
+        badge: "Commercial 24V",
+        description: "Includes 24V load-dump, differential lock solenoids (IAD/IWD), and multi-CAN J1939.",
+      },
+      {
+        value: "Electric Vehicle (EV Subsystems)",
+        label: "Electric Vehicle (EV Subsystems)",
+        badge: "EV High Voltage",
+        description: "High-voltage interlock loop (HVIL), BMS CAN-FD communication, and DC-DC coordination.",
+      },
+      {
+        value: "Light Commercial Vehicle (LCV / Pickup)",
+        label: "Light Commercial Vehicle (LCV)",
+        badge: "LCV 12V",
+        description: "12V system with smart exterior lighting, intermittent wiper, and cabin switch clusters.",
+      },
+    ],
+  },
+  vehicle_lighting_control: {
+    id: "vehicle_lighting_control",
+    kind: "dropdown",
+    downstreamDocs: ["PRS", "HSI", "BOM", "DVPR"],
+    docImpact: "Specifies high-side driver silicon, real-time current sense ADC pins, and bulb-out flasher logic.",
+    presets: [
+      {
+        value: "Smart High-Side Drivers with Real-Time Current Sense (ISENSE)",
+        label: "Smart HSD with Current Sense (ISENSE)",
+        badge: "Smart HSD",
+        description: "Solid-state drivers with proportional current feedback, open-load, and short-circuit protection.",
+      },
+      {
+        value: "Electronic Flasher with Dynamic Bulb-Out Rate Doubling",
+        label: "Electronic Flasher (Automotive Rate Doubling)",
+        badge: "Flasher 2x",
+        description: "Compliant with automotive turn signal regulations, frequency doubles upon bulb failure.",
+      },
+      {
+        value: "Electromechanical Relay Drive with External Fusing",
+        label: "Relay Drive with External Fuses",
+        badge: "Relay Drive",
+        description: "Standard relay coils switched via low-side or high-side drivers.",
+      },
+    ],
+  },
+  wiper_washer_actuation: {
+    id: "wiper_washer_actuation",
+    kind: "dropdown",
+    downstreamDocs: ["PRS", "HSI", "DVPR"],
+    docImpact: "Defines motor inrush handling, dynamic braking, and automated wash-wipe delay coordination.",
+    presets: [
+      {
+        value: "Low/High/Intermittent Wiper with Park Switch Feedback & Wash Coordination",
+        label: "Full 3-Speed Wiper + Park Switch + Wash Coordination",
+        badge: "3-Speed Wiper",
+        description: "Complete wiper motor bridge with hardware park detection and 3-cycle wash delay sweep.",
+      },
+      {
+        value: "Dual-Speed Wiper (Low/High) with Discrete Park Sensing",
+        label: "Dual-Speed Wiper (Low/High)",
+        badge: "2-Speed Wiper",
+        description: "Two-relay architecture for low and high speed wiper motor control.",
+      },
+      {
+        value: "External Wiper Controller Interface",
+        label: "External Controller Only",
+        badge: "External",
+        description: "Wiper management handled by external module; discrete command lines only.",
+      },
+    ],
+  },
+  driveline_differential_locks: {
+    id: "driveline_differential_locks",
+    kind: "dropdown",
+    downstreamDocs: ["PRS", "HSI", "SAR"],
+    docImpact: "Governs high-current solenoid drivers, inductive demagnetization clamping, and speed interlocks.",
+    presets: [
+      {
+        value: "Inter-Axle (IAD) and Inter-Wheel (IWD) Solenoids with Current Feedback",
+        label: "IAD + IWD Solenoid Drivers with Current Feedback",
+        badge: "Tandem Diff Lock",
+        description: "Proportional or ON/OFF solenoid drivers for tandem axle locking with feedback telltales.",
+      },
+      {
+        value: "Inter-Axle Differential Lock (IAD) Only",
+        label: "Inter-Axle Diff Lock (IAD) Only",
+        badge: "IAD Only",
+        description: "Single differential lock solenoid driver with speed interlock check.",
+      },
+      {
+        value: "Not Required for Target Vehicle",
+        label: "Not Applicable",
+        badge: "N/A",
+        description: "Single-drive axle or non-commercial vehicle platform.",
+      },
+    ],
+  },
+  agricultural_hitch_pto_control: {
+    id: "agricultural_hitch_pto_control",
+    kind: "dropdown",
+    downstreamDocs: ["PRS", "HSI", "SAR", "DVPR"],
+    docImpact: "Commands electrohydraulic hitch PWM valves, auto-lift on turn/reverse, and PTO safety cutout.",
+    presets: [
+      {
+        value: "Automated EQL Hitch Lift on Steering Turn & Reverse with Auto-PTO Cutoff",
+        label: "Full Smart Implement Automation (Hitch + PTO + Turn Angle)",
+        badge: "Smart Implement",
+        description: "Coordinates wheel angle ADC and reverse gear sensing to automatically raise tools and disengage PTO.",
+      },
+      {
+        value: "Electronic Quick Lift (EQL) Up/Down Solenoids with Depth Feedback",
+        label: "EQL Hitch Solenoids + 0-5V Depth Sensor",
+        badge: "EQL Hitch",
+        description: "PWM hydraulic valve control with ratiometric hitch position sensor feedback.",
+      },
+      {
+        value: "Not Required (Non-Agricultural Platform)",
+        label: "Not Applicable",
+        badge: "N/A",
+        description: "Platform does not interface with agricultural 3-point hitch or PTO.",
+      },
+    ],
+  },
+  vehicle_can_topology: {
+    id: "vehicle_can_topology",
+    kind: "dropdown",
+    downstreamDocs: ["PRS", "SAR", "BOM"],
+    docImpact: "Determines physical transceiver count, bus isolation, termination resistors, and CAN-FD routing.",
+    presets: [
+      {
+        value: "3 Isolated Channels: Powertrain CAN + Body/Chassis CAN + Diagnostic/Telematics CAN",
+        label: "3 Physical CAN Channels (Powertrain / Body / Telematics)",
+        badge: "3x CAN",
+        description: "Multi-bus architecture with dedicated transceivers preventing bus saturation.",
+      },
+      {
+        value: "2 Channels: Vehicle Powertrain CAN (250k J1939) + Cabin/Body CAN-FD (2M/5M)",
+        label: "Dual CAN (Classic J1939 + CAN-FD)",
+        badge: "Dual CAN-FD",
+        description: "Standard dual-bus architecture bridging legacy powertrain with high-speed cabin systems.",
+      },
+      {
+        value: "1 Channel: Single Vehicle CAN 2.0B at 250 kbps or 500 kbps",
+        label: "Single CAN 2.0B Bus",
+        badge: "Single CAN",
+        description: "Cost-optimized single transceiver for unified vehicle telemetry.",
+      },
+    ],
+  },
 };
 
 /**
@@ -922,6 +1084,12 @@ export function deriveDownstreamDocumentSpecs(parameterValues: Record<string, { 
       battery: getVal("battery"),
       operatingTemperature: getVal("temperature"),
       canChannels: getVal("can"),
+      vehicleClass: getVal("vehicle_application_class"),
+      lightingControl: getVal("vehicle_lighting_control"),
+      wiperActuation: getVal("wiper_washer_actuation"),
+      drivelineDiffLocks: getVal("driveline_differential_locks"),
+      agriculturalImplements: getVal("agricultural_hitch_pto_control"),
+      canTopology: getVal("vehicle_can_topology"),
     },
     srs: {
       title: "Software Requirement Specification (SRS) - SW/FW Deliverable",

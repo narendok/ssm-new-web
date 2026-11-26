@@ -1814,10 +1814,10 @@ export function SalesEnquiriesAndOpportunities({
   const enquiriesCount = enquiries.filter((e) => e.kind === "enquiry" && e.status !== "Declined").length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {/* Sales Action Bar & Metrics */}
-      <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs hover:border-border transition-all">
+      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-border/70 bg-card p-2.5 shadow-2xs hover:border-border transition-all">
           <p className="truncate font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Active Opportunities
           </p>
@@ -1830,7 +1830,7 @@ export function SalesEnquiriesAndOpportunities({
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground">Prioritized in intake queue</p>
         </div>
 
-        <div className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs hover:border-border transition-all">
+        <div className="rounded-xl border border-border/70 bg-card p-2.5 shadow-2xs hover:border-border transition-all">
           <p className="truncate font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Pending Enquiries
           </p>
@@ -1843,7 +1843,7 @@ export function SalesEnquiriesAndOpportunities({
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground">Awaiting review dispatch</p>
         </div>
 
-        <div className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs hover:border-border transition-all">
+        <div className="rounded-xl border border-border/70 bg-card p-2.5 shadow-2xs hover:border-border transition-all">
           <p className="truncate font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Customer Directory
           </p>
@@ -1860,7 +1860,7 @@ export function SalesEnquiriesAndOpportunities({
           <p className="mt-0.5 truncate text-[11px] text-muted-foreground">Managed accounts register</p>
         </div>
 
-        <div className="rounded-xl border border-border/70 bg-card p-3 shadow-2xs hover:border-border transition-all">
+        <div className="rounded-xl border border-border/70 bg-card p-2.5 shadow-2xs hover:border-border transition-all">
           <p className="truncate font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Conversion Protocol
           </p>
@@ -1875,22 +1875,22 @@ export function SalesEnquiriesAndOpportunities({
       </section>
 
       {/* Main Section Header with Tabs, Search, and Action Buttons */}
-      <section className="rounded-xl border border-border/70 bg-card p-5 shadow-xs">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-border/50 pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Users className="size-4 text-primary" />
-              <h2 className="text-base font-bold text-foreground">Enquiries & Opportunities</h2>
-              <span className="rounded-md border border-primary/20 bg-primary/5 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase text-primary">
-                One Sales Flow (Master Plan §4 & §5)
+      <section className="rounded-xl border border-border/70 bg-card p-3 shadow-xs">
+        <div className="grid gap-2 border-b border-border/50 pb-2">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <Users className="size-3.5 shrink-0 text-primary" />
+              <h2 className="min-w-0 truncate text-sm font-bold leading-5 text-foreground">Enquiries & Opportunities</h2>
+              <span title="One Sales Flow (Master Plan §4 & §5)" className="hidden shrink-0 rounded-md border border-primary/20 bg-primary/5 px-1.5 py-0.5 font-mono text-[9px] font-semibold uppercase text-primary sm:inline-flex">
+                One Sales Flow
               </span>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              One unified queue: Active opportunities first, then pending enquiries. Direct customer creation and platform asset reuse.
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+              Active opportunities and pending enquiries, linked to shared customer and project records.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex max-w-full items-center gap-1.5 overflow-x-auto pb-1 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
             {onOpenNewTask && (
               <button
                 type="button"
@@ -1961,8 +1961,8 @@ export function SalesEnquiriesAndOpportunities({
         </div>
 
         {/* Filters and Search Bar */}
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <div className="mt-2 flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-xs [&>button]:shrink-0 [&>button]:whitespace-nowrap">
             <button
               onClick={() => setFilterTab("all")}
               className={`rounded-lg px-3 py-1.5 font-medium transition ${
@@ -2015,20 +2015,20 @@ export function SalesEnquiriesAndOpportunities({
             </button>
           </div>
 
-          <div className="relative min-w-64">
+          <div className="relative w-40 shrink-0 sm:w-52">
             <Search className="absolute left-3 top-2.5 size-3.5 text-muted-foreground" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search enquiries, customer, ID..."
-              className="h-9 w-full rounded-lg border border-input bg-background pl-9 pr-3 text-xs focus:ring-1 focus:ring-primary focus:outline-hidden"
+              className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-2 text-[11px] focus:ring-1 focus:ring-primary focus:outline-hidden"
             />
           </div>
         </div>
 
         {/* Records Queue List */}
-        <div className="mt-5 space-y-3">
+        <div className="mt-3 space-y-3">
           {filteredItems.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border py-12 text-center">
               <Users className="mx-auto size-8 text-muted-foreground/50" />

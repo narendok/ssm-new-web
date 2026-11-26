@@ -5,6 +5,7 @@ import { businessDate } from "@/lib/business-date";
 import React, { useState, useMemo } from "react";
 import {
   CheckSquare,
+  Check,
   Briefcase,
   Users,
   Plus,
@@ -34,6 +35,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { SharedMasterSelect } from "@/components/SharedMasterSelect";
 import { DEMO_ORG_LEVELS } from "@/lib/demo-organization-roster";
+import { TaskWorkTimer } from "./TaskWorkTimer";
 
 export interface TeamMember {
   name: string;
@@ -81,11 +83,13 @@ interface DepartmentLeadCoordinationCenterProps {
   onProjectScopeChange: (scope: string) => void;
   onUpdateTaskAssignee: (taskId: string, newAssignee: string) => void;
   onUpdateTaskStatus: (taskId: string, newStatus: TaskRecord["status"], notes?: string) => void;
+  onUpdateTaskReviewDue?: (taskId: string, dueDate: string) => boolean | void | Promise<boolean | void>;
   onCreateTask: (task: {
     title: string;
     priority: "Low" | "Normal" | "High" | "Critical";
     assignee: string;
     projectId: string;
+    stageCode?: string;
     dueDate: string;
     notes: string;
   }) => boolean | void | Promise<boolean | void>;
@@ -155,6 +159,7 @@ export function DepartmentLeadCoordinationCenter({
   onProjectScopeChange,
   onUpdateTaskAssignee,
   onUpdateTaskStatus,
+  onUpdateTaskReviewDue,
   onCreateTask,
   onAddTeamMember,
   recordsAreScoped = false,
@@ -374,11 +379,11 @@ export function DepartmentLeadCoordinationCenter({
       )}
 
       {/* Tab Navigation & View Mode Switcher */}
-      <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${hideHeader ? "rounded-xl border border-border bg-card p-3 shadow-xs" : "border-b border-border/50 pb-3"}`}>
-        <div className="flex flex-wrap items-center gap-2">
+      <div className={`flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between ${hideHeader ? "rounded-xl border border-border/70 bg-card p-2.5 shadow-sm sm:p-3" : "border-b border-border/50 pb-3"}`}>
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <button
             onClick={() => setActiveTab("tasks")}
-            className={`flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all ${
+            className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-all ${
               activeTab === "tasks"
                 ? "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -398,7 +403,7 @@ export function DepartmentLeadCoordinationCenter({
           {!hideProjectsAndTeam && !hideProjectSelector && (
             <button
               onClick={() => setActiveTab("projects")}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all ${
+              className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-all ${
                 activeTab === "projects"
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -419,7 +424,7 @@ export function DepartmentLeadCoordinationCenter({
           {!hideProjectsAndTeam && !hideProjectSelector && (
             <button
               onClick={() => setActiveTab("teams")}
-              className={`flex items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition-all ${
+              className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-all ${
                 activeTab === "teams"
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -438,45 +443,52 @@ export function DepartmentLeadCoordinationCenter({
           )}
         </div>
 
-        {hideHeader && activeTab === "tasks" && !readOnly && canCreateTask && <Button type="button" size="sm" onClick={() => handleOpenCreateTask()} className="h-8 gap-1.5 text-xs"><Plus className="size-3.5"/>Add Task</Button>}
-        {/* View Mode Toggle when on Tasks tab */}
-        {activeTab === "tasks" && (
-          <div className="flex items-center gap-1 rounded-xl border border-border bg-muted/40 p-1">
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+          {hideHeader && activeTab === "tasks" && !readOnly && canCreateTask && (
+            <Button type="button" size="sm" onClick={() => handleOpenCreateTask()} className="h-9 gap-2 px-3.5 text-xs shadow-sm">
+              <Plus className="size-4" />
+              Add Task
+            </Button>
+          )}
+          {/* View Mode Toggle when on Tasks tab */}
+          {activeTab === "tasks" && (
+          <div className="flex h-9 items-center gap-0.5 rounded-lg border border-border/80 bg-muted/50 p-1">
             <button
               onClick={() => setViewMode("checklist")}
-              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+              className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-all ${
                 viewMode === "checklist"
                   ? "bg-background text-foreground shadow-sm font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <ListTodo className="size-3" />
+              <ListTodo className="size-3.5" />
               Checklist
             </button>
             <button
               onClick={() => setViewMode("kanban")}
-              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+              className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-all ${
                 viewMode === "kanban"
                   ? "bg-background text-foreground shadow-sm font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <FolderKanban className="size-3" />
+              <FolderKanban className="size-3.5" />
               Kanban
             </button>
             <button
               onClick={() => setViewMode("table")}
-              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
+              className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-all ${
                 viewMode === "table"
                   ? "bg-background text-foreground shadow-sm font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <TableIcon className="size-3" />
+              <TableIcon className="size-3.5" />
               Table
             </button>
           </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* TAB 1: TEAMS TASKS */}
@@ -498,6 +510,7 @@ export function DepartmentLeadCoordinationCenter({
               onOpenTask={onOpenTask}
               departmentLead={departmentLead}
               readOnly={readOnly}
+              onSaveReviewDue={onUpdateTaskReviewDue}
             />
           ) : viewMode === "kanban" ? (
             <div className="space-y-4" aria-label="Department task board">
@@ -1109,7 +1122,7 @@ export function DepartmentLeadCoordinationCenter({
 }
 
 // Subcomponents: Task Checklist View, Kanban Column & Task Card
-function TaskChecklistView({
+export function TaskChecklistView({
   tasks,
   teamMembers,
   onUpdateAssignee,
@@ -1118,6 +1131,12 @@ function TaskChecklistView({
   onOpenTask,
   departmentLead,
   readOnly,
+  hidePriority = false,
+  dashboardAudience,
+  dashboardMemberId,
+  onToggleTaskTimer,
+  onSaveReviewDue,
+  hideCompleted = false,
 }: {
   tasks: TaskRecord[];
   teamMembers: TeamMember[];
@@ -1127,8 +1146,16 @@ function TaskChecklistView({
   onOpenTask?: ((task: TaskRecord) => void) | undefined;
   departmentLead: string;
   readOnly?: boolean | undefined;
+  hidePriority?: boolean;
+  dashboardAudience?: "lead" | "member" | "admin";
+  dashboardMemberId?: string;
+  onToggleTaskTimer?: ((taskId: string, action: "start" | "stop") => void) | undefined;
+  onSaveReviewDue?: ((taskId: string, dueDate: string) => boolean | void | Promise<boolean | void>) | undefined;
+  hideCompleted?: boolean;
 }) {
   const [completedExpanded, setCompletedExpanded] = useState<boolean>(false);
+  const [dueDateDrafts, setDueDateDrafts] = useState<Record<string, string>>({});
+  const [savingDueDateTaskId, setSavingDueDateTaskId] = useState("");
   const today = useBusinessDate();
 
   const todayItems = sortTaskRecords(
@@ -1176,7 +1203,7 @@ function TaskChecklistView({
       items: completedItems,
       collapsible: true,
     },
-  ];
+  ].filter((section) => !hideCompleted || section.lane !== "completed");
 
   return (
     <div className="grid gap-4 lg:grid-cols-2" aria-label="Department task checklist">
@@ -1308,28 +1335,43 @@ function TaskChecklistView({
                         </div>
 
                         {/* Right: Priority, Assignee, Due Date, Status Changer */}
-                        <div className="flex flex-wrap items-center gap-1.5 pl-6">
-                          <PriorityBadge priority={task.priority} />
+                        <div className="flex flex-wrap items-center gap-2 pl-6">
+                          {!hidePriority && <PriorityBadge priority={task.priority} />}
 
                           {/* 1-Click Assignee Switcher */}
-                          <select
-                            value={currentAssignee}
-                            onChange={(e) => onUpdateAssignee(task.id, e.target.value)}
-                            disabled={readOnly}
-                            className="h-6 rounded border border-border bg-background px-1.5 text-[11px] font-medium text-foreground outline-none cursor-pointer hover:border-primary/50 max-w-32 truncate [&>option]:bg-background [&>option]:text-foreground"
-                          >
-                            {teamMembers.map((m) => (
-                              <option key={m.name} value={m.name}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
+                          {dashboardAudience === "member" ? (
+                            dashboardMemberId && onToggleTaskTimer ? <TaskWorkTimer compact memberId={dashboardMemberId} task={{ id: task.id, assignee_id: task.fields["assigneeId"] || null, actual_seconds: Number(task.fields["actualSeconds"] || 0), timer_started_at: task.fields["timerStartedAt"] || null, timer_started_by: task.fields["timerStartedBy"] || null }} onToggle={onToggleTaskTimer} /> : <span className="text-[10px] text-muted-foreground">Your task</span>
+                          ) : (
+                            <select
+                              value={currentAssignee}
+                              onChange={(e) => onUpdateAssignee(task.id, e.target.value)}
+                              disabled={readOnly}
+                              aria-label={`Assign ${task.title}`}
+                              className="h-8 max-w-36 truncate rounded-lg border border-border bg-background px-2 text-xs font-medium text-foreground outline-none cursor-pointer hover:border-primary/50 [&>option]:bg-background [&>option]:text-foreground"
+                            >
+                              {teamMembers.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+                            </select>
+                          )}
 
                           {/* Due Date */}
-                          <span className={`flex items-center gap-1 font-mono text-[10px] shrink-0 ${task.fields["dueDateWarning"] ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`} title={task.fields["dueDateWarning"] || undefined}>
+                          {onSaveReviewDue && dashboardAudience !== "member" ? (() => {
+                            const savedDueDate = task.fields["dueDate"] || "";
+                            const draftDueDate = dueDateDrafts[task.id] ?? savedDueDate;
+                            return <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2">
+                              <Calendar className="size-3.5 shrink-0 text-muted-foreground" />
+                              <input type="date" aria-label={`Review due ${task.title}`} value={draftDueDate} onChange={(event) => setDueDateDrafts((current) => ({ ...current, [task.id]: event.target.value }))} onInput={(event) => setDueDateDrafts((current) => ({ ...current, [task.id]: event.currentTarget.value }))} disabled={readOnly} className="h-7 w-32 border-0 bg-transparent px-0 text-xs text-foreground outline-none ring-0" />
+                              {draftDueDate !== savedDueDate && <button type="button" aria-label={`Save review due ${task.title}`} disabled={readOnly || savingDueDateTaskId === task.id} onClick={async () => {
+                                setSavingDueDateTaskId(task.id);
+                                try {
+                                  const saved = await onSaveReviewDue(task.id, draftDueDate);
+                                  if (saved !== false) setDueDateDrafts((current) => { const next = { ...current }; delete next[task.id]; return next; });
+                                } finally { setSavingDueDateTaskId(""); }
+                              }} className="inline-flex h-7 items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-2 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/10 disabled:opacity-60"><Check className="size-3"/>Save</button>}
+                            </span>;
+                          })() : <span className={`flex items-center gap-1 font-mono text-[10px] shrink-0 ${task.fields["dueDateWarning"] ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`} title={task.fields["dueDateWarning"] || undefined}>
                             <Calendar className="size-3" />
                             {task.fields["dueDateWarning"] ? `Review · ${task.fields["storedDueDate"]}` : task.fields["dueDate"] || "No due"}
-                          </span>
+                          </span>}
 
                           {/* Status changer */}
                           <select
@@ -1353,7 +1395,7 @@ function TaskChecklistView({
                                   : onUpdateStatus(task.id, e.target.value as TaskRecord["status"])
                             }
                             disabled={readOnly}
-                            className="h-6 rounded border border-border bg-background px-1.5 text-[10px] font-semibold text-foreground outline-none cursor-pointer [&>option]:bg-background [&>option]:text-foreground"
+                            className="h-8 rounded-lg border border-border bg-background px-2 text-xs font-semibold text-foreground outline-none cursor-pointer hover:border-primary/50 [&>option]:bg-background [&>option]:text-foreground"
                           >
                             <option value="Draft">Draft</option>
                             <option value="Open">To Do</option>

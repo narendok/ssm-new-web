@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const ts=require('typescript');
 const output=ts.transpileModule(fs.readFileSync('src/lib/record-form-catalogue.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const m={exports:{}};new Function('module','exports',output)(m,m.exports);
-const {recordFormSpec,recordFields,recordFieldValues,hardwareStageForRecordType,hardwareAttachmentForRecordType}=m.exports;
+const {recordFormSpec,recordFields,recordFieldValues,hardwareStageForRecordType,hardwareAttachmentForRecordType,projectLinkModeForRecordType}=m.exports;
 for(const department of ['SAL','EHW','FW','SW','MECH','PUR','QA','EMF','MMF','FIN','SIT','HR']) {
  test(`${department}: every record type retains its fields and validates required input`,()=>{
   const spec=recordFormSpec(department);assert.ok(spec?.types.length);
@@ -57,6 +57,27 @@ test('all catalogue entries inherit company location instead of requiring repeat
   assert.doesNotThrow(()=>recordFieldValues(spec,type,values),type);
  }
 });
+test('project selector follows record applicability and saved lifecycle stage configuration',()=>{
+ assert.equal(projectLinkModeForRecordType('SAL','Enquiry'), 'none');
+ assert.equal(projectLinkModeForRecordType('SAL','Opportunity'), 'optional');
+ assert.equal(projectLinkModeForRecordType('SAL','Order'), 'optional');
+ assert.equal(projectLinkModeForRecordType('HR','Training'), 'none');
+ assert.equal(projectLinkModeForRecordType('EHW','PRS'), 'optional');
+ assert.equal(projectLinkModeForRecordType('MECH','STEP clearance'), 'optional');
+ assert.equal(projectLinkModeForRecordType('QA','Inspection'), 'none');
+ assert.equal(projectLinkModeForRecordType('QA','Configured lifecycle output',[
+  {department:'QA',exitTypes:['Configured lifecycle output']},
+ ]), 'required');
+});
+test('HR can create a canonical serial Asset for employee custody workflows without a project',()=>{
+ const spec=recordFormSpec('HR');assert.ok(spec.types.includes('Asset'));
+ const fields=recordFields(spec,'Asset');
+ for(const key of ['assetTag','serialNumber','category'])assert.ok(fields.some(field=>field.key===key&&field.required),key);
+ const values=recordFieldValues(spec,'Asset',{assetTag:'TEST-AST-2026-001',serialNumber:'TEST-SN-2026-001',category:'Laptop'});
+ assert.equal(values.assetTag,'TEST-AST-2026-001');assert.equal(values.serialNumber,'TEST-SN-2026-001');assert.equal(values.category,'Laptop');
+ for(const key of ['assetTag','serialNumber','category'])assert.throws(()=>recordFieldValues(spec,'Asset',{assetTag:'TEST',serialNumber:'TEST',category:'Laptop',[key]:''}),/required/);
+ assert.equal(projectLinkModeForRecordType('HR','Asset'),'none');
+});
 test('shared master choices preserve distinct canonical identities and exclude inactive records',()=>{
  const code=ts.transpileModule(fs.readFileSync('src/lib/shared-master-options.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText;
  const mod={exports:{}};new Function('module','exports',code)(mod,mod.exports);
@@ -73,7 +94,7 @@ test('EHW record creation can attach its original in the same modal with idempot
  assert.match(component,/Save record & upload original/);
  assert.match(component,/registerDocument\(\{ data:/);
  assert.match(component,/uploadRecordAttachment\(documentId, recordFile, linkedRecord\.revision\)/);
- assert.match(component,/scope:\s*"internal"/);
+ assert.match(component,/scope:\s*String\(payload\["project_id"\]\s*\|\|\s*values\["projectId"\]\s*\|\|\s*""\)\s*\?\s*"internal"\s*:\s*"department"/);
  assert.match(component,/recordId:\s*linkedRecord\.id/);
  assert.match(component,/createRecordRequestId\.current \|\|= crypto\.randomUUID\(\)/);
  assert.match(component,/keep it selected and retry/);

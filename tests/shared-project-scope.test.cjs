@@ -35,12 +35,13 @@ test("shared workspace clears a stale demo project selection when authenticated 
   assert.equal(resolveSharedProjectScope("all", currentProjects), "all");
 });
 
-test("shared project-scope validation hook runs before asynchronous loading returns", () => {
+test("shared project-scope validation hook stays inside the data-ready child", () => {
   const validationHook = workspaceSource.indexOf("setScope((current) => resolveSharedProjectScope");
+  const contentBoundary = workspaceSource.indexOf("function SharedOperationalWorkspaceContent(");
   const pendingReturn = workspaceSource.indexOf("if (query.isPending)");
   assert.ok(validationHook >= 0, "project scope validation is wired to authenticated data");
   assert.ok(
-    validationHook < pendingReturn,
-    "the hook is unconditional across loading and ready renders",
+    pendingReturn >= 0 && contentBoundary > pendingReturn && validationHook > contentBoundary,
+    "scope validation runs in the data-ready child, so loading returns cannot change hook order",
   );
 });

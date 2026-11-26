@@ -9,6 +9,7 @@ test('automatic references bind project department type and revision without usi
  const {automaticRecordReference}=m.exports;
  assert.equal(automaticRecordReference('HLPL-OBD0374783-01','PUR','Mass production request','02'),'HLPL-OBD0374783-PUR-MASSPRODUCTIONREQUEST-02');
  assert.equal(automaticRecordReference('','PUR','PRS'),'');
+ assert.equal(automaticRecordReference('GEN','HR','Asset'),'HLPL-GEN-HR-ASSET-01');
  assert.equal(automaticRecordReference('HLPL-OBD-01','','PRS'),'');
  assert.notEqual(automaticRecordReference('HLPL-OBD-01','PUR','F-PUR-10'),automaticRecordReference('HLPL-OBD-01','PUR','F-PUR-16'));
  assert.notEqual(automaticRecordReference('HLPL-OBD-01','PUR','PRS'),automaticRecordReference('HLPL-OBD-01','EHW','PRS'));

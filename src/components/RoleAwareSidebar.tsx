@@ -35,7 +35,6 @@ import {
   Scale,
   UserCheck,
   ClipboardCheck,
-  Sliders,
   Settings2,
   Layers,
   PackageSearch,
@@ -133,6 +132,7 @@ export type RoleAwareSidebarProps = {
       | "ingestion_gate"
       | "records"
       | "deliverables"
+      | "sales_pipeline"
       | "vault"
       | "analysis"
       | "approvals"
@@ -151,7 +151,6 @@ export type RoleAwareSidebarProps = {
   onOpenDirectory?: (() => void) | undefined;
   onOpenLegalHub?: (() => void) | undefined;
   onOpenDecisionLog?: (() => void) | undefined;
-  onOpenAdminSettings?: (() => void) | undefined;
   onOpenWizard?: (() => void) | undefined;
   onOpenAssetCatalog?: (() => void) | undefined;
   onOpenApprovals?: (() => void) | undefined;
@@ -220,7 +219,6 @@ export function RoleAwareSidebar({
   onOpenDirectory,
   onOpenLegalHub,
   onOpenDecisionLog,
-  onOpenAdminSettings,
   onOpenWizard,
   onOpenAssetCatalog,
   onOpenApprovals,
@@ -409,7 +407,7 @@ export function RoleAwareSidebar({
             shortLabel: "Upload",
             icon: Sparkles,
             badge: "Intake",
-            isActive: view === "sor",
+            isActive: view === "smart_upload" || view === "sor",
             onClick: () => handleItemClick(() => (onOpenSmartSor ? onOpenSmartSor() : undefined)),
           },
         ],
@@ -433,8 +431,8 @@ export function RoleAwareSidebar({
             shortLabel: "SAL",
             icon: UsersRound,
             badge: openTaskCounts["sales"],
-            isActive: activeArea === "sales",
-            onClick: () => handleItemClick(() => onNavigate("sales")),
+            isActive: activeArea === "sales" && view === "sales_pipeline",
+            onClick: () => handleItemClick(() => onNavigate("sales", "sales_pipeline")),
           },
           {
             id: "adm-sor",
@@ -442,8 +440,8 @@ export function RoleAwareSidebar({
             shortLabel: "Upload",
             icon: Sparkles,
             badge: "NEW",
-            isActive: view === "sor",
-            onClick: () => handleItemClick(() => (onOpenSmartSor ? onOpenSmartSor() : onNavigate("sales", "queue"))),
+            isActive: view === "smart_upload" || view === "sor",
+            onClick: () => handleItemClick(() => (onOpenSmartSor ? onOpenSmartSor() : onNavigate("sales", "sales_pipeline"))),
           },
           {
             id: "adm-projects",
@@ -784,17 +782,9 @@ export function RoleAwareSidebar({
       },
       {
         id: "administration",
-        title: "Settings",
-        icon: Sliders,
+        title: "Portal Setup",
+        icon: Settings2,
         items: [
-          {
-            id: "adm-settings",
-            label: "Organization & RACI Settings",
-            shortLabel: "Settings",
-            icon: Sliders,
-            isActive: false,
-            onClick: () => handleItemClick(() => onOpenAdminSettings?.()),
-          },
           {
             id: "adm-wizard",
             label: "Portal Setup Wizard",
@@ -830,7 +820,6 @@ export function RoleAwareSidebar({
     onOpenLegalHub,
     onOpenDecisionLog,
     onOpenDirectory,
-    onOpenAdminSettings,
     onOpenWizard,
     setupStep,
     totalSetupSteps,
@@ -961,8 +950,8 @@ export function RoleAwareSidebar({
               label: "Sales Opportunities & Leads",
               shortLabel: "Opps",
               icon: UsersRound,
-              isActive: activeArea === "sales" && view === "queue",
-              onClick: () => handleItemClick(() => onNavigate("sales", "queue")),
+              isActive: activeArea === "sales" && view === "sales_pipeline",
+              onClick: () => handleItemClick(() => onNavigate("sales", "sales_pipeline")),
             },
             {
               id: "sales-sor",
@@ -970,8 +959,8 @@ export function RoleAwareSidebar({
               shortLabel: "Upload",
               icon: Sparkles,
               badge: "Spec",
-              isActive: view === "sor",
-              onClick: () => handleItemClick(() => (onOpenSmartSor ? onOpenSmartSor() : onNavigate("sales", "queue"))),
+              isActive: view === "smart_upload" || view === "sor",
+              onClick: () => handleItemClick(() => (onOpenSmartSor ? onOpenSmartSor() : onNavigate("sales", "sales_pipeline"))),
             },
             {
               id: "sales-customers",
@@ -1195,6 +1184,14 @@ export function RoleAwareSidebar({
         icon: CheckSquare,
         items: [
           {
+            id: "dept-dashboard",
+            label: "Department Dashboard",
+            shortLabel: "Dashboard",
+            icon: LayoutDashboard,
+            isActive: activeArea === deptId && view === "summary",
+            onClick: () => handleItemClick(() => onNavigate(deptId as AreaId, "summary")),
+          },
+          {
             id: "dept-mywork",
             label: "My Tasks & Action Queue",
             shortLabel: "My Work",
@@ -1241,7 +1238,7 @@ export function RoleAwareSidebar({
             shortLabel: "Upload",
             icon: Sparkles,
             badge: "Intake",
-            isActive: view === "sor",
+            isActive: view === "smart_upload" || view === "sor",
             onClick: () => handleItemClick(() => (onOpenSmartSor ? onOpenSmartSor() : undefined)),
           },
         ],
@@ -1266,7 +1263,7 @@ export function RoleAwareSidebar({
         id: "dept_reference",
         title: "Reference & Training",
         icon: BookOpen,
-        items: [{id:"dept-decisions",label:persona.kind === "member" ? "My Decision Submissions" : "Decision & Deviation Log",shortLabel:"Decisions",icon:BookOpen,isActive:false,onClick:()=>handleItemClick(()=>onOpenDecisionLog?.())},
+        items: [{id:"dept-decisions",label:persona.kind === "member" ? "My Decision Submissions" : "Decision & Deviation Log",shortLabel:"Decisions",icon:BookOpen,isActive:view === "decision_log",onClick:()=>handleItemClick(()=>onOpenDecisionLog?.())},
           ...(deptId === "pur"
             ? [
                 {
@@ -1359,31 +1356,6 @@ export function RoleAwareSidebar({
     isMobile,
     onCloseMobile,
   ]);
-
-  const adminSettingsGroup: SidebarWorkGroup = useMemo(() => ({
-    id: "administration",
-    title: "Settings & System",
-    icon: Sliders,
-    items: [
-      {
-        id: "adm-settings",
-        label: "Organization & RACI Settings",
-        shortLabel: "Settings",
-        icon: Sliders,
-        isActive: false,
-        onClick: () => handleItemClick(() => onOpenAdminSettings?.()),
-      },
-      {
-        id: "adm-wizard",
-        label: "Portal Setup Wizard",
-        shortLabel: "Wizard",
-        icon: Settings2,
-        badge: `${setupStep + 1}/${totalSetupSteps}`,
-        isActive: false,
-        onClick: () => handleItemClick(() => onOpenWizard?.()),
-      },
-    ],
-  }), [setupStep, totalSetupSteps, onOpenAdminSettings, onOpenWizard]);
 
   const executiveGroup: SidebarWorkGroup = useMemo(() => ({
     id: "executive_oversight",

@@ -68,6 +68,7 @@
   --color-steel: var(--steel);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-overlay: var(--overlay);
 }
 
 :root {
@@ -100,6 +101,7 @@
   --steel: oklch(0.49 0.13 250);
   --warning: oklch(0.72 0.13 78);
   --danger: oklch(0.56 0.18 28);
+  --overlay: oklch(0.12 0.02 255 / 0.5);
   --chart-1: var(--steel);
   --chart-2: var(--moss);
   --chart-3: var(--warning);
@@ -140,6 +142,7 @@
   --steel: oklch(0.7 0.13 219);
   --warning: oklch(0.78 0.14 78);
   --danger: oklch(0.68 0.17 18);
+  --overlay: oklch(0.015 0.01 255 / 0.78);
   --sidebar: oklch(0.105 0.017 255);
   --sidebar-foreground: oklch(0.86 0.012 245);
   --sidebar-primary: oklch(0.3 0.09 220);
@@ -203,6 +206,23 @@
     font: inherit;
   }
 
+  button:not(:disabled) {
+    cursor: pointer;
+    transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
   button,
   input,
   select,
@@ -218,6 +238,21 @@
   a:focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Keep legacy hand-built modal backdrops theme-aware while pages migrate to Dialog. */
+  [class*="fixed"][class*="inset-0"][class*="bg-black/60"],
+  [class*="fixed"][class*="inset-0"][class*="bg-black/65"],
+  [class*="fixed"][class*="inset-0"][class*="bg-black/80"],
+  [class*="fixed"][class*="inset-0"][class*="bg-ink/30"],
+  [class*="fixed"][class*="inset-0"][class*="bg-ink/40"] {
+    background-color: var(--overlay) !important;
+  }
+
+  [role="dialog"] {
+    color: var(--card-foreground);
   }
 }
 
@@ -252,11 +287,13 @@
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
   border-radius: var(--radius-lg);
   background: color-mix(in oklab, var(--card) 88%, transparent);
+  box-shadow: 0 1px 2px oklch(0.25 0.02 251 / 4%);
 }
 
 @utility ops-section-header {
   border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
-  padding: 0.625rem 0.875rem;
+  padding: 0.75rem 1rem;
+  background: color-mix(in oklab, var(--card) 72%, var(--background));
 }
 
 @utility ops-dense-row {

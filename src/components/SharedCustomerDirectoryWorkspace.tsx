@@ -77,12 +77,14 @@ export function SharedCustomerDirectoryWorkspace({ membership, onBack }: { membe
     }
   }
 
-  return <div className="space-y-5">
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4">
-      <div>
-        <Button type="button" variant="ghost" size="sm" className="-ml-2 mb-1 h-7 px-2 text-xs text-muted-foreground" onClick={onBack}><ArrowLeft className="mr-1 size-3.5"/>Back</Button>
-        <h1 className="flex items-center gap-2 text-xl font-semibold"><Building2 className="size-5 text-primary"/>Customer Master</h1>
-        <p className="mt-1 text-xs text-muted-foreground">Shared TEST directory · IDs and names are reused by Sales, project and document workflows.</p>
+  return <div className="space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button type="button" variant="ghost" size="sm" className="-ml-2 h-7 shrink-0 px-2 text-xs text-muted-foreground" onClick={onBack}><ArrowLeft className="mr-1 size-3.5"/>Back</Button>
+          <h1 className="flex min-w-0 items-center gap-1.5 truncate text-sm font-semibold"><Building2 className="size-4 shrink-0 text-primary"/>Customer Master</h1>
+        </div>
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">Canonical customer directory · Shared customer IDs are reused by Sales, project and document workflows.</p>
       </div>
       {canCreate && <Button type="button" size="sm" onClick={() => { setError(""); setCreateOpen(true); }}><Plus className="mr-1 size-4"/>Add customer</Button>}
     </div>

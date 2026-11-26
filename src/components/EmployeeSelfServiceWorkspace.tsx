@@ -45,7 +45,11 @@ import type { Persona } from "@/components/RoleAwareSidebar";
 interface EmployeeSelfServiceWorkspaceProps {
   sharedProfile?: (Omit<EmployeeProfile,"status"> & {status: EmployeeProfile["status"] | "Not recorded"}) | undefined;
   sharedSection?: ((section: "details" | "letters" | "policies" | "training" | "forms" | "assets") => React.ReactNode) | undefined;
-  sharedCounts?: {policies:number;training:number;forms:number} | undefined;
+  sharedCounts?: {letters?:number;assets?:number;policies:number;training:number;forms:number} | undefined;
+  onRequestProfileChange?: (() => void) | undefined;
+  pendingProfileChange?: { id: string; version: number; data: Record<string, unknown> } | undefined;
+  onAcceptProfileChange?: (() => void) | undefined;
+  onRejectProfileChange?: (() => void) | undefined;
   persona: Persona;
   testMembership?: {
     organizationId?: string | undefined;
@@ -71,6 +75,10 @@ export function EmployeeSelfServiceWorkspace({
   sharedProfile,
   sharedSection,
   sharedCounts,
+  onRequestProfileChange,
+  pendingProfileChange,
+  onAcceptProfileChange,
+  onRejectProfileChange,
   persona,
   testMembership,
   letters: initialLetters,
@@ -241,7 +249,7 @@ export function EmployeeSelfServiceWorkspace({
           }`}
         >
           <FileText className="w-3.5 h-3.5" />
-          My Letters ({employeeLetters.length})
+          My Letters ({sharedCounts?.letters ?? employeeLetters.length})
         </button>
         <button
           onClick={() => setActiveTab("policies")}
@@ -277,13 +285,21 @@ export function EmployeeSelfServiceWorkspace({
           }`}
         >
           <Laptop className="w-3.5 h-3.5" />
-          My Equipment & Assets ({employeeAssets.length})
+          My Equipment & Assets ({sharedCounts?.assets ?? employeeAssets.length})
         </button>
       </div>
 
       {/* Details View */}
       {sharedSection && activeTab !== "details" ? sharedSection(activeTab) : <>
       {activeTab === "details" && (
+        <>
+        {pendingProfileChange && <section className="rounded-xl border border-amber-400/50 bg-amber-50/60 p-4 dark:bg-amber-950/20" aria-label="Pending profile change approval">
+          {pendingProfileChange.data["status"] === "Pending_Employee_Acknowledgement" ? <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h3 className="text-sm font-semibold">HR has proposed a profile update</h3><p className="mt-1 text-xs text-muted-foreground">Your current details stay in effect until you accept. Review the proposed fields below.</p>
+              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">{Object.entries((pendingProfileChange.data["proposedProfile"] as Record<string, unknown>) || {}).map(([key,value])=><div key={key}><dt className="text-muted-foreground">{key.replace(/([A-Z])/g," $1")}</dt><dd className="font-medium">{String((((pendingProfileChange.data["baseProfile"] as Record<string, unknown>)||{})[key]) ?? "—")} → {String(value ?? "—")}</dd></div>)}</dl>
+            </div><div className="flex gap-2"><Button size="sm" onClick={onAcceptProfileChange}>Accept update</Button><Button size="sm" variant="outline" onClick={onRejectProfileChange}>Request correction</Button></div>
+          </div> : <div><h3 className="text-sm font-semibold">Your profile change is awaiting HR review</h3><p className="mt-1 text-xs text-muted-foreground">The existing profile remains active until HR or Admin approves the request.</p></div>}
+        </section>}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="md:col-span-2 p-5 rounded-xl bg-card border border-border shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
@@ -329,7 +345,7 @@ export function EmployeeSelfServiceWorkspace({
             </div>
 
             <div className="pt-3 border-t border-border/60 text-xs text-muted-foreground">
-              To request a change to statutory records or banking details, submit an HR request through your authorized HR contact.
+              <div className="flex flex-wrap items-center justify-between gap-2"><span>Profile edits are reviewed before becoming the official baseline.</span>{onRequestProfileChange&&!pendingProfileChange&&<Button size="sm" variant="outline" onClick={onRequestProfileChange}>Request profile change</Button>}</div>
             </div>
           </div>
 
@@ -355,6 +371,7 @@ export function EmployeeSelfServiceWorkspace({
             </div>
           </div>
         </div>
+        </>
       )}
 
       {/* Letters View */}
@@ -400,7 +417,9 @@ export function EmployeeSelfServiceWorkspace({
               ))
             ) : (
               <div className="p-8 text-center text-xs text-muted-foreground">
-                No official letters currently recorded for {profile.name} ({profile.employeeCode}).
+                {testMembership
+                  ? `No shared HR letter records are linked to this authenticated profile yet (${profile.employeeCode}). Company-issued letters must be connected through the shared HR document service before they can appear here.`
+                  : `No official letters currently recorded for ${profile.name} (${profile.employeeCode}).`}
               </div>
             )}
           </div>
@@ -563,7 +582,9 @@ export function EmployeeSelfServiceWorkspace({
               ))
             ) : (
               <div className="p-8 text-center text-xs text-muted-foreground">
-                No equipment or tools currently in your custody ({profile.employeeCode}).
+                {testMembership
+                  ? `No shared employee-custody records are linked to this profile yet (${profile.employeeCode}). The stock inventory ledger is separate; equipment custody will appear here only when the shared HR asset feed is connected.`
+                  : `No equipment or tools currently in your custody (${profile.employeeCode}).`}
               </div>
             )}
           </div>

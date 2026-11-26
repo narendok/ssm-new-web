@@ -34,7 +34,9 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     hd = uuid(11),
     qd = uuid(12),
     fd = uuid(13),
-    sd = uuid(14);
+    sd = uuid(14),
+    hr = uuid(22),
+    hrd = uuid(23);
   for (const [id, email] of [
     [admin, "admin@example.com"],
     [hw, "hw@example.com"],
@@ -46,6 +48,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [uuid(8), "service@example.com"],
     [uuid(9), "ops.lead@example.com"],
     [uuid(19), "finance.lead@example.com"],
+    [hr, "hr.lead@example.com"],
   ])
     await db.query("INSERT INTO auth.users VALUES($1,$2)", [id, email]);
   await db.query(
@@ -66,6 +69,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [uuid(8), "department_lead"],
     [uuid(9), "department_lead"],
     [uuid(19), "department_lead"],
+    [hr, "department_lead"],
   ])
     mids[id] = (
       await db.query(
@@ -83,6 +87,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
     [uuid(18), "OPS", uuid(9)],
     [uuid(20), "FIN", uuid(19)],
     [uuid(21), "CLIENT", admin],
+    [hrd, "HR", hr],
   ])
     await db.query(
       "INSERT INTO departments(id,organization_id,name,department_type,code,lead_member_id) VALUES($1,$2,$3,$3,$3,$4)",
@@ -110,6 +115,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
       "utf8",
     ),
   );
+  await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261026110000_shared_document_registration.sql"), "utf8"));
   await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104174216_expense_request_routing.sql"),"utf8"));
   await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104174711_repair_expense_request_routing_patch.sql"),"utf8"));
   await db.exec(fs.readFileSync(path.join(root,"supabase/migrations/20261104175534_validate_expense_request_details.sql"),"utf8"));
@@ -134,6 +140,19 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261120222032_admin_expense_department_scope.sql"), "utf8"));
   await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261120233000_internal_budget_allocation_department.sql"), "utf8"));
   await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261120234000_enforce_active_travel_caps.sql"), "utf8"));
+  await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261121120000_nullable_travel_policy_effective_date.sql"), "utf8"));
+  await db.exec(`CREATE TABLE private.controlled_original_verifications(
+    file_id uuid PRIMARY KEY REFERENCES public.controlled_document_files(id), organization_id uuid NOT NULL,
+    checksum text NOT NULL, size_bytes bigint NOT NULL, storage_path text NOT NULL, storage_object_id uuid NOT NULL,
+    verified_by uuid NOT NULL REFERENCES auth.users(id));
+    CREATE FUNCTION private.original_has_verified_receipt(p_file uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+      SELECT EXISTS(SELECT 1 FROM public.controlled_document_files f JOIN private.controlled_original_verifications v
+        ON v.file_id=f.id AND v.organization_id=f.organization_id AND v.checksum=lower(f.checksum)
+        AND v.size_bytes=f.size_bytes AND v.storage_path=f.storage_path
+        JOIN storage.objects o ON o.id=v.storage_object_id AND o.bucket_id='controlled-documents' AND o.name=f.storage_path
+        WHERE f.id=p_file)
+    $$;`);
+  await db.exec(fs.readFileSync(path.join(root, "supabase/migrations/20261121021829_employee_profile_links.sql"), "utf8"));
   const patchedBusinessFn=(await db.query("SELECT pg_get_functiondef('mutate_business_workspace(text,jsonb,uuid)'::regprocedure) AS definition")).rows[0].definition;
   assert.match(patchedBusinessFn,/Pending_Procurement/);
   assert.match(patchedBusinessFn,/COALESCE\(data->>'requestType','travel'\)/);
@@ -166,6 +185,15 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
         ).rows[0].result,
     );
   }
+  async function createProfileForEmployee(employeeId, profileData) {
+    const request = await call(admin, "save_profile", { data: { memberId: mids[employeeId], reason: "TEST initial employee profile verification", ...profileData } });
+    assert.ok(request.id, "HR profile edits create a reviewable employee change request");
+    const pending = (await load(employeeId)).items.find(item => item.id === request.id);
+    assert.equal(pending.data.status, "Pending_Employee_Acknowledgement", "HR edits wait for the employee before replacing the baseline");
+    assert.equal((await db.query("SELECT 1 FROM business_items WHERE organization_id=$1 AND kind='profile' AND owner_id=$2", [org, mids[employeeId]])).rows.length, 0, "the baseline is not created before employee acknowledgement");
+    await call(employeeId, "acknowledge_profile_change", { id: pending.id, version: pending.version, data: {} });
+    return request.id;
+  }
   async function load(user) {
     return as(
       user,
@@ -175,8 +203,62 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   async function loadExpenseCatalogue(user) {
     return as(user, async () => (await db.query("SELECT get_expense_catalogue(NULL) result")).rows[0].result);
   }
+
+  // A narrowly scoped HR fixture proves the letter and custody links use only
+  // an existing verified controlled original and canonical Asset record.
+  const letterDocument = uuid(24), letterFile = uuid(25), assetRecord = uuid(26);
+  const letterChecksum = "a".repeat(64), letterPath = `${org}/${hrd}/${letterDocument}/01/${letterChecksum.slice(0, 16)}-TEST-appointment.pdf`;
+  await db.query(
+    "INSERT INTO documents(id,organization_id,department_id,title,document_type,reference_url,visibility,created_by) VALUES($1,$2,$3,'TEST Appointment Letter','HR Letter','private','internal',$4)",
+    [letterDocument, org, hrd, hr],
+  );
+  await db.query(
+    "INSERT INTO controlled_document_files(id,organization_id,department_id,document_id,revision,storage_path,original_name,content_type,size_bytes,checksum,uploaded_by) VALUES($1,$2,$3,$4,'01',$5,'TEST-Appointment.pdf','application/pdf',42,$6,$7)",
+    [letterFile, org, hrd, letterDocument, letterPath, letterChecksum, hr],
+  );
+  const storageObject = (await db.query("INSERT INTO storage.objects(bucket_id,name) VALUES('controlled-documents',$1) RETURNING id", [letterPath])).rows[0].id;
+  await db.query(
+    "INSERT INTO private.controlled_original_verifications(file_id,organization_id,checksum,size_bytes,storage_path,storage_object_id,verified_by) VALUES($1,$2,$3,42,$4,$5,$6)",
+    [letterFile, org, letterChecksum, letterPath, storageObject, hr],
+  );
+  await db.query(
+    "INSERT INTO operational_records(id,organization_id,department_id,area,record_type,reference,title,fields,created_by,updated_by) VALUES($1,$2,$3,'HR','Asset','AST-TEST-HR-001','TEST HR laptop',jsonb_build_object('assetTag','AST-TEST-HR-001','assetName','TEST HR laptop','serialNumber','TEST-SN-001','category','Laptop'),$4,$4)",
+    [assetRecord, org, hrd, admin],
+  );
+  const letterPayload = { data: { memberId: mids[employee], documentId: letterDocument, fileId: letterFile, letterType: "Appointment", referenceNumber: "TEST-HR-LETTER-001", effectiveDate: "2026-11-21" } };
+  await assert.rejects(call(hw, "issue_employee_letter", letterPayload), /HR_AUTHORITY_REQUIRED/);
+  const issuedLetter = (await call(hr, "issue_employee_letter", letterPayload)).id;
+  assert.equal((await load(employee)).items.find((i) => i.id === issuedLetter).data.status, "Review");
+  await assert.rejects(as(employee, async () => db.query("SELECT * FROM get_employee_letter_file_access($1)", [issuedLetter])), /EMPLOYEE_LETTER_UNAVAILABLE/);
+  const letterRow = (await load(hr)).items.find((i) => i.id === issuedLetter);
+  await call(hr, "approve_employee_letter", { id: issuedLetter, version: letterRow.version, data: {} });
+  const employeeReviewLetter = (await load(employee)).items.find((i) => i.id === issuedLetter);
+  assert.equal(employeeReviewLetter.data.status, "Pending_Employee_Acknowledgement", "HR approval sends the verified letter to the employee for acceptance");
+  const letterDownload = (await as(employee, async () => db.query("SELECT * FROM get_employee_letter_file_access($1)", [issuedLetter]))).rows[0];
+  assert.equal(letterDownload.file_id, letterFile);
+  await assert.rejects(as(qa, async () => db.query("SELECT * FROM get_employee_letter_file_access($1)", [issuedLetter])), /EMPLOYEE_LETTER_UNAVAILABLE/);
+  await assert.rejects(call(hr, "acknowledge_employee_letter", { id: issuedLetter, version: employeeReviewLetter.version, data: { acknowledged: true } }), /EMPLOYEE_LETTER_ACKNOWLEDGEMENT_DENIED/);
+  await call(employee, "acknowledge_employee_letter", { id: issuedLetter, version: employeeReviewLetter.version, data: { acknowledged: true } });
+  assert.equal((await load(employee)).items.find((i) => i.id === issuedLetter).data.status, "Issued", "the letter is issued only after employee acceptance");
+
+  const custody = (await call(hr, "assign_employee_asset", { data: { memberId: mids[employee], assetRecordId: assetRecord } })).id;
+  assert.equal((await load(employee)).items.find((i) => i.id === custody).data.serialNumber, "TEST-SN-001");
+  assert.equal((await load(qa)).items.some((i) => i.id === custody), false);
+  await assert.rejects(call(hw, "assign_employee_asset", { data: { memberId: mids[qa], assetRecordId: assetRecord } }), /HR_AUTHORITY_REQUIRED/);
+  await assert.rejects(call(hr, "assign_employee_asset", { data: { memberId: mids[qa], assetRecordId: assetRecord } }), /ASSET_ALREADY_ASSIGNED/);
+  let custodyRow = (await load(employee)).items.find((i) => i.id === custody);
+  await call(employee, "acknowledge_employee_asset", { id: custody, version: custodyRow.version, data: {} });
+  custodyRow = (await load(employee)).items.find((i) => i.id === custody);
+  assert.equal(custodyRow.data.acknowledged, true);
+  await call(hr, "return_employee_asset", { id: custody, version: custodyRow.version, data: { reason: "TEST device returned to HR stores" } });
+  assert.equal((await load(employee)).items.find((i) => i.id === custody).data.custodyStatus, "Returned");
   const policyBefore = (await as(admin, async () => db.query("SELECT get_travel_policy(NULL) result"))).rows[0].result;
   assert.equal(policyBefore.company.status, "Draft", "illustrative policy is not active by default");
+  const undatedDraftPolicy = (await as(admin, async () => db.query(
+    "SELECT get_effective_travel_policy($1,$2::date) result", [hd, "2026-12-20"],
+  ))).rows[0].result;
+  assert.equal(undatedDraftPolicy.isEffective, false, "undated Draft policy returns false, not SQL NULL");
+  assert.equal(undatedDraftPolicy.policyVersion, 0, "an absent published policy returns initial version 0, not SQL NULL");
   assert.equal(policyBefore.companyVersion, 0);
   assert.equal(policyBefore.canManageCompany, true);
   await assert.rejects(
@@ -246,8 +328,24 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   await as(admin,()=>db.query("SELECT review_expense_location($1,'approve',NULL,NULL,'other',NULL)",[locationRequest.id]));
   const approvedRequestedLocation=(await loadExpenseCatalogue(employee)).locations.find(location=>location.city==='Pune');
   assert.equal(approvedRequestedLocation.name,'TEST East Service Centre','Finance/Admin approval makes a location available to all clients from the shared catalogue');
-  await call(admin, "save_profile", { data: { memberId: mids[employee], employeeCode: "TEST-EMP-01", email: "employee.ehw@example.com", travelBand: "staff" } });
+  const initialProfileRequest = await createProfileForEmployee(employee, { employeeCode: "TEST-EMP-01", email: "employee.ehw@example.com", travelBand: "staff" });
   assert.equal((await db.query("SELECT payload->>'travelBand' band FROM business_items WHERE organization_id=$1 AND kind='profile' AND owner_id=$2", [org, mids[employee]])).rows[0]?.band, "staff", "HR profile saves the authorized travel band used by the server policy check");
+  assert.equal((await load(employee)).items.find(item => item.id === initialProfileRequest).data.status, "Approved", "employee acknowledgement records the completed approval");
+  const employeeProfile = (await load(employee)).items.find(item => item.kind === "profile" && item.ownerId === mids[employee]);
+  const employeeChange = await call(employee, "request_profile_change", { data: { memberId: mids[employee], employeeCode: "TEST-EMP-01", email: "employee.ehw@example.com", phone: "TEST-555-0101", roleTitle: "Field Technician", joiningDate: "2026-01-15", facilityLocation: "TEST Bengaluru", emergencyContact: "TEST HR contact", reason: "Correcting my official contact details" } });
+  const employeeChangeItem = (await load(employee)).items.find(item => item.id === employeeChange.id);
+  assert.equal(employeeChangeItem.data.status, "Pending_HR_Review", "employee profile edits wait for HR/Admin review");
+  assert.equal((await load(employee)).items.find(item => item.id === employeeProfile.id).data.phone, null, "unapproved employee changes do not alter the current profile");
+  assert.ok((await load(admin)).items.some(item => item.id === employeeChange.id), "HR/Admin can see employee change requests");
+  assert.ok((await db.query("SELECT 1 FROM private.business_notifications WHERE item_id=$1 AND recipient_id=$2", [employeeChange.id, mids[admin]])).rows.length, "an employee change request notifies Admin/HR");
+  assert.ok((await db.query("SELECT 1 FROM private.business_notifications WHERE item_id=$1 AND recipient_id=$2", [employeeChange.id, mids[hr]])).rows.length, "HR lead receives a notification for employee profile review across departments");
+  await assert.rejects(call(employee, "approve_profile_change", { id: employeeChange.id, version: employeeChangeItem.version, data: {} }), /PROFILE_CHANGE_APPROVAL_DENIED/, "employees cannot approve their own employee-originated changes");
+  await call(admin, "approve_profile_change", { id: employeeChange.id, version: employeeChangeItem.version, data: {} });
+  assert.equal((await load(employee)).items.find(item => item.kind === "profile" && item.ownerId === mids[employee]).data.phone, "TEST-555-0101", "only HR/Admin approval applies the proposed employee details");
+  const rejectedChange = await call(employee, "request_profile_change", { data: { memberId: mids[employee], employeeCode: "TEST-EMP-01", email: "employee.ehw@example.com", phone: "TEST-555-0101", roleTitle: "Incorrect title", joiningDate: "2026-01-15", facilityLocation: "TEST Bengaluru", emergencyContact: "TEST HR contact", reason: "Testing a correction request" } });
+  const rejectedChangeItem = (await load(employee)).items.find(item => item.id === rejectedChange.id);
+  await call(admin, "reject_profile_change", { id: rejectedChange.id, version: rejectedChangeItem.version, data: { reason: "TEST supporting evidence is required" } });
+  assert.equal((await load(employee)).items.find(item => item.kind === "profile" && item.ownerId === mids[employee]).data.roleTitle, "Field Technician", "rejected profile changes leave the approved baseline unchanged");
   const effectiveTravel = (await as(employee, async () => db.query("SELECT get_effective_travel_policy($1,$2::date) result", [hd, "2026-12-20"]))).rows[0].result;
   assert.equal(effectiveTravel.employeeBand, "staff");
   assert.equal(effectiveTravel.isEffective, true);
@@ -481,7 +579,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   assert.equal(employeeItems.find(item => item.id === travel).data.travelPolicyBand, 'staff');
   assert.equal(employeeItems.find(item => item.id === travel).data.travelAdvanceCap, 600);
   assert.equal(employeeItems.find(item => item.id === travel).data.policyExceptionStatus, 'Not_Required');
-  await call(admin, "save_profile", { data: { memberId: mids[qa], employeeCode: "TEST-QA-01", email: "qa@example.com", travelBand: "manager" } });
+  await createProfileForEmployee(qa, { employeeCode: "TEST-QA-01", email: "qa@example.com", travelBand: "manager" });
   const committedBeforePolicyException = Number((await db.query("SELECT COALESCE(sum((payload->>'committedAmount')::numeric),0) total FROM business_items WHERE organization_id=$1 AND kind='allocation'", [org])).rows[0].total);
   const policyExceptionId = (await call(qa, "request_expense", { data: {
     ...payload.data, requestType: "travel", amount: 700, destination: "TEST exception review trip",
@@ -501,7 +599,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   assert.equal(clearedException.data.policyExceptionStatus, "Approved");
   assert.equal(clearedException.data.status, clearedException.data.policyNormalStatus, "exception approval continues through the original approval path");
   assert.equal(Number((await db.query("SELECT COALESCE(sum((payload->>'committedAmount')::numeric),0) total FROM business_items WHERE organization_id=$1 AND kind='allocation'", [org])).rows[0].total), committedBeforePolicyException, "policy-exception review alone does not reserve additional budget");
-  await call(admin, "save_profile", { data: { memberId: mids[uuid(19)], employeeCode: "TEST-FIN-01", email: "finance.lead@example.com", travelBand: "manager" } });
+  await createProfileForEmployee(uuid(19), { employeeCode: "TEST-FIN-01", email: "finance.lead@example.com", travelBand: "manager" });
   const financeExceptionId = (await call(uuid(19), "request_expense", { data: {
     ...payload.data, requestType: "travel", amount: 700, destination: "TEST finance self-review trip",
     locationId: approvedLocation.id, travelStartDate: end, travelEndDate: end,
@@ -512,7 +610,7 @@ test("business RPCs persist scope, serialize reservations, reject invalid identi
   const financeException = (await load(uuid(19))).items.find(item => item.id === financeExceptionId);
   await assert.rejects(call(uuid(19), "approve_travel_exception", { id: financeExceptionId, version: financeException.version, data: {} }), /SELF_APPROVAL_DENIED/);
   await call(admin, "approve_travel_exception", { id: financeExceptionId, version: financeException.version, data: {} });
-  await call(admin, "save_profile", { data: { memberId: mids[fw], employeeCode: "TEST-FW-01", email: "fw@example.com", travelBand: "staff" } });
+  await createProfileForEmployee(fw, { employeeCode: "TEST-FW-01", email: "fw@example.com", travelBand: "staff" });
   const rejectedExceptionId = (await call(fw, "request_expense", { data: {
     ...payload.data, requestType: "travel", amount: 700, destination: "TEST rejected exception trip",
     locationId: approvedLocation.id, travelStartDate: end, travelEndDate: end,

@@ -3728,6 +3728,7 @@ function Portal() {
     | "approvals"
     | "records"
     | "deliverables"
+    | "sales_pipeline"
     | "vault"
     | "analysis"
     | "budgets"
@@ -3735,7 +3736,12 @@ function Portal() {
     | "communication"
     | "tickets"
     | "hr_admin"
-  >("queue");
+    | "smart_upload"
+    | "decision_log"
+  >(() =>
+    initialPersona.kind === "lead" || initialPersona.kind === "member" ? "summary" : "queue",
+  );
+  const utilityReturnView = useRef<typeof view>(view);
   const [selectedAssignee, setSelectedAssignee] = useState<string | null>(null);
   const allTeamMembers = useMemo(
     () => [...(portal?.demoLoaded ? demoTeam : []), ...(portal?.teamMembers ?? [])],
@@ -3862,6 +3868,11 @@ function Portal() {
     window.localStorage.setItem("XYZ Pvt Ltd-scms-theme", darkMode ? "dark" : "light");
   }, [darkMode]);
   useEffect(() => {
+    // Radix portals mount under document.body, outside the app's nested theme
+    // wrapper. Mirror the theme on <html> so dialogs and popovers inherit it.
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
+  useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.key !== "[" || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
@@ -3930,6 +3941,7 @@ function Portal() {
       | "smart_bom"
       | "ingestion_gate"
       | "records"
+      | "sales_pipeline"
       | "deliverables" = "queue",
   ) => {
     if (targetView !== "deliverables" && targetView !== "records") setRecordTypeFilter(null);
@@ -4000,6 +4012,7 @@ function Portal() {
       return;
     }
     setSmartUploadOpen(false);
+    setView(utilityReturnView.current);
     if (choice === "sor") {
       void openGlobalSor();
       return;
@@ -4032,6 +4045,7 @@ function Portal() {
       return;
     }
     setSmartUploadOpen(false);
+    setView(utilityReturnView.current);
     if (profile.roleCode === "SAL" && profile.id === "sal_customer_sor") {
       void openGlobalSor();
       return;
@@ -4249,7 +4263,7 @@ function Portal() {
       setAdminProjectFilter("all");
       setDepartmentContext(null);
       setActiveArea("home");
-      setView("queue");
+      setView(next.kind === "lead" || next.kind === "member" ? "summary" : "queue");
     } else {
       const nextDepartment =
         next.kind === "lead" || next.kind === "member"
@@ -5862,7 +5876,12 @@ function Portal() {
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
-          onOpenSmartSor={() => setSmartUploadOpen(true)}
+          onOpenSmartSor={() => {
+            utilityReturnView.current = view;
+            setSmartUploadOpen(true);
+            setView("smart_upload");
+            setMobileMenu(false);
+          }}
           sidebarExpanded={sidebarExpanded}
           onToggleExpanded={() => setSidebarExpanded((value) => !value)}
           purchasingSubView={purchasingSubView}
@@ -5881,10 +5900,11 @@ function Portal() {
           onOpenDraftHub={() => setDraftHubOpen(true)}
           onOpenDirectory={() => setDirectoryOpen(true)}
           onOpenLegalHub={() => setLegalHubOpen(true)}
-          onOpenDecisionLog={() => setDecisionLogOpen(true)}
-          onOpenAdminSettings={() => {
-            setAdminTab(testMembership && persona.kind !== "admin" ? "lifecycle" : "company");
-            setModal("admin");
+          onOpenDecisionLog={() => {
+            utilityReturnView.current = view;
+            setDecisionLogOpen(true);
+            setView("decision_log");
+            setMobileMenu(false);
           }}
           onOpenWizard={() => setModal("wizard")}
           onOpenAssetCatalog={() => setAssetCatalogOpen(true)}
@@ -5916,38 +5936,12 @@ function Portal() {
             ]),
           )}
         />
-        <div className="mt-2 pt-2 border-t border-sidebar-border/60">
-          {(persona.id === "admin" || !!testMembership) && (
-            <button
-              type="button"
-              aria-label="Settings"
-              title="Settings"
-              onClick={() => {
-                setAdminTab(testMembership && persona.kind !== "admin" ? "lifecycle" : "company");
-                setModal("admin");
-              }}
-              className={
-                sidebarExpanded
-                  ? "mb-2 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-                  : "mx-auto mb-2 grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"
-              }
-            >
-              <Settings2 className="size-4" />
-              {sidebarExpanded && <span>Settings</span>}
-            </button>
-          )}
-          <ThemeToggle
-            darkMode={darkMode}
-            onToggle={() => setDarkMode((value) => !value)}
-            expanded={sidebarExpanded}
-          />
-        </div>
       </aside>
       <section
         className={`min-h-screen transition-[padding] duration-200 motion-reduce:transition-none ${sidebarExpanded ? "lg:pl-64" : "lg:pl-16"}`}
       >
         <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
-          <div className="flex min-h-14 items-center gap-2 px-3 md:px-6">
+          <div className="flex min-h-14 items-center gap-1.5 px-3 sm:gap-2 md:px-5">
             <button
               aria-label="Open menu"
               onClick={() => setMobileMenu(true)}
@@ -5968,9 +5962,9 @@ function Portal() {
                   navigate("home");
                 }
               }}
-              className="min-w-0 flex-1 text-left"
+              className="min-w-[8rem] flex-[1_1_12rem] text-left"
             >
-              <p className="truncate text-sm font-semibold md:text-base">
+              <p className="max-w-full truncate whitespace-nowrap text-sm font-semibold md:text-base">
                 {persona.kind === "client"
                   ? "Northstar Mobility Systems · Fleet Test Portal"
                   : persona.kind === "lead" || persona.kind === "member"
@@ -5981,7 +5975,7 @@ function Portal() {
                       ? "Unified index"
                       : active.name.replace(/^DEMO · /, "")}
               </p>
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="hidden max-w-full truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground xl:block">
                 {persona.kind === "client"
                   ? "Rohan Verma · Client Representative"
                   : persona.kind === "lead" || persona.kind === "member"
@@ -6068,7 +6062,7 @@ function Portal() {
                     setSearchOpen(true);
                     setMobileMenu(false);
                   }}
-                  className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-secondary xl:hidden"
+                  className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-primary/30 hover:bg-secondary hover:text-foreground xl:hidden"
                 >
                   <Search className="size-4" />
                 </button>
@@ -6090,12 +6084,14 @@ function Portal() {
               <HeaderAction
                 label="Settings"
                 icon={Settings2}
+                compact
                 onClick={() => {
                   setAdminTab(testMembership && persona.kind !== "admin" ? "lifecycle" : "company");
                   setModal("admin");
                 }}
               />
             )}
+            <ThemeToggle darkMode={darkMode} onToggle={() => setDarkMode((value) => !value)} />
             <HeaderAction
               label={`Notifications (${scopedAlerts.filter((alert) => !alert.resolved).length})`}
               icon={Bell}
@@ -6104,7 +6100,7 @@ function Portal() {
             />
           </div>
         </header>
-        <div className="mx-auto max-w-[1600px] space-y-6 px-6 py-6 pb-28 lg:pb-10">
+        <div className="mx-auto max-w-[1600px] space-y-5 px-3 py-4 pb-24 sm:px-4 sm:py-5 md:px-5 md:pb-10 xl:space-y-6 xl:px-6 xl:py-6">
           {persona.kind !== "client" &&
             configuredDepartment &&
             (() => {
@@ -6194,13 +6190,14 @@ function Portal() {
               key={`${testMembership.membershipId}:${effectiveArea}:${view}`}
               membership={testMembership}
               view={view === "pmss" ? "project" : view}
-              adminDepartment={effectiveArea}
+              adminDepartment={persona.kind === "admin" && adminDepartment === "all" ? "all" : effectiveArea}
               initialProjectScope={
-                view === "project" || view === "pmss" ? selectedProjectId : undefined
+              view === "project" || view === "pmss" ? selectedProjectId : undefined
               }
               recordTypeFilter={recordTypeFilter}
               onClearRecordTypeFilter={() => setRecordTypeFilter(null)}
               onOpenTasks={() => setView("assignee")}
+              onOpenApprovals={() => setView("approvals")}
               onOpenInputs={(sourceId) => {
                 setAnalysisSourceId(sourceId);
                 setView("analysis");
@@ -6362,7 +6359,8 @@ function Portal() {
               view === "queue" ||
               view === "summary" ||
               view === "records" ||
-              view === "deliverables") ? (
+              view === "deliverables" ||
+              view === "sales_pipeline") ? (
             <DepartmentProjectWorkspace
               key={`${persona.id}:${activeDepartmentScope}:${view}`}
               salesPipeline={{
@@ -6383,7 +6381,11 @@ function Portal() {
                 onAddCustomer: handleCustomerCreated,
               }}
               initialTab={
-                view === "records"
+                view === "summary"
+                  ? "dashboard"
+                  : view === "sales_pipeline"
+                  ? "sales-pipeline"
+                  : view === "records"
                   ? "records"
                   : view === "deliverables"
                     ? "deliverables"
@@ -6400,6 +6402,8 @@ function Portal() {
               onOpenRecords={() => setView("records")}
               departmentCode={active.short}
               departmentName={active.name}
+              dashboardAudience={persona.kind === "member" ? "member" : persona.kind === "admin" ? "admin" : "lead"}
+              dashboardAssignee={persona.person.split(" · ")[0]}
               lead={leadName}
               records={leadRecords}
               projects={leadProjects}
@@ -6546,7 +6550,7 @@ function Portal() {
             )
           ) : view === "vault" && testMembership ? (
             <SharedDocumentVault
-              key={`${testMembership.membershipId}:${vaultDocumentId || ""}:${vaultProjectId || ""}`}
+              key={`${testMembership.membershipId}:${departmentCode(active.short)}:${vaultDocumentId || ""}:${vaultProjectId || ""}`}
               membership={testMembership}
               departmentCode={departmentCode(active.short)}
               initialDocumentId={vaultDocumentId}
@@ -7060,24 +7064,8 @@ function Portal() {
             <CommandCenter
               portal={portal}
               departmentContext={departmentContext}
-              onCreate={handleOpenCreate}
               onNavigate={navigate}
               onAdmin={() => setModal("admin")}
-              onUpdateTask={updateTask}
-              onOpenProject={(id) => {
-                setSelectedProjectId(id);
-                const projectRecord = activeRecords.find(
-                  (record) => record.id === id || record.reference === id,
-                );
-                if (projectRecord) {
-                  setSelectedId(projectRecord.id);
-                }
-                setView("project");
-              }}
-              onOpenAssignee={(assignee) => {
-                setSelectedAssignee(assignee);
-                setView("assignee");
-              }}
               onReturnGlobal={() => {
                 setDepartmentContext(null);
                 setPersona(personas[0] ?? persona);
@@ -7356,7 +7344,12 @@ function Portal() {
           recordTypeFilter={recordTypeFilter}
           onRecordTypeFilterChange={setRecordTypeFilter}
           onNavigateRecordType={navigateToRecordType}
-          onOpenSmartSor={() => setSmartUploadOpen(true)}
+          onOpenSmartSor={() => {
+            utilityReturnView.current = view;
+            setSmartUploadOpen(true);
+            setView("smart_upload");
+            setMobileMenu(false);
+          }}
           onClose={() => setMobileMenu(false)}
           onNavigate={(area, targetView) => {
             navigate(area as AreaId, (targetView as any) ?? "queue");
@@ -7365,13 +7358,10 @@ function Portal() {
             setQueueStage(null);
             setMobileMenu(false);
           }}
-          darkMode={darkMode}
-          onToggleTheme={() => setDarkMode((value) => !value)}
           purchasingSubView={purchasingSubView}
           onSelectPurchasingSubView={setPurchasingSubView}
           persona={persona}
           adminAllDepartments={persona.kind === "admin" && adminDepartment === "all"}
-          canOpenSettings={persona.id === "admin" || !!testMembership}
           activeArea={activeArea}
           view={view}
           onOpenCustomerRegister={() => setCustomerRegisterOpen(true)}
@@ -7381,14 +7371,16 @@ function Portal() {
           onOpenDraftHub={() => setDraftHubOpen(true)}
           onOpenDirectory={() => setDirectoryOpen(true)}
           onOpenLegalHub={() => setLegalHubOpen(true)}
-          onOpenDecisionLog={() => setDecisionLogOpen(true)}
-          onOpenAdminSettings={() => {
-            setAdminTab(testMembership && persona.kind !== "admin" ? "lifecycle" : "company");
-            setModal("admin");
+          onOpenDecisionLog={() => {
+            utilityReturnView.current = view;
+            setDecisionLogOpen(true);
+            setView("decision_log");
+            setMobileMenu(false);
           }}
           onOpenWizard={() => setModal("wizard")}
           onOpenAssetCatalog={() => setAssetCatalogOpen(true)}
           onOpenApprovals={() => setView("approvals")}
+              onOpenTasks={() => setView("assignee")}
           onOpenBudgets={() => setView("budgets")}
           onOpenProfile={() => setView("profile")}
           onOpenCommunication={() => setView("communication")}
@@ -7680,8 +7672,13 @@ function Portal() {
         />
       )}{" "}
       <SmartUploadHub
-        open={smartUploadOpen}
-        onClose={() => setSmartUploadOpen(false)}
+        open={smartUploadOpen && view === "smart_upload"}
+        fullPage
+        sidebarExpanded={sidebarExpanded}
+        onClose={() => {
+          setSmartUploadOpen(false);
+          setView(utilityReturnView.current);
+        }}
         onChoose={handleSmartUploadChoice}
         onChooseRoleProfile={handleSmartUploadRoleProfile}
         activeDepartmentCode={activeUploadDepartmentCode}
@@ -8304,13 +8301,21 @@ function Portal() {
           onClose={() => {
             setDecisionLogOpen(false);
             setDecisionInitialQuery("");
+            setView(utilityReturnView.current);
           }}
+          fullPage={view === "decision_log"}
+          sidebarExpanded={sidebarExpanded}
         />
       )}
       {decisionLogOpen && persona.kind !== "client" && !testMembership && (
         <OfficialDecisionLogModal
           key={persona.id}
-          onClose={() => setDecisionLogOpen(false)}
+          onClose={() => {
+            setDecisionLogOpen(false);
+            setView(utilityReturnView.current);
+          }}
+          fullPage={view === "decision_log"}
+          sidebarExpanded={sidebarExpanded}
           activeProject={view === "project" ? selectedProjectId : undefined}
           persona={persona}
           authorId={persona.id}
@@ -8638,12 +8643,8 @@ function Portal() {
 function CommandCenter({
   portal,
   departmentContext,
-  onCreate,
   onNavigate,
   onAdmin,
-  onUpdateTask,
-  onOpenProject,
-  onOpenAssignee,
   onReturnGlobal,
   onRunRfq,
   onOpenAnalysis,
@@ -8660,12 +8661,8 @@ function CommandCenter({
 }: {
   portal: PortalState;
   departmentContext: string | null;
-  onCreate: (recordType?: string) => void;
   onNavigate: (area: AreaId) => void;
   onAdmin: () => void;
-  onUpdateTask: (taskId: string, patch: Partial<RecordItem>, action: string) => void;
-  onOpenProject: (projectId: string) => void;
-  onOpenAssignee: (assignee: string) => void;
   onReturnGlobal: () => void;
   onRunRfq: () => void;
   onOpenAnalysis: () => void;
@@ -8708,7 +8705,7 @@ function CommandCenter({
         title={persona.kind === "admin" && !departmentContext ? "Company Overview" : "Command Center"}
         description={
           departmentContext
-            ? "Department-wise quick management and today checklist."
+            ? "Department status, task counts, lifecycle progress, and approvals at a glance."
             : "Company-wide department status, approvals, lifecycle tracking, and daily work at a glance."
         }
         actions={
@@ -8726,7 +8723,6 @@ function CommandCenter({
 
             <Action onClick={onOpenDraftHub} label="Auto-Draft Templates" />
             <Action onClick={onRunRfq} label="Run RFQ Project Cycle Test" />
-            <Action onClick={() => onCreate("Task")} label="Create Task" primary />
           </>
         }
       />
@@ -8747,7 +8743,7 @@ function CommandCenter({
       )}
       {portal.demoLoaded && <ExecutiveKpis portal={portal} />}
       <SmartNextStep records={visible} onOpenDraftHub={onOpenDraftHub} />
-      <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
         <Metric
           label="Today"
           value={String(taskRecords.filter((record) => taskLane(record, today) === "today").length)}
@@ -8770,17 +8766,14 @@ function CommandCenter({
           detail="Pending list"
           tone="warning"
         />
+        <Metric
+          label="Completed tasks"
+          value={String(taskRecords.filter((record) => taskLane(record, today) === "completed").length)}
+          detail="Available in My Tasks & Action Queue"
+          tone="moss"
+        />
         <Metric label="Approvals" value={String(pending)} detail="Human decisions" tone="moss" />
       </section>
-      <TodayChecklist
-        tasks={taskRecords}
-        departments={portal.departments}
-        today={today}
-        tomorrow={tomorrow}
-        onUpdateTask={onUpdateTask}
-        onOpenProject={onOpenProject}
-        onOpenAssignee={onOpenAssignee}
-      />
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
         <div className="ops-section overflow-hidden">
           <div className="ops-section-header">
@@ -9716,374 +9709,6 @@ function nextWorkingDay(value: string) {
   date.setDate(date.getDate() + 1);
   while (date.getDay() === 0) date.setDate(date.getDate() + 1);
   return date.toISOString().slice(0, 10);
-}
-function TodayChecklist({
-  tasks,
-  departments,
-  today,
-  tomorrow,
-  onUpdateTask,
-  onOpenProject,
-  onOpenAssignee,
-}: {
-  tasks: RecordItem[];
-  departments: Department[];
-  today: string;
-  tomorrow: string;
-  onUpdateTask: (taskId: string, patch: Partial<RecordItem>, action: string) => void;
-  onOpenProject: (projectId: string) => void;
-  onOpenAssignee: (assignee: string) => void;
-}) {
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [expandAll, setExpandAll] = useState(false);
-  const [inspectionOpen, setInspectionOpen] = useState(false);
-  const todayTasks = sortTaskRecords(
-    tasks.filter(
-      (task) =>
-        taskLane(task, today) === "today" ||
-        (taskLane(task, today) === "review" &&
-          (!task.fields["dueDate"] || task.fields["dueDate"]! <= today)),
-    ),
-    today,
-  );
-  const pendingTasks = sortTaskRecords(
-    tasks.filter(
-      (task) =>
-        taskLane(task, today) === "todo" ||
-        (taskLane(task, today) === "review" && task.fields["dueDate"]! > today),
-    ),
-    today,
-  );
-  const completedTasks = tasks.filter((task) => taskLane(task, today) === "completed");
-  const move = (task: RecordItem, dueDate: string, action: string) =>
-    onUpdateTask(task.id, { fields: { ...task.fields, dueDate } }, action);
-  return (
-    <section className="ops-section overflow-hidden">
-      <div className="ops-section-header grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-        <div>
-          <p className="text-sm font-semibold">Task checklist</p>
-          <p className="text-xs text-muted-foreground">
-            Compact operational rows · up to 23 visible per lane
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <Action
-            label={expandAll ? "Collapse all" : "Expand all"}
-            onClick={() => setExpandAll((value) => !value)}
-          />
-          <Action label="Open expanded modal" onClick={() => setInspectionOpen(true)} />
-        </div>
-      </div>
-      <div className="grid gap-6 p-4 lg:grid-cols-2">
-        <ChecklistLane
-          title="Today"
-          description="Short department-wise checklist"
-          tasks={todayTasks}
-          departments={departments}
-          onDrop={() => {
-            const task = tasks.find((item) => item.id === draggedId);
-            if (task && taskLane(task, today) !== "review")
-              move(task, today, "Task reprioritized to today");
-            setDraggedId(null);
-          }}
-          onDragStart={setDraggedId}
-          onDone={(task) => onUpdateTask(task.id, { status: "Released" }, "Task marked done")}
-          onMove={(task) => move(task, tomorrow, "Task moved to pending / tomorrow")}
-          onOpenProject={onOpenProject}
-          onOpenAssignee={onOpenAssignee}
-          expandAll={expandAll}
-        />
-        <ChecklistLane
-          title="Tomorrow / Planned"
-          description="Tomorrow’s tasks; drag back to today to reprioritize"
-          tasks={pendingTasks}
-          departments={departments}
-          onDrop={() => {
-            const task = tasks.find((item) => item.id === draggedId);
-            if (task && taskLane(task, today) !== "review")
-              move(task, tomorrow, "Task moved to planned / tomorrow");
-            setDraggedId(null);
-          }}
-          onDragStart={setDraggedId}
-          onDone={(task) => onUpdateTask(task.id, { status: "Released" }, "Task marked done")}
-          onMove={(task) => move(task, today, "Task reprioritized to today")}
-          onOpenProject={onOpenProject}
-          onOpenAssignee={onOpenAssignee}
-          expandAll={expandAll}
-        />
-      </div>
-      <details className="mx-4 mb-4 rounded-lg border border-border/70">
-        <summary className="cursor-pointer px-3 py-2 text-xs font-semibold">
-          Completed ({completedTasks.length})
-        </summary>
-        <div>
-          {completedTasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              department={departments.find((d) => d.id === task.departmentId)}
-              onDragStart={() => {}}
-              onDone={() => {}}
-              onMove={() => {}}
-              onOpenProject={onOpenProject}
-              onOpenAssignee={onOpenAssignee}
-              expanded={false}
-            />
-          ))}
-        </div>
-      </details>
-      {inspectionOpen && (
-        <TaskInspectionModal
-          tasks={[...todayTasks, ...pendingTasks]}
-          departments={departments}
-          onClose={() => setInspectionOpen(false)}
-          onDone={(task) =>
-            onUpdateTask(task.id, { status: "Released" }, "Task marked done from inspection")
-          }
-        />
-      )}
-    </section>
-  );
-}
-function ChecklistLane({
-  title,
-  description,
-  tasks,
-  departments,
-  onDrop,
-  onDragStart,
-  onDone,
-  onMove,
-  onOpenProject,
-  onOpenAssignee,
-  expandAll,
-}: {
-  title: string;
-  description: string;
-  tasks: RecordItem[];
-  departments: Department[];
-  onDrop: () => void;
-  onDragStart: (id: string) => void;
-  onDone: (task: RecordItem) => void;
-  onMove: (task: RecordItem) => void;
-  onOpenProject: (projectId: string) => void;
-  onOpenAssignee: (assignee: string) => void;
-  expandAll: boolean;
-}) {
-  return (
-    <section
-      aria-label={`${title} checklist`}
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={onDrop}
-      className="surface-card ops-section overflow-hidden"
-    >
-      <div className="ops-section-header bg-panel">
-        <p className="text-sm font-semibold">{title}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      </div>
-      <div>
-        {tasks.length ? (
-          tasks.map((task) => (
-            <TaskCard
-              key={task.id}
-              task={task}
-              department={departments.find((department) => department.id === task.departmentId)}
-              onDragStart={onDragStart}
-              onDone={onDone}
-              onMove={onMove}
-              onOpenProject={onOpenProject}
-              onOpenAssignee={onOpenAssignee}
-              expanded={expandAll}
-            />
-          ))
-        ) : (
-          <p className="p-5 text-sm text-muted-foreground">No tasks in this list.</p>
-        )}
-      </div>
-    </section>
-  );
-}
-function TaskCard({
-  task,
-  department,
-  onDragStart,
-  onDone,
-  onMove,
-  onOpenProject,
-  onOpenAssignee,
-  expanded,
-}: {
-  task: RecordItem;
-  department: Department | undefined;
-  onDragStart: (id: string) => void;
-  onDone: (task: RecordItem) => void;
-  onMove: (task: RecordItem) => void;
-  onOpenProject: (projectId: string) => void;
-  onOpenAssignee: (assignee: string) => void;
-  expanded: boolean;
-}) {
-  const [open, setOpen] = useState(expanded);
-  useEffect(() => setOpen(expanded), [expanded]);
-  const projectId = task.fields["projectId"];
-  const projectLabel = task.fields["project"] ?? "No linked project";
-  const assignee = task.fields["assignee"] ?? "Unassigned";
-  return (
-    <article
-      draggable={
-        task.status !== "In review" && task.status !== "Approved" && task.status !== "Released"
-      }
-      onDragStart={() => onDragStart(task.id)}
-      className="border-b border-border last:border-0"
-    >
-      <div
-        className="grid cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)_auto_auto_auto] items-center gap-2 px-3 py-2.5 transition-colors hover:bg-secondary/70"
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="rounded border border-steel/35 bg-steel/10 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-steel">
-          {department?.code.replace("DEMO-", "") ?? "—"}
-        </span>
-        <span
-          className={`size-2 rounded-full ${task.priority === "Critical" ? "bg-danger" : task.priority === "High" ? "bg-warning" : "bg-steel"}`}
-        />
-        <p className="truncate text-sm font-medium">
-          {task.title}
-          {task.status === "In review" && (
-            <span className="ml-2 text-[10px] text-warning">Awaiting approval</span>
-          )}
-          {!["Released", "Approved"].includes(task.status) && isTaskOverdue(task) && (
-            <span className="ml-2 text-[10px] text-danger">Overdue</span>
-          )}
-        </p>
-        <span
-          className="grid size-6 place-items-center rounded-full border border-border bg-panel font-mono text-[9px] text-muted-foreground"
-          title={assignee}
-        >
-          {assignee
-            .split(" ")
-            .map((part) => part[0])
-            .join("")
-            .slice(0, 2)}
-        </span>
-        <span className="hidden font-mono text-[10px] text-muted-foreground sm:block">
-          {task.fields["dueDate"] || "Unscheduled"}
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            disabled={
-              task.status === "In review" ||
-              task.status === "Approved" ||
-              task.status === "Released"
-            }
-            title={
-              task.status === "In review" ? "Complete through the designated approval" : "Mark done"
-            }
-            aria-label={`Mark ${task.title} done`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onDone(task);
-            }}
-            className="grid size-7 place-items-center rounded border border-moss/35 text-moss hover:bg-accent"
-          >
-            <Check className="size-3.5" />
-          </button>
-          <ChevronRight
-            className={`size-4 text-muted-foreground transition-transform motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
-          />
-        </div>
-      </div>
-      {open && (
-        <div className="task-disclosure grid px-4 pb-4">
-          <div className="min-h-0 overflow-hidden border-l-2 border-steel/35 pl-3">
-            <p className="text-sm leading-6 text-muted-foreground">
-              {task.notes || "No further task description recorded."}
-            </p>
-            <p className="mt-2 text-xs font-medium text-steel">
-              Next action: Completing this task enables the next unblocked lifecycle handoff.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2 text-xs">
-              <button
-                disabled={!projectId}
-                onClick={() => projectId && onOpenProject(projectId)}
-                className="text-left font-semibold text-steel transition-colors hover:text-primary disabled:text-muted-foreground"
-              >
-                Project: {projectLabel}
-              </button>
-              <button
-                disabled={assignee === "Unassigned"}
-                onClick={() => assignee !== "Unassigned" && onOpenAssignee(assignee)}
-                className="text-left font-semibold text-steel transition-colors hover:text-primary disabled:text-muted-foreground"
-              >
-                Assignee: {assignee}
-              </button>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {task.status !== "In review" &&
-                task.status !== "Approved" &&
-                task.status !== "Released" && (
-                  <Action onClick={() => onDone(task)} label="Mark done" />
-                )}
-              {task.status !== "In review" &&
-                task.status !== "Approved" &&
-                task.status !== "Released" && (
-                  <Action
-                    onClick={() => onMove(task)}
-                    label={
-                      task.fields["dueDate"] === businessDate()
-                        ? "Move to Pending / Tomorrow"
-                        : "Move to Today"
-                    }
-                  />
-                )}
-            </div>
-          </div>
-        </div>
-      )}
-    </article>
-  );
-}
-
-function TaskInspectionModal({
-  tasks,
-  departments,
-  onClose,
-  onDone,
-}: {
-  tasks: RecordItem[];
-  departments: Department[];
-  onClose: () => void;
-  onDone: (task: RecordItem) => void;
-}) {
-  return (
-    <Modal title="Expanded task inspection" onClose={onClose} wide>
-      <div className="space-y-3">
-        {tasks.map((task) => (
-          <article key={task.id} className="border border-border bg-panel p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="font-mono text-[10px] text-steel">
-                  {departments.find((item) => item.id === task.departmentId)?.code ?? "—"} ·{" "}
-                  {task.reference}
-                </p>
-                <h3 className="mt-1 font-semibold">{task.title}</h3>
-              </div>
-              <Status status={task.status} />
-            </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {task.notes || "No further description recorded."}
-            </p>
-            <p className="mt-3 text-xs font-medium text-steel">
-              Next action: Completion unblocks the next controlled lifecycle handoff.
-            </p>
-            <div className="mt-4">
-              {task.status !== "In review" && (
-                <Action label="Mark done" onClick={() => onDone(task)} />
-              )}
-            </div>
-          </article>
-        ))}
-      </div>
-    </Modal>
-  );
 }
 function fallbackProjectRecord(projectId: string, records: RecordItem[]): RecordItem {
   const found =
@@ -17757,15 +17382,16 @@ function PageHeader({
   actions: ReactNode;
 }) {
   return (
-    <header className="mb-6 flex flex-col gap-4 border-b border-border/40 pb-4 md:flex-row md:items-center md:justify-between">
+    <header className="mb-5 flex flex-col gap-3 rounded-xl border border-border/70 bg-card/80 px-4 py-3 shadow-sm sm:px-5 sm:py-4 md:flex-row md:items-center md:justify-between">
       <div className="min-w-0">
-        <p className="font-mono text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">
+        <p className="mb-1 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[.14em] text-primary">
+          <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
           {eyebrow}
         </p>
-        <h1 className="mt-1 truncate text-xl font-bold tracking-normal text-foreground">{title}</h1>
-        <p className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">{description}</p>
+        <h1 className="text-xl font-bold leading-tight tracking-tight text-foreground sm:text-2xl">{title}</h1>
+        <p className="mt-1 max-w-3xl text-sm leading-5 text-muted-foreground">{description}</p>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2 md:justify-end">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">{actions}</div>}
     </header>
   );
 }
@@ -18009,17 +17635,20 @@ function HeaderAction({
   icon: Icon,
   onClick,
   badge,
+  compact = false,
 }: {
   label: string;
   icon: typeof Bell;
   onClick: () => void;
   badge?: number;
+  compact?: boolean;
 }) {
   return (
     <button
       aria-label={label}
       onClick={onClick}
-      className="relative grid size-10 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"
+      title={label}
+      className="relative grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-primary/30 hover:bg-secondary hover:text-foreground"
     >
       <Icon className="size-4" />
       {badge ? (
@@ -18244,11 +17873,9 @@ function localDefaultLifecycleTasks(
 function ThemeToggle({
   darkMode,
   onToggle,
-  expanded = false,
 }: {
   darkMode: boolean;
   onToggle: () => void;
-  expanded?: boolean;
 }) {
   const Icon = darkMode ? Sun : Moon;
   const label = darkMode ? "Switch to light mode" : "Switch to dark mode";
@@ -18257,14 +17884,9 @@ function ThemeToggle({
       aria-label={label}
       title={label}
       onClick={onToggle}
-      className={
-        expanded
-          ? "mt-3 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-          : "mx-auto grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"
-      }
+      className="grid size-9 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-ring/50 hover:bg-secondary hover:text-foreground"
     >
       <Icon className="size-4 text-steel" />
-      {expanded && <span>{darkMode ? "Light mode" : "Dark mode"}</span>}
     </button>
   );
 }
@@ -18356,8 +17978,6 @@ function AreaNav({
 function MobileMenu({
   onClose,
   onNavigate,
-  darkMode,
-  onToggleTheme,
   purchasingSubView,
   onSelectPurchasingSubView,
   persona,
@@ -18376,7 +17996,6 @@ function MobileMenu({
   onOpenDirectory,
   onOpenLegalHub,
   onOpenDecisionLog,
-  onOpenAdminSettings,
   onOpenWizard,
   onOpenAssetCatalog,
   onOpenApprovals,
@@ -18389,17 +18008,13 @@ function MobileMenu({
   totalSetupSteps,
   openTaskCounts,
   approvalCounts,
-  canOpenSettings,
 }: {
   onClose: () => void;
   onNavigate: RoleAwareSidebarProps["onNavigate"];
-  darkMode: boolean;
-  onToggleTheme: () => void;
   purchasingSubView?: PurchasingSubView | undefined;
   onSelectPurchasingSubView?: ((view: PurchasingSubView) => void) | undefined;
   persona: Persona;
   adminAllDepartments?: boolean;
-  canOpenSettings: boolean;
   activeArea: AreaId;
   view: string;
   recordTypeFilter?: RoleAwareSidebarProps["recordTypeFilter"];
@@ -18414,7 +18029,6 @@ function MobileMenu({
   onOpenDirectory?: (() => void) | undefined;
   onOpenLegalHub?: (() => void) | undefined;
   onOpenDecisionLog?: (() => void) | undefined;
-  onOpenAdminSettings?: (() => void) | undefined;
   onOpenWizard?: (() => void) | undefined;
   onOpenAssetCatalog?: (() => void) | undefined;
   onOpenApprovals?: (() => void) | undefined;
@@ -18455,7 +18069,6 @@ function MobileMenu({
           onOpenDirectory={onOpenDirectory}
           onOpenLegalHub={onOpenLegalHub}
           onOpenDecisionLog={onOpenDecisionLog}
-          onOpenAdminSettings={onOpenAdminSettings}
           onOpenWizard={onOpenWizard}
           onOpenAssetCatalog={onOpenAssetCatalog}
           onOpenApprovals={onOpenApprovals}
@@ -18469,24 +18082,6 @@ function MobileMenu({
           openTaskCounts={openTaskCounts}
           approvalCounts={approvalCounts}
         />
-        <div className="mt-2 pt-2 border-t border-sidebar-border/60">
-          {canOpenSettings && (
-            <button
-              type="button"
-              aria-label="Settings"
-              title="Settings"
-              onClick={() => {
-                onOpenAdminSettings?.();
-                onClose();
-              }}
-              className="mb-2 flex w-full items-center gap-3 rounded-lg border border-sidebar-border bg-card px-3 py-2.5 text-left text-sm font-semibold text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-            >
-              <Settings2 className="size-4" />
-              <span>Settings</span>
-            </button>
-          )}
-          <ThemeToggle darkMode={darkMode} onToggle={onToggleTheme} expanded />
-        </div>
       </div>
     </div>
   );

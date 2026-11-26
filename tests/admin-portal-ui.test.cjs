@@ -25,7 +25,7 @@ test('Admin Portal UI: DepartmentProjectWorkspace is rendered for Admin, matchin
   // Verify DepartmentProjectWorkspace handles persona.kind === "admin"
   assert.match(
     indexSource,
-    /persona\.kind === "admin"\)\s*&&\s*\(view === "project"\s*\|\|\s*view === "queue"\s*\|\|\s*view === "summary"\s*\|\|\s*view === "records"\s*\|\|\s*view === "deliverables"\)/,
+    /\(persona\.kind === "lead" \|\| persona\.kind === "member" \|\| persona\.kind === "admin"\)\s*&&\s*\(view === "project"\s*\|\|\s*view === "queue"\s*\|\|\s*view === "summary"\s*\|\|\s*view === "records"\s*\|\|\s*view === "deliverables"[\s\S]*?<DepartmentProjectWorkspace/,
     'DepartmentProjectWorkspace is rendered when persona is admin'
   );
 
@@ -79,6 +79,38 @@ test('Admin project selection escapes the general department workspace and opens
   );
   assert.match(departmentWorkspaceGuard, /persona\.kind === "admin"[\s\S]*adminDepartment === "all"[\s\S]*adminProjectFilter !== "all"[\s\S]*view === "queue"/,
     'selected Admin All project bypasses the earlier general department workspace branch');
+});
+
+test('Authenticated Admin All workspace can create into an explicitly authorized department', () => {
+  const indexSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
+  const workspaceSource = fs.readFileSync(path.resolve(__dirname, '../src/components/SharedOperationalWorkspace.tsx'), 'utf8');
+  assert.match(indexSource, /adminDepartment=\{persona\.kind === "admin" && adminDepartment === "all" \? "all" : effectiveArea\}/,
+    'Admin All is passed through rather than converted into the generic home area');
+  assert.match(workspaceSource, /const adminAllDepartments = actor\.role === "admin" && adminDepartment === "all"/,
+    'the shared workspace distinguishes Admin All from a department context');
+  assert.match(workspaceSource, /Department focus[\s\S]*?All departments/,
+    'Admin All exposes an explicit all-departments option and department selector');
+  assert.match(workspaceSource, /canCreateInAnyDepartment = adminAllDepartments && data\.departments\.some/,
+    'Admin All create entry is available only when at least one department grants create permission');
+  assert.match(workspaceSource, /onSmartUploadRecord=\{\(\) => adminAllDepartments[\s\S]*openCreate\("create_record", true\)/,
+    'Admin All Smart Upload opens the record form instead of failing on missing focus');
+  assert.match(workspaceSource, /aria-label="Record department"[\s\S]*data\.departments\.filter\(\(item\) => hasPermission\(item\.id, "records:create"\)\)/,
+    'Admin chooses the record department from only departments where they can create');
+  assert.match(workspaceSource, /Select a department where you have Create records permission/,
+    'create submit fails closed if no authorized department is selected');
+  assert.match(workspaceSource, /Choose a department focus before creating or assigning a department task/,
+    'department task assignment cannot silently fall back to EHW in the All view');
+});
+
+test('HR letter originals can be registered only while the Vault is scoped to HR/HROPS', () => {
+  const vaultSource = fs.readFileSync(path.resolve(__dirname, '../src/components/SharedDocumentVault.tsx'), 'utf8');
+  const routeSource = fs.readFileSync(path.resolve(__dirname, '../src/routes/index.tsx'), 'utf8');
+  assert.match(vaultSource, /activeCode\.toUpperCase\(\)==="HR"\|\|activeCode\.toUpperCase\(\)==="HROPS"\?\[\.\.\.kinds,"HR Letter"\]:kinds/,
+    'HR Letter document type is limited to HR/HROPS Vault department scope');
+  assert.match(vaultSource, /documentKindsForDepartment\.map/,
+    'Vault form renders the department-scoped document type catalogue');
+  assert.match(routeSource, /key=\{`\$\{testMembership\.membershipId\}:\$\{departmentCode\(active\.short\)\}:/,
+    'Vault remounts when Admin changes department so stale upload scope cannot hide or misclassify HR letters');
 });
 
 test('Smart Upload follows the selected Admin department view while preserving Admin identity', () => {

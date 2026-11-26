@@ -104,6 +104,8 @@ export function SmartUploadHub({
   onChooseRoleProfile,
   activeDepartmentCode,
   isAdmin = false,
+  fullPage = false,
+  sidebarExpanded = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -111,6 +113,8 @@ export function SmartUploadHub({
   onChooseRoleProfile?: ((profile: RoleUseCaseProfile) => void) | undefined;
   activeDepartmentCode?: string | undefined;
   isAdmin?: boolean | undefined;
+  fullPage?: boolean | undefined;
+  sidebarExpanded?: boolean | undefined;
 }) {
   const [activeTab, setActiveTab] = useState<"standard" | "roles">("standard");
   const departmentProfiles=ROLE_USE_CASE_PROFILES.filter(profile=>roleProfileAvailableToDepartment(profile,activeDepartmentCode,isAdmin));
@@ -125,8 +129,13 @@ export function SmartUploadHub({
     : departmentProfiles.filter((p) => p.roleCode === roleFilter);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+    <Dialog open={open} modal={!fullPage} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent
+        hideOverlay={fullPage}
+        className={fullPage
+          ? `!fixed !inset-x-0 !top-14 !bottom-0 !z-10 !h-auto !max-h-none !max-w-none !translate-x-0 !translate-y-0 !overflow-y-auto !rounded-none !border-0 !px-4 !py-5 !shadow-none sm:!px-6 ${sidebarExpanded ? "lg:!left-64" : "lg:!left-16"}`
+          : "max-h-[90vh] overflow-y-auto sm:max-w-3xl"}
+      >
         <DialogHeader>
           <div className="flex items-center justify-between gap-2">
             <DialogTitle className="flex items-center gap-2 text-lg">

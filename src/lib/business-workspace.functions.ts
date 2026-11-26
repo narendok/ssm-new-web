@@ -95,6 +95,17 @@ export type BusinessAction =
   | "ticket_help_response"
   | "ticket_help_close"
   | "save_profile"
+  | "request_profile_change"
+  | "approve_profile_change"
+  | "acknowledge_profile_change"
+  | "reject_profile_change"
+  | "issue_employee_letter"
+  | "approve_employee_letter"
+  | "acknowledge_employee_letter"
+  | "reject_employee_letter"
+  | "assign_employee_asset"
+  | "acknowledge_employee_asset"
+  | "return_employee_asset"
   | "publish_template"
   | "submit_assignment"
   | "channel_create"
@@ -119,6 +130,17 @@ const mutation = z.object({
     "ticket_help_response",
     "ticket_help_close",
     "save_profile",
+    "request_profile_change",
+    "approve_profile_change",
+    "acknowledge_profile_change",
+    "reject_profile_change",
+    "issue_employee_letter",
+    "approve_employee_letter",
+    "acknowledge_employee_letter",
+    "reject_employee_letter",
+    "assign_employee_asset",
+    "acknowledge_employee_asset",
+    "return_employee_asset",
     "publish_template",
     "submit_assignment",
     "channel_create",

@@ -34,6 +34,8 @@ export function OfficialDecisionLogModal({
   onReject,
   sourceOptions = [],
   initialQuery = "",
+  fullPage = false,
+  sidebarExpanded = true,
 }: {
   onClose: () => void;
   activeProject?: string | undefined;
@@ -52,6 +54,8 @@ export function OfficialDecisionLogModal({
   onReject?:((id:string,reason:string)=>Promise<boolean>)|undefined;
   sourceOptions?:{value:string;label:string}[];
   initialQuery?:string;
+  fullPage?: boolean | undefined;
+  sidebarExpanded?: boolean | undefined;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [projectFilter, setProjectFilter] = useState(
@@ -169,11 +173,17 @@ export function OfficialDecisionLogModal({
     <>
       <Dialog
         open={!scope}
+        modal={!fullPage}
         onOpenChange={(open) => {
           if (!open && !scope) onClose();
         }}
       >
-        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-4xl">
+        <DialogContent
+          hideOverlay={fullPage}
+          className={fullPage
+            ? `!fixed !inset-x-0 !top-14 !bottom-0 !z-10 !h-auto !max-h-none !max-w-none !translate-x-0 !translate-y-0 !overflow-y-auto !rounded-none !border-0 !px-4 !py-5 !shadow-none sm:!px-6 ${sidebarExpanded ? "lg:!left-64" : "lg:!left-16"}`
+            : "max-h-[88vh] overflow-y-auto sm:max-w-4xl"}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <BookOpen className="size-4" />

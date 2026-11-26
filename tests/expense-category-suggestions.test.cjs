@@ -40,3 +40,9 @@ test("expense form keeps Finance category manual and has no separate business-pu
   assert.match(ui, /category: values\['category'\]/);
   assert.doesNotMatch(ui, /category:\s*\(values\['requestType'\].*Travel & Transport/);
 });
+
+test("travel policy status stays truthful before department selection and for unpublished policy", () => {
+  const ui = fs.readFileSync(path.resolve("src/components/SharedBusinessWorkspace.tsx"), "utf8");
+  assert.match(ui, /Boolean\(expenseDepartment\)&&effectiveTravelPolicyQuery\.isPending/);
+  assert.match(ui, /No published travel policy applies to this department and trip date/);
+});

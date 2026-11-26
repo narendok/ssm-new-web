@@ -57,6 +57,8 @@ interface ApprovalsFullPageViewProps {
   persona?: Persona | undefined;
   departmentScope?: string | undefined;
   onRequestApproval?: ((newApproval: Omit<ApprovalRecord, "id" | "outcome" | "updatedAt">) => boolean | void | Promise<boolean | void>) | undefined;
+  quickViewApprovalId?: string | undefined;
+  onDecisionComplete?: ((id: string) => void) | undefined;
 }
 
 export function ApprovalsFullPageView({
@@ -72,6 +74,8 @@ export function ApprovalsFullPageView({
   persona,
   departmentScope,
   onRequestApproval,
+  quickViewApprovalId,
+  onDecisionComplete,
 }: ApprovalsFullPageViewProps) {
   const [statusFilter, setStatusFilter] = useState<"ALL" | "Pending" | "Approved" | "Rejected" | "Returned">("ALL");
   const [filterScope, setFilterScope] = useState<"ALL" | "PENDING_ME" | "MY_REQUESTS">("ALL");
@@ -171,6 +175,7 @@ export function ApprovalsFullPageView({
   const rejectedCount = scopedApprovals.filter((a) => a.outcome === "Rejected" || a.outcome === "Returned").length;
 
   const filtered = scopedApprovals.filter((appr) => {
+    if (quickViewApprovalId && appr.id !== quickViewApprovalId) return false;
     if (statusFilter !== "ALL" && appr.outcome !== statusFilter) return false;
     if (filterScope === "PENDING_ME" && !(appr.outcome === "Pending" && canUserActOnApproval(appr))) return false;
     if (filterScope === "MY_REQUESTS" && departmentCode(appr.department) !== myDept) return false;
@@ -238,6 +243,7 @@ export function ApprovalsFullPageView({
     setActionType(null);
     setActionNotes("");
     setActionError(null);
+    onDecisionComplete?.(selectedApproval.id);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'The decision could not be saved. Your notes are retained.');
     } finally {
@@ -248,7 +254,7 @@ export function ApprovalsFullPageView({
   return (
     <div className="space-y-4">
       {/* Header Bar */}
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-b border-border/40 pb-3">
+      {!quickViewApprovalId && <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between border-b border-border/40 pb-3">
         <div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="text-xl font-semibold tracking-tight text-foreground">Human approvals</h1>
@@ -281,21 +287,21 @@ export function ApprovalsFullPageView({
             </span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Compact summary keeps the decision list prominent when many approvals exist. */}
-      <div aria-label="Approval counts" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs">
+      {!quickViewApprovalId && <div aria-label="Approval counts" className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs">
         <span className="inline-flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400"><Clock className="size-3.5"/>{pendingCount} pending</span>
         <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="size-3.5"/>{approvedCount} approved</span>
         <span className="inline-flex items-center gap-1.5 text-rose-600 dark:text-rose-400"><XCircle className="size-3.5"/>{rejectedCount} rejected / returned</span>
         <span className="inline-flex items-center gap-1.5 text-muted-foreground"><UserCheck className="size-3.5"/>{myActionCount} awaiting my sign-off</span>
-      </div>
+      </div>}
 
-      <ResponsiveFilterBar label="Approval filters" className="rounded-xl border border-border/60 bg-card p-2" activeCount={Number(statusFilter !== "ALL" || filterScope !== "ALL")}>
+      {!quickViewApprovalId && <ResponsiveFilterBar label="Approval filters" className="rounded-xl border border-border/60 bg-card p-2" activeCount={Number(statusFilter !== "ALL" || filterScope !== "ALL")}>
         <div className="filter-search"><Search /><input aria-label="Search approvals" placeholder="Search title, reference or requester…" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} /></div>
         <CompactFilterSelect label="Approval scope" shortLabel="Scope" icon={UserCheck} value={filterScope} onChange={value => setFilterScope(value as typeof filterScope)} options={[{value:"ALL",label:"All authorized"},{value:"PENDING_ME",label:`Awaiting my sign-off (${myActionCount})`},{value:"MY_REQUESTS",label:`My department requests (${myDeptCount})`}]} />
         <CompactFilterSelect label="Approval status" shortLabel="Status" icon={Filter} value={statusFilter} onChange={value => setStatusFilter(value as typeof statusFilter)} options={["ALL","Pending","Approved","Rejected","Returned"].map(value => ({value,label:value === "ALL" ? "All statuses" : value}))} />
-      </ResponsiveFilterBar>
+      </ResponsiveFilterBar>}
 
       <div className="space-y-4">
         {filtered.length === 0 ? (
@@ -325,11 +331,11 @@ export function ApprovalsFullPageView({
             const isReturned = appr.outcome === "Returned";
 
             const riskTone =
-              appr.riskLevel === "Critical"
-                ? "bg-rose-500/10 text-rose-600 border-rose-500/30"
-                : appr.riskLevel === "High"
-                ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
-                : "bg-blue-500/10 text-blue-600 border-blue-500/30";
+      appr.riskLevel === "Critical"
+        ? "bg-destructive/10 text-destructive border-destructive/30"
+        : appr.riskLevel === "High"
+        ? "bg-warning/15 text-foreground border-warning/40"
+        : "bg-primary/10 text-primary border-primary/30";
 
             return (
                 <div
@@ -443,27 +449,28 @@ export function ApprovalsFullPageView({
                       canUserActOnApproval(appr) ? (
                         <div className="flex items-center gap-2 mt-2">
                           <Button
+                            variant="approve"
                             size="sm"
                             onClick={() => handleOpenAction(appr, "approve")}
-                            className="h-8 gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 shadow-sm"
+                            className="gap-1.5 px-3"
                           >
                             <CheckCircle2 className="size-3.5" />
                             Approve Gate
                           </Button>
                           <Button
-                            variant="outline"
+                            variant="return"
                             size="sm"
                             onClick={() => handleOpenAction(appr, "return")}
-                            className="h-8 gap-1.5 text-xs px-2.5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 border-amber-500/30"
+                            className="gap-1.5 px-2.5"
                           >
                             <RotateCcw className="size-3.5" />
                             Return for rework
                           </Button>
                           <Button
-                            variant="outline"
+                            variant="reject"
                             size="sm"
                             onClick={() => handleOpenAction(appr, "reject")}
-                            className="h-8 gap-1.5 text-xs px-2.5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+                            className="gap-1.5 px-2.5"
                           >
                             <XCircle className="size-3.5" />
                             Reject

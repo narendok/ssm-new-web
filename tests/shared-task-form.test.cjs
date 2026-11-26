@@ -13,5 +13,5 @@ test('shared task form requires a saved project and links the custom task to its
   assert.doesNotMatch(component, /Department task — no project/);
   assert.match(sharedWorkspace, /save\("create_custom_task"/);
   assert.match(sharedWorkspace, /stage_code: stageCode/);
-  assert.match(sharedWorkspace, /const stageCode=String\(project\.fields\["currentStage"\]\|\|project\.fields\["lifecycleStage"\]\|\|project\.fields\["stage"\]/);
+  assert.match(sharedWorkspace, /const stageCode=String\(task\.stageCode\s*\|\|\s*project\.fields\["currentStage"\]\s*\|\|\s*project\.fields\["lifecycleStage"\]\s*\|\|\s*project\.fields\["stage"\]/);
 });
